@@ -1,0 +1,6 @@
+# Test-only deps for the SHARED test venv.
+# NOTE: mysql-connector-python is deliberately NOT here:
+# tests/test_feat_export.py asserts the MySQL driver is ABSENT, while
+# tests/test_feat_db.py needs it present. The .exe project solves this
+# with per-feature venvs; do the same (see .test-venv-db below).
+python-pptx

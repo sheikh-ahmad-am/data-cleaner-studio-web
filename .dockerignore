@@ -1,0 +1,11 @@
+# Never bake user data, local virtualenvs, caches or SECRETS into the image.
+data/
+.venv/
+venv/
+__pycache__/
+*.pyc
+.git/
+.env
+# Supabase config — NEVER in the image, NEVER in git. It is mounted /
+# provided at deploy time (see DEPLOY.md, "Supabase setup").
+supabase_config.json

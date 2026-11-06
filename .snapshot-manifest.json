@@ -1,0 +1,306 @@
+{
+  "copied_at_ist": "2026-11-06T06:20:19.451393+00:00",
+  "source": "/home/hatch/workspace/data-cleaner-studio",
+  "files": {
+    "engine.py": {
+      "sha256": "4a20292c52f248b5606ec739fb95158691ba8d0ede02ced32478dce012721e4e",
+      "bytes": 43303,
+      "source_mtime": 1793946075.2664309
+    },
+    "ai_settings.py": {
+      "sha256": "7a1970f8add0ec5bb4acc2a9445a69d67d1d5e398f49b9e399a09bba0d014b8a",
+      "bytes": 7653,
+      "source_mtime": 1793909895.605439
+    },
+    "pptx_writer.py": {
+      "sha256": "106eebb77b4d9c60b58e1a7db9d59eea340599c9ea157640bad80d6fd3b5531c",
+      "bytes": 18938,
+      "source_mtime": 1793945818.228433
+    },
+    "feat_quality.py": {
+      "sha256": "961805ea475cd3b8c9a0ca0f8143a4f39dcf6fd6cb3e12ffbfe90d45477d6e69",
+      "bytes": 31315,
+      "source_mtime": 1793908570.5974493
+    },
+    "feat_combine.py": {
+      "sha256": "147728e554319dce84112d8b93d86151a90b3afc8cd97c7e84b5d1bfc7335903",
+      "bytes": 28021,
+      "source_mtime": 1793908539.9794495
+    },
+    "feat_automate.py": {
+      "sha256": "cdef0d20e93e8ca6dc7c0b940eb76361d58fd4f7e9f7db653d062e2ede2242dd",
+      "bytes": 23512,
+      "source_mtime": 1793908500.3204498
+    },
+    "feat_export.py": {
+      "sha256": "8c9c66ca9fd2eb27864ad675916e3f694f54e805a7807ae7653b56c9a4df90d1",
+      "bytes": 24603,
+      "source_mtime": 1793946378.496491
+    },
+    "feat_enrich.py": {
+      "sha256": "02998bd21100bf40ddd58a98dc177d048e44cdb98c602eca4ba6763e4daf8499",
+      "bytes": 57999,
+      "source_mtime": 1793946404.624491
+    },
+    "feat_share.py": {
+      "sha256": "688d1bb93d3be3c982c944ac3536dd38c6820bfc2137927886e65f5263d13897",
+      "bytes": 63516,
+      "source_mtime": 1793945832.1834328
+    },
+    "feat_analyse.py": {
+      "sha256": "12d27fa9e4b2c2be5309ce8f7b3a60e139033db365207937e1384e3977f3036b",
+      "bytes": 53866,
+      "source_mtime": 1793910355.7144356
+    },
+    "feat_brand.py": {
+      "sha256": "db49017cdd7e7de5d318401094db8a816a82112788e630888e22afad99e3062c",
+      "bytes": 8411,
+      "source_mtime": 1793945768.9340358
+    },
+    "feat_currency.py": {
+      "sha256": "c2d7b51fe920e2df8790aee9bf7fbc17f4ce68061a8d7baae1311a04d548294f",
+      "bytes": 5891,
+      "source_mtime": 1793945752.7686725
+    },
+    "feat_db.py": {
+      "sha256": "9d8300deb60565752fdacd8827366529a5224e718b43f8e91b4748e3528995ba",
+      "bytes": 10129,
+      "source_mtime": 1793945790.824433
+    },
+    "feat_mobile.py": {
+      "sha256": "1419c7ba56d6232460c19820a88177656e496f9fa8863a4d93750d9420b478f2",
+      "bytes": 3834,
+      "source_mtime": 1793945764.7544334
+    },
+    "feat_schedule.py": {
+      "sha256": "3598a31584ca66d4057ddef1b9c3277542d73cde921483f5f96479d3e337e6af",
+      "bytes": 11187,
+      "source_mtime": 1793945802.5274332
+    },
+    "feat_tutorial.py": {
+      "sha256": "6aea0c187a37ecbf302bee46733bced9ce443c9a0ba229eb9f1a08fad6f0bbf8",
+      "bytes": 6340,
+      "source_mtime": 1793945802.532433
+    },
+    "watch_folder.py": {
+      "sha256": "d24027f09c7b98147190f652b57be3b0db14cf554203be3b6956fcb94b406705",
+      "bytes": 8228,
+      "source_mtime": 1793908517.4974496
+    },
+    "morning_run.py": {
+      "sha256": "d30c082a3f0cd498d262844c91135df7f962139cfd75dd6b3ff5287321a7d17f",
+      "bytes": 3871,
+      "source_mtime": 1793909964.9774384
+    },
+    "tests/smoke_test.py": {
+      "sha256": "de0650b3ef68589f3b5b49904e9700a61dd338bd99f938f780cd2ff5e4d62b3d",
+      "bytes": 23410,
+      "source_mtime": 1793947255.0074875
+    },
+    "tests/test_engine.py": {
+      "sha256": "eb675d9e6e2220426fbbf7e3ef30da3b722a7318822df9c38d93a431b623117f",
+      "bytes": 3793,
+      "source_mtime": 1793905459.3458729
+    },
+    "tests/test_feat_analyse.py": {
+      "sha256": "0312697b9c9447788df33e899817083e95c2d455212bb416575bd21709a2e5f9",
+      "bytes": 27477,
+      "source_mtime": 1793910140.884437
+    },
+    "tests/test_feat_automate.py": {
+      "sha256": "5dc61095253d4bdefa1cbb49906fff65c2a20f23166e5a609979fd9bfc713365",
+      "bytes": 11663,
+      "source_mtime": 1793908569.2474494
+    },
+    "tests/test_feat_bigfiles.py": {
+      "sha256": "f147d136a4e80ceb75d7bb766cd6c1e23dc4390d2bc8d63e0ccabecec22e560a",
+      "bytes": 6804,
+      "source_mtime": 1793946108.9214306
+    },
+    "tests/test_feat_brand.py": {
+      "sha256": "1e8c2cebc5480b85725bf24954df4b58836157bd90b722bb51efea7ae5640700",
+      "bytes": 14688,
+      "source_mtime": 1793945968.6354318
+    },
+    "tests/test_feat_combine.py": {
+      "sha256": "88b4ca34524f478df6553118a264733f11734e43e5c399d330f553ad21c06386",
+      "bytes": 16901,
+      "source_mtime": 1793908522.3934495
+    },
+    "tests/test_feat_currency.py": {
+      "sha256": "99ae5e4afd24e494b2e805efc0352a978e62aeae96b934895d17d87dc99e5d55",
+      "bytes": 8806,
+      "source_mtime": 1793945817.371433
+    },
+    "tests/test_feat_db.py": {
+      "sha256": "8fa73a3d14bcfc14e34e9887aae95d8c6e9deacbdaf1c2142dd4e1ef1c1b2b19",
+      "bytes": 9780,
+      "source_mtime": 1793946005.7264316
+    },
+    "tests/test_feat_enrich.py": {
+      "sha256": "193b9f678c5b2d68e4d3c08dbfea235b891d82abb73684d9c6270cb4dfdd21e2",
+      "bytes": 34536,
+      "source_mtime": 1793946714.8634896
+    },
+    "tests/test_feat_export.py": {
+      "sha256": "d9c771666da93a6d589946462d273f85f60423d6098d78a37ddda9fd96eaf25c",
+      "bytes": 15685,
+      "source_mtime": 1793946714.8814898
+    },
+    "tests/test_feat_formulas.py": {
+      "sha256": "99f291a13df6c2eed0621e31972868a60b91589904d902fccbad2a07a9ebcdf7",
+      "bytes": 6107,
+      "source_mtime": 1793945829.859433
+    },
+    "tests/test_feat_mobile.py": {
+      "sha256": "3fa6b983ce145597711927125e0d2845a4210b033cce58baa44b6201360b1aaf",
+      "bytes": 5016,
+      "source_mtime": 1793945842.4654326
+    },
+    "tests/test_feat_quality.py": {
+      "sha256": "1292d6cf925e52b6286399374eed2efdb881ab177efcc5bfe2a2639ce97a04fd",
+      "bytes": 16389,
+      "source_mtime": 1793908603.875449
+    },
+    "tests/test_feat_schedule.py": {
+      "sha256": "1d38739a63a52ad615ef9e7abc95ec9b8fcf4337aaa271edfbaeca35a2c4134a",
+      "bytes": 12540,
+      "source_mtime": 1793945968.6474319
+    },
+    "tests/test_feat_share.py": {
+      "sha256": "ea8b0de891d6c1209b48a55e5cbce9beaa9c7f4e50ab593c6ac254e114bcb360",
+      "bytes": 31821,
+      "source_mtime": 1793910140.371437
+    },
+    "sample_data/attendance_sample.csv": {
+      "sha256": "7bc97a82a5dac14e6b6325b092ca7bf42bfac320f85e767c3545cdda25dbd535",
+      "bytes": 1161,
+      "source_mtime": 1793908507.8524497
+    },
+    "sample_data/inventory_sample.csv": {
+      "sha256": "32db209e3c53406ef104de4362b5b4c0abee6b8d3d1147ee746ad43db5dfb7ec",
+      "bytes": 1495,
+      "source_mtime": 1793908507.8544497
+    },
+    "sample_data/messy_sales.csv": {
+      "sha256": "2a7b9e027f29f30b5b577d004c2a5dd2aeaf4d9b12e4d9e09dc223d18a2fe897",
+      "bytes": 6150,
+      "source_mtime": 1793898839.9811282
+    },
+    "test-pack/TEST-PLAN.md": {
+      "sha256": "91d523b55e0de4c6dcb87fc36a95878ed3e9087072c4ee1fea9f9cc6ca30fab9",
+      "bytes": 28443,
+      "source_mtime": 1793947422.725487
+    },
+    "test-pack/append_feb.csv": {
+      "sha256": "d20b65e681db1b78bc223128e40c91419b90e11bc77dee9dfae350ddcd8fabce",
+      "bytes": 72,
+      "source_mtime": 1793908443.4494503
+    },
+    "test-pack/append_jan.csv": {
+      "sha256": "087b69e2465460c2e4960e9286fca78be176ede108754ca6aa46894fe2f3e0d3",
+      "bytes": 73,
+      "source_mtime": 1793908443.4484503
+    },
+    "test-pack/cities.csv": {
+      "sha256": "f6f41e8123efda64501fc1539a1aae1f8c0ef42819d05a36cd33f104373daddf",
+      "bytes": 50,
+      "source_mtime": 1793905746.3258839
+    },
+    "test-pack/compare_new.csv": {
+      "sha256": "88c80203691340e4c0a3074e54635ee61785ce8a13d7dd7e5df6e87e940f3617",
+      "bytes": 103,
+      "source_mtime": 1793908443.4454503
+    },
+    "test-pack/compare_old.csv": {
+      "sha256": "396258720b4b2280a4e5ff16a833bbadf66ccb62da3705871ef09db3e0ddcd05",
+      "bytes": 105,
+      "source_mtime": 1793908443.4444501
+    },
+    "test-pack/fuzzy_names.csv": {
+      "sha256": "218f80d4a8db219d9f25eec71b252923d6eddbee6855f9b850e35d195f8233ed",
+      "bytes": 91,
+      "source_mtime": 1793905746.327884
+    },
+    "test-pack/messy_sales.csv": {
+      "sha256": "2a7b9e027f29f30b5b577d004c2a5dd2aeaf4d9b12e4d9e09dc223d18a2fe897",
+      "bytes": 6150,
+      "source_mtime": 1793903547.4464285
+    },
+    "test-pack/messy_sales.json": {
+      "sha256": "042403da2020d1d5fb5ad7bb631d715954915e1f909a403f0dcd808b8681c6ff",
+      "bytes": 19005,
+      "source_mtime": 1793903507.5724843
+    },
+    "test-pack/messy_sales.parquet": {
+      "sha256": "f1d3cbc14f7223fa797e48cd5f7599013333c903c0b038af8100de687fc6eef9",
+      "bytes": 7758,
+      "source_mtime": 1793945970.7962422
+    },
+    "test-pack/messy_sales.xlsx": {
+      "sha256": "a9478ae965e4392505debd08249d31338ee92a77cf3964e586f7cb4ce3e64e2f",
+      "bytes": 9184,
+      "source_mtime": 1793903507.570797
+    },
+    "test-pack/names_phones.csv": {
+      "sha256": "87c18828e8bd8ecfa833d199fb5baf31549af2fa677ed4c30236382e38515fb2",
+      "bytes": 245,
+      "source_mtime": 1793911186.081429
+    },
+    "test-pack/test.db": {
+      "sha256": "abbf51419454ba870997e8dbb1e841c461b7c20c0a283c782f2eb5d39bb480f1",
+      "bytes": 12288,
+      "source_mtime": 1793905746.479884
+    },
+    "setup_morning_run.bat": {
+      "sha256": "1fe9f37f7d612ab1117c516b7672fd24059c3bbe4061ec23a12b89086f76652f",
+      "bytes": 990,
+      "source_mtime": 1793909964.98064
+    }
+  },
+  "re_syncs": [
+    {
+      "file": "engine.py",
+      "at_ist": "2026-11-06T06:27:26.314229+00:00",
+      "sha256": "4a20292c52f248b5606ec739fb95158691ba8d0ede02ced32478dce012721e4e"
+    },
+    {
+      "file": "feat_export.py",
+      "at_ist": "2026-11-06T06:27:26.314229+00:00",
+      "sha256": "8c9c66ca9fd2eb27864ad675916e3f694f54e805a7807ae7653b56c9a4df90d1"
+    },
+    {
+      "file": "feat_enrich.py",
+      "at_ist": "2026-11-06T06:27:26.314229+00:00",
+      "sha256": "02998bd21100bf40ddd58a98dc177d048e44cdb98c602eca4ba6763e4daf8499"
+    },
+    {
+      "file": "tests/test_feat_bigfiles.py",
+      "at_ist": "2026-11-06T06:27:26.314229+00:00",
+      "sha256": "f147d136a4e80ceb75d7bb766cd6c1e23dc4390d2bc8d63e0ccabecec22e560a"
+    },
+    {
+      "file": "setup_morning_run.bat",
+      "at_ist": "2026-11-06T06:27:26.314229+00:00",
+      "sha256": "1fe9f37f7d612ab1117c516b7672fd24059c3bbe4061ec23a12b89086f76652f",
+      "note": "added: asserted by copied tests/test_feat_analyse.py; Windows .exe packaging artifact"
+    },
+    {
+      "file": "tests/smoke_test.py",
+      "at_ist": "2026-11-06T06:32:01.248811+00:00",
+      "sha256": "307e901b3fd784a5dcb599184d421b5271e802b7873cff221f08a37ddd54363d"
+    },
+    {
+      "file": "tests/test_feat_enrich.py",
+      "at_ist": "2026-11-06T06:32:01.248811+00:00",
+      "sha256": "193b9f678c5b2d68e4d3c08dbfea235b891d82abb73684d9c6270cb4dfdd21e2"
+    },
+    {
+      "file": "tests/test_feat_export.py",
+      "at_ist": "2026-11-06T06:32:01.248811+00:00",
+      "sha256": "d9c771666da93a6d589946462d273f85f60423d6098d78a37ddda9fd96eaf25c"
+    }
+  ],
+  "source_note": "Snapshot of the .exe project; the .exe folder is under active development by another agent. Re-sync the files listed under re_syncs before the web app ships if the .exe folder changes again.",
+  "resynced_at_ist": "2026-11-06T12:17:00+05:30"
+}

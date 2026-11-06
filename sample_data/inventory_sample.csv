@@ -1,0 +1,25 @@
+Item Name,SKU,Category,Warehouse,Quantity,Unit Price,Last Restocked
+Wireless Mouse,SKU-1001,Electronics,Delhi,120,$799.00,2026-08-15
+Laptop Stand,SKU-1002,ELECTRONICS,Mumbai,45,"$1,499.00",15/08/2026
+Desk Lamp,SKU-1003,Home,Delhi,60,1199,20 Aug 2026
+Office Chair,SKU-1004,home,MUMBAI,25,"$4,999",2026-08-21
+Notebook A5,SKU-1005,Stationery,Patna,300,₹49.00,2026/08/22
+Wireless Mouse,SKU-1001,Electronics,Delhi,120,$799.00,2026-08-15
+Ball Pen Blue,SKU-1006,stationery,Patna,500,₹10,23-08-2026
+USB Cable 1m,SKU-1007,Electronics,Delhi,,299,2026-08-24
+Water Bottle,SKU-1008,HOME,Mumbai,80,349.00,24/08/2026
+Monitor 24 inch,SKU-1009,Electronics,DELHI,30,"$8,999.00",25 Aug 2026
+Keyboard,SKU-1010,Electronics,Mumbai,55,1299,2026-08-26
+Mouse Pad,SKU-1011,stationery,Patna,150,199.00,2026/08/27
+Desk Organizer,SKU-1012,Home,Delhi,40,599,28-08-2026
+Webcam HD,SKU-1013,ELECTRONICS,Mumbai,18,"$2,499",2026-08-29
+Stapler,SKU-1014,Stationery,PATNA,90,149.00,29/08/2026
+Headphones,SKU-1015,Electronics,Delhi,35,"$1,999.00",30 Aug 2026
+Sticky Notes,SKU-1016,stationery,Mumbai,400,₹59,2026-08-31
+Table Fan,SKU-1017,Home,DELHI,22,1499.00,2026/09/01
+Power Bank,SKU-1018,Electronics,Patna,,1799,01-09-2026
+File Folder,SKU-1019,Stationery,Delhi,250,₹25.00,02/09/2026
+LED Bulb 9W,SKU-1020,HOME,Mumbai,180,99,3 Sep 2026
+Wireless Mouse,SKU-1001,Electronics,Delhi,120,$799.00,2026-08-15
+Charger 65W,SKU-1021,Electronics,Patna,48,899.00,2026-09-04
+Whiteboard Marker,SKU-1022,stationery,Delhi,320,₹35,2026-09-05
