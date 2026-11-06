@@ -100,16 +100,20 @@ except ImportError:  # Cloud rework: fall back to a local stand-in
 _APP_DIR = Path(__file__).resolve().parent
 
 # -------------------------------------------- design system (Supabase) --
-# The app's ONE consolidated stylesheet: near-white background, white
-# cards, near-black ink, one deep-green accent. Injected at the top of
-# the app (right after set_page_config, below) so the login / signup
-# screen gets it too — the deep-green primary-button rules here are the
+# The app's consolidated stylesheets, one per theme: light below
+# (near-white background, white cards, near-black ink, one deep-green
+# accent) and dark in ui_design.DARK_CSS (near-black green-grey
+# surfaces, brightened green accents). Injected at the top of the app
+# (right after set_page_config, below) so the login / signup screen
+# gets them too — the deep-green primary-button rules here are the
 # fallback if the [theme] section of .streamlit/config.toml is ever
-# missing. This is Worker A's DESIGN_SYSTEM_CSS from ui_design.py,
+# missing. The light literal below is ui_design.DESIGN_SYSTEM_CSS
 # pasted verbatim: the Supabase tokens measured off the live dashboard
 # (see supabase-design-study.md and the authoritative vibe brief in
-# supabase-ui-ux-design-analysis.md). There is exactly one stylesheet
-# to maintain; do not retype or re-derive it.
+# supabase-ui-ux-design-analysis.md). There are exactly two stylesheets
+# to maintain, both owned by ui_design.py; do not retype or re-derive
+# either. Which one is injected is decided just before the inject call
+# from st.session_state["dcs_theme"] ("light" by default).
 DESIGN_SYSTEM_CSS = """<style>
 /* ---- page: near-white everywhere, no separate grey canvas ---- */
 .stApp { background-color: #fdfdfd; color: #030303; }
@@ -144,9 +148,9 @@ div[data-testid="stButton"] > button[kind="primary"] {
   font-weight: 500; }
 .stApp .stButton > button[kind="primary"]:hover,
 div[data-testid="stButton"] > button[kind="primary"]:hover {
-  background-color: #117f50;
-  background: linear-gradient(180deg, #118050 0%, #0e7d4e 100%);
-  border-color: #117f50; color: #ffffff; }
+  background-color: #007243;
+  background: linear-gradient(180deg, #0e7d4e 0%, #007243 100%);
+  border-color: #007243; color: #ffffff; }
 /* ---- secondary buttons: white, 1px light border, black text ---- */
 .stApp .stButton > button[kind="secondary"],
 div[data-testid="stButton"] > button[kind="secondary"] {
@@ -154,7 +158,7 @@ div[data-testid="stButton"] > button[kind="secondary"] {
   border-radius: 6px; font-weight: 500; }
 .stApp .stButton > button[kind="secondary"]:hover,
 div[data-testid="stButton"] > button[kind="secondary"]:hover {
-  background-color: #f8f8f8; color: #030303; border-color: #e5e5e5; }
+  background-color: #03030307; color: #030303; border-color: #e5e5e5; }
 /* Danger buttons (delete / clear / reset / remove) are secondary buttons
    (type="secondary", never primary). Streamlit buttons cannot carry a
    custom class, so the danger colour lives on this .dcs-danger hook for
@@ -170,6 +174,10 @@ div[data-testid="stDownloadButton"] > button {
   background-color: #ffffff; color: #030303;
   border-color: #e8e8e8; border-radius: 6px; }
 .stApp label { color: #030303; }
+/* ---- checkboxes: hairline box border, green check ---- */
+.stApp input[type="checkbox"] { accent-color: #117f50; }
+div[data-testid="stCheckbox"] div[data-baseweb="checkbox"] span {
+  border-color: #d0d0d0; }
 /* ---- sidebar: near-white, hairline edge, nav rows as pills ---- */
 section[data-testid="stSidebar"] { background-color: #fdfdfd;
   border-right: 1px solid #e8e8e8; }
@@ -178,11 +186,12 @@ section[data-testid="stSidebar"] a { color: #117f50; }
 .dcs-nav-row { display: block; padding: 0.35rem 0.75rem;
   border-radius: 6px; font-size: 13px; color: #030303;
   border-left: 2px solid transparent; margin-bottom: 2px; }
-.dcs-nav-row:hover { background-color: #f8f8f8; }
+.dcs-nav-row:hover { background-color: #f8f8f8; color: #0e7e4e; }
 .dcs-nav-row.dcs-nav-active { background-color: #f3f3f3;
   font-weight: 600; color: #030303; border-left: 2px solid #030303; }
 /* ---- links: deep green, sparingly ---- */
 .stApp a { color: #117f50; }
+.stApp a:hover { color: #0e7e4e; }
 /* ---- top bar: 48px, near-white, hairline bottom border ---- */
 .dcs-topbar { height: 48px; display: flex; align-items: center;
   gap: 0.75rem; background-color: #fdfdfd;
@@ -268,9 +277,26 @@ div[data-testid="stDataFrame"] th, div[data-testid="stTable"] th {
 div[data-testid="stDataFrame"] td, div[data-testid="stTable"] td {
   background-color: #ffffff; color: #030303;
   border-bottom: 1px solid #e8e8e8; font-size: 13px; }
-/* ---- subtle, instant hovers (no long transitions) ---- */
-.stApp .stButton > button, .stApp a, .dcs-nav-row {
-  transition: background-color 0.1s ease, color 0.1s ease; }
+/* ---- motion, honestly measured: colour-only 0.2s ease-out ---- */
+.stApp .stButton > button, .stApp a, .dcs-nav-row,
+div[data-testid="stRadio"] div[role="radiogroup"] label,
+.stApp input, .stApp textarea, .stApp select {
+  transition: background-color 0.2s cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 0.2s cubic-bezier(0.22, 1, 0.36, 1),
+    color 0.2s cubic-bezier(0.22, 1, 0.36, 1); }
+/* ---- focus: one shared ring — 2px gap + 4px translucent green halo ---- */
+.stApp .stButton > button:focus-visible,
+div[data-testid="stDownloadButton"] > button:focus-visible,
+.stApp a:focus-visible,
+div[data-testid="stRadio"] div[role="radiogroup"] label:focus-within {
+  outline: none;
+  box-shadow: 0 0 0 2px #fdfdfd, 0 0 0 6px #30ba798c; }
+.stApp input:focus, .stApp textarea:focus, .stApp select:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px #fdfdfd, 0 0 0 6px #30ba798c; }
+/* ---- Turnstile container area: etched like any other panel ---- */
+div[data-testid="stCustomComponentV1"] { background-color: #ffffff;
+  border: 1px solid #e8e8e8; border-radius: 12px; }
 /* ---- empty state: centred, calm, guided ---- */
 .dcs-empty { text-align: center; padding: 2.5rem 1rem;
   background-color: #ffffff; border: 1px solid #e8e8e8;
@@ -287,6 +313,15 @@ st.set_page_config(page_title="Data Cleaner Studio", layout="wide",
 
 # Injected before the login view renders (and before the share-link
 # handling below), so the auth screen gets the design system too.
+# Which stylesheet: st.session_state["dcs_theme"] ("light" by default,
+# flipped by the sidebar toggle and the login-screen switch — both in
+# ui_design). The theme tests read the light literal above from source,
+# so this rebinding keeps the name DESIGN_SYSTEM_CSS on the injected
+# value; the .streamlit/config.toml [theme] base="light" stays as the
+# first-paint base only, since Streamlit's native theme is static.
+st.session_state.setdefault("dcs_theme", "light")
+DESIGN_SYSTEM_CSS = ui_design.theme_css(
+    st.session_state.get("dcs_theme") or "light")
 st.markdown(DESIGN_SYSTEM_CSS, unsafe_allow_html=True)
 _SHARES_FILENAME = "shares.json"
 _STORAGE_KEY_RE = re.compile(r"^[a-zA-Z0-9_]{3,30}$")
@@ -695,6 +730,10 @@ if _current_user is None:
             st.image(str(_login_logo), width=72)
         st.title("Data Cleaner Studio")
         st.write("Put in messy data. Get clean data, KPIs, charts and a report.")
+        # Theme switch for the login screen (no sidebar here): flips the
+        # same st.session_state["dcs_theme"] the sidebar toggle writes,
+        # so the login screen itself restyles on the rerun.
+        ui_design.render_login_theme_toggle()
         banner = auth.get_local_mode_banner()
         if banner:
             st.info(banner)
@@ -1165,6 +1204,10 @@ if _pc1.button("Profile", key="profile_btn"):
     st.rerun()
 if _pc2.button("Log out", key="logout_btn"):
     _do_logout()
+# Theme toggle (sidebar): Light/Dark switch writing
+# st.session_state["dcs_theme"]; the stylesheet injected at the top of
+# this file follows it on the next rerun.
+ui_design.render_theme_toggle()
 # Sync client_mode from the toggle widget BEFORE the sidebar nav
 # renders: the toggle itself (feat_analyse.render_client_mode_toggle)
 # only runs later in this script, after the upload block, and it is
@@ -1359,10 +1402,15 @@ feat_analyse.render_client_mode_toggle(st)
 with st.sidebar.expander("Settings (API key)"):
     ai_settings.render_settings(st)
 
-# No theme picker any more: the app has one Supabase theme (set in
-# .streamlit/config.toml and in the design-system stylesheet at the top
-# of this file). The old per-theme CSS block that lived here is folded
-# into that stylesheet — there is exactly one stylesheet now.
+# Theme toggle: the sidebar Light/Dark switch
+# (ui_design.render_theme_toggle, wired just below the Profile / Log
+# out buttons) and the login-screen switch both write
+# st.session_state["dcs_theme"] ("light" by default); the stylesheet
+# injected at the top of this file follows it, so the whole app —
+# login screen included — switches between the light and dark
+# Supabase stylesheets. .streamlit/config.toml stays base="light":
+# it is only the first-paint base; the runtime CSS overrides do the
+# switching, since Streamlit's native theme is static.
 feat_enrich.render_language_picker(st)
 _ws_on = feat_enrich.render_workspace_toggle(st)
 

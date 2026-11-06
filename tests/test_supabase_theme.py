@@ -25,6 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import ai_settings  # noqa: E402
 import feat_enrich as fe  # noqa: E402
+import ui_design  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -104,9 +105,189 @@ def test_theme_css_and_legacy_migration():
     print("theme_css + legacy migration OK")
 
 
+# ---------------------------------------------------------------------------
+# Dark theme (Worker A, refine/supabase-look): every token pinned in
+# BOTH themes, motion + focus ring pinned, toggle default + switch.
+# ---------------------------------------------------------------------------
+
+def _hex_tokens(tokens):
+    """The hex values of a token dict (sizes / radii are not colours)."""
+    return [v for v in tokens.values()
+            if isinstance(v, str) and v.startswith("#")]
+
+
+def _luminance(hex_colour):
+    """Relative luminance per WCAG 2.1 (sRGB)."""
+    r, g, b = (int(hex_colour[i:i + 2], 16) / 255
+               for i in (1, 3, 5))
+    f = lambda c: c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+    r, g, b = f(r), f(g), f(b)
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def _contrast(fg, bg):
+    """WCAG contrast ratio between two hex colours."""
+    hi, lo = sorted((_luminance(fg), _luminance(bg)), reverse=True)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+def test_theme_css_light_and_dark():
+    """ui_design.theme_css returns the light / dark stylesheets, and
+    unknown names fall back to light — never to an unstyled app."""
+    assert ui_design.theme_css("light") == ui_design.DESIGN_SYSTEM_CSS
+    assert ui_design.theme_css("dark") == ui_design.DARK_CSS
+    assert ui_design.theme_css("light") != ui_design.theme_css("dark")
+    for unknown in (None, "", "Classic", "Dark green", "Nope"):
+        assert ui_design.theme_css(unknown) == ui_design.DESIGN_SYSTEM_CSS, \
+            f"theme_css({unknown!r}) must fall back to light"
+    assert ui_design.normalize_theme("dark") == "dark"
+    assert ui_design.normalize_theme("bogus") == "light"
+    print("theme_css light/dark + fallback OK")
+
+
+def test_all_tokens_pinned_both_themes():
+    """EVERY token hex is asserted in the stylesheet that ships it:
+    light tokens in theme_css('light'), dark tokens in
+    theme_css('dark') — and no dark hex leaks into the light sheet.
+    Three light tokens live outside CSS by design and are pinned here
+    instead: #3ecf8e (brand green — logo mark only, in assets/logo.svg),
+    #16b674 (icon green — dashboard node icons, not a CSS rule) and
+    #4d4d4d (body token — the shipped CSS deliberately uses ink #030303
+    for body text, so the token is record-only)."""
+    light = ui_design.theme_css("light")
+    dark = ui_design.theme_css("dark")
+    non_css_light = {"#3ecf8e", "#16b674", "#4d4d4d"}
+    for colour in _hex_tokens(ui_design.TOKENS):
+        if colour in non_css_light:
+            assert colour in ui_design.TOKENS.values(), colour
+            continue
+        assert colour in light, f"light token {colour} missing from light CSS"
+    for colour in non_css_light:
+        assert colour in ui_design.TOKENS.values(), \
+            f"non-CSS token {colour} must stay in TOKENS"
+        assert colour not in light, \
+            f"non-CSS token {colour} must not appear in the light stylesheet"
+    # #3ecf8e is the dark link-hover green, so it legitimately appears
+    # in the dark sheet; the other two record-only tokens appear nowhere.
+    assert "#16b674" not in dark and "#4d4d4d" not in dark
+    for colour in _hex_tokens(ui_design.DARK_TOKENS):
+        assert colour in dark, f"dark token {colour} missing from dark CSS"
+    for colour in ("#1b1d1c", "#edefee", "#006338", "#4acd8b", "#232625",
+                   "#2e2e2e", "#123527", "#2a2118", "#ff6369"):
+        assert colour not in light, \
+            f"dark hex {colour} leaked into the light stylesheet"
+    assert "#fdfdfd" not in dark, \
+        "light surface #fdfdfd must not appear in the dark stylesheet"
+    print("all tokens pinned in both themes OK")
+
+
+def test_dark_theme_contrast_aa():
+    """Every dark text/background pair the theme ships passes WCAG AA
+    (>= 4.5:1 for normal text). Dark hexes are secondary-sourced
+    candidates, so the contrast — not the provenance — is the guarantee."""
+    dark = ui_design.DARK_TOKENS
+    pairs = [
+        ("ink on surface", dark["ink"], dark["bg"]),
+        ("body on surface", dark["body"], dark["bg"]),
+        ("muted on surface", dark["muted"], dark["bg"]),
+        ("link on surface", dark["link"], dark["bg"]),
+        ("danger on surface", dark["danger"], dark["bg"]),
+        ("ink on card", dark["ink"], dark["card"]),
+        ("muted on card", dark["muted"], dark["card"]),
+        ("white on primary fill", "#ffffff", dark["primary"]),
+        ("white on primary hover", "#ffffff", dark["primary_hover"]),
+        ("mint text on mint fill", dark["link"], dark["mint_pill"]),
+        ("amber text on amber fill", dark["amber_text"], dark["amber_fill"]),
+    ]
+    for label, fg, bg in pairs:
+        ratio = _contrast(fg, bg)
+        assert ratio >= 4.5, f"{label}: {fg} on {bg} is {ratio:.2f}:1 (< 4.5)"
+    print("dark theme WCAG AA contrast OK")
+
+
+def test_motion_and_focus_ring_both_themes():
+    """Honest motion only: the measured 0.2s cubic-bezier(0.22,1,0.36,1)
+    colour transition on both themes, the shared focus ring (2px gap +
+    4px translucent green halo) on both, primary hover darkening toward
+    #007243 — and NO invented animation: no keyframes, no scroll
+    effects, no animation property anywhere."""
+    for theme in ("light", "dark"):
+        css = ui_design.theme_css(theme)
+        assert "0.2s cubic-bezier(0.22, 1, 0.36, 1)" in css, \
+            f"{theme}: measured button transition missing"
+        assert ("transition: background-color 0.2s cubic-bezier"
+                "(0.22, 1, 0.36, 1)" in css.replace("\n", " ")
+                or "background-color 0.2s cubic-bezier(0.22, 1, 0.36, 1)"
+                in css), f"{theme}: transition must cover background-color"
+        for prop in ("border-color 0.2s cubic-bezier(0.22, 1, 0.36, 1)",
+                     "color 0.2s cubic-bezier(0.22, 1, 0.36, 1)"):
+            assert prop in css, f"{theme}: transition must cover {prop}"
+        assert "#30ba798c" in css, f"{theme}: focus halo missing"
+        assert "0 0 0 2px" in css and "0 0 0 6px #30ba798c" in css, \
+            f"{theme}: focus ring must be 2px gap + 4px halo"
+        assert "#007243" in css, f"{theme}: primary hover #007243 missing"
+        for invented in ("@keyframes", "animation:", "scroll-behavior",
+                         "parallax"):
+            assert invented not in css, \
+                f"{theme}: invented motion {invented!r} must not ship"
+        # The existing loading language survives: green spinner rule.
+        assert 'div[data-testid="stSpinner"]' in css, \
+            f"{theme}: green spinner rule missing"
+    light = ui_design.theme_css("light")
+    dark = ui_design.theme_css("dark")
+    assert "0 0 0 2px #fdfdfd" in light, "light focus gap must be #fdfdfd"
+    assert "0 0 0 2px #1b1d1c" in dark, "dark focus gap must be #1b1d1c"
+    print("motion + focus ring in both themes OK")
+
+
+def test_dark_stylesheet_covers_surfaces():
+    """The dark stylesheet restyles every surface the light one does:
+    sidebar, topbar, tables, KPI tiles, pills, code blocks, alerts and
+    the Turnstile container area (its iframe internals untouched)."""
+    dark = ui_design.theme_css("dark")
+    for selector in ('section[data-testid="stSidebar"]', ".dcs-topbar",
+                     'div[data-testid="stDataFrame"]', ".dcs-kpi",
+                     ".dcs-pill-mint", ".dcs-pill-amber", ".dcs-pill-green",
+                     ".dcs-pill-grey", ".dcs-pill-danger",
+                     'div[data-testid="stCodeBlock"]',
+                     'div[data-testid="stAlert"]',
+                     'div[data-testid="stCustomComponentV1"]',
+                     ".dcs-empty", ".dcs-storage"):
+        assert selector in dark, f"dark CSS missing {selector}"
+    print("dark stylesheet covers all surfaces OK")
+
+
+def test_theme_toggle_default_light_and_switch():
+    """The toggle defaults to light, lives in app.py (sidebar + login
+    switch), and switching themes changes the injected CSS."""
+    assert ui_design.THEME_DEFAULT == "light"
+    assert ui_design.normalize_theme(None) == "light"
+    source = (ROOT / "app.py").read_text(encoding="utf-8")
+    assert 'setdefault("dcs_theme", "light")' in source, \
+        "app.py must default st.session_state['dcs_theme'] to light"
+    assert "ui_design.render_theme_toggle()" in source, \
+        "sidebar theme toggle wiring missing from app.py"
+    assert "ui_design.render_login_theme_toggle()" in source, \
+        "login-screen theme switch wiring missing from app.py"
+    assert "st.markdown(DESIGN_SYSTEM_CSS" in source, \
+        "DESIGN_SYSTEM_CSS injection must stay (ui_polish pins it)"
+    light = ui_design.theme_css("light")
+    dark = ui_design.theme_css("dark")
+    assert light != dark, "switching themes must change the injected CSS"
+    assert "#fdfdfd" in light and "#1b1d1c" in dark
+    assert "#117f50" in light and "#006338" in dark
+    print("theme toggle default light + switch OK")
+
+
 if __name__ == "__main__":
     test_config_theme_tokens()
     test_stylesheet_supabase_tokens()
     test_tab_bar_active_uses_f3f3f3()
     test_theme_css_and_legacy_migration()
+    test_theme_css_light_and_dark()
+    test_all_tokens_pinned_both_themes()
+    test_dark_theme_contrast_aa()
+    test_motion_and_focus_ring_both_themes()
+    test_dark_stylesheet_covers_surfaces()
+    test_theme_toggle_default_light_and_switch()
     print("ALL SUPABASE THEME TESTS PASSED")
