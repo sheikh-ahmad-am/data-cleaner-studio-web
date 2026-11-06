@@ -79,6 +79,7 @@ import feat_combine
 import feat_enrich
 import feat_export
 import feat_mobile
+import feat_profile
 import feat_quality
 import feat_schedule
 import feat_share
@@ -396,6 +397,29 @@ def _remember_session(token):
     """Persist a login: session state AND the login cookie."""
     st.session_state["auth_token"] = token
     _cookie_set(_AUTH_COOKIE, token)
+
+
+def _do_logout():
+    """The ONE logout path: invalidate the server session, clear the
+    login cookie, null the session keys and rerun to the login screen.
+    Used by the sidebar Log out button and the Profile section."""
+    try:
+        auth.delete_session(st.session_state.get("auth_token"))
+    except AuthServiceError:
+        pass
+    _cookie_clear(_AUTH_COOKIE)
+    for _k in ("auth_token", "current_user", "storage_key", "user_paths",
+               "raw", "clean", "actions", "kpis"):
+        st.session_state[_k] = None
+    # "active_tab" is the Section radio's widget key: assigning it after
+    # the radio was created in this run (a logout from the Profile
+    # section) raises — deleting it is allowed at any point, and the
+    # next login then lands on the first section again.
+    try:
+        del st.session_state["active_tab"]
+    except KeyError:
+        pass
+    st.rerun()
 
 
 def _log_user_in(user):
@@ -987,17 +1011,17 @@ if _logo:
         st.sidebar.image(_logo, width=140)
     except Exception:  # noqa: BLE001 - a bad logo must not stop the app
         pass
-st.sidebar.write(f"Signed in as **{_user.get('username') or _user.get('email') or '?'}**")
-if st.sidebar.button("Log out", key="logout_btn"):
-    try:
-        auth.delete_session(st.session_state.get("auth_token"))
-    except AuthServiceError:
-        pass
-    _cookie_clear(_AUTH_COOKIE)
-    for _k in ("auth_token", "current_user", "storage_key", "user_paths",
-               "raw", "clean", "actions", "kpis", "active_tab"):
-        st.session_state[_k] = None
+_profile_name = (_user.get("display_name") or _user.get("username")
+                 or _user.get("email") or "?")
+st.sidebar.write(f"**{_profile_name}**")
+if _user.get("email"):
+    st.sidebar.caption(_user.get("email"))
+_pc1, _pc2 = st.sidebar.columns(2)
+if _pc1.button("Profile", key="profile_btn"):
+    st.session_state["pending_tab"] = "profile"
     st.rerun()
+if _pc2.button("Log out", key="logout_btn"):
+    _do_logout()
 _banner = auth.get_local_mode_banner()
 if _banner:
     st.sidebar.info(_banner)
@@ -1197,6 +1221,25 @@ if raw is not None and st.session_state.source_kind == "sheets":
                 st.error(f"Refresh failed: {e}")
 
 if raw is None:
+    # The Profile view needs no data: when the user asked for it
+    # (sidebar Profile button, or already on the Profile tab), render
+    # it here instead of stopping at the empty state — otherwise the
+    # profile would be unreachable until a file is loaded. The Back
+    # button returns to this empty state (the section switcher below
+    # then defaults to the first tab on the next data load).
+    _heading_to_profile = (
+        st.session_state.get("pending_tab") == "profile"
+        or st.session_state.get("active_tab") == "Profile")
+    if _heading_to_profile:
+        if st.button("← Back to data", key="profile_empty_back"):
+            st.session_state.pop("pending_tab", None)
+            st.session_state.pop("active_tab", None)
+            st.rerun()
+        _profile_result = feat_profile.render_profile_view(
+            st, _user, _skey, on_logout=_do_logout)
+        if _profile_result in ("deleted", "logout"):
+            _do_logout()
+        st.stop()
     # Guided empty state: what to do first, plus a one-click way to try
     # the sample — the same loader the sidebar "Try the messy sample"
     # button uses, not a second mechanism.
@@ -1306,14 +1349,16 @@ _client = bool(st.session_state.get("client_mode", False))
 # secondary views. Nothing removed — just ordered by how often it
 # is used.
 _tab_keys = ["preview", "clean", "kpis", "dashboard", "report",
-             "join", "compare", "tools", "tutorial", "settings"]
+             "join", "compare", "tools", "tutorial", "settings", "profile"]
 if _client:
-    _tab_keys = ["preview", "clean", "kpis", "dashboard", "report", "tutorial"]
+    _tab_keys = ["preview", "clean", "kpis", "dashboard", "report", "tutorial",
+                 "profile"]
 _tab_labels = {"preview": _t("preview"), "join": _t("join"),
                "clean": _t("clean"), "kpis": _t("kpis"),
                "dashboard": _t("dashboard"), "compare": _t("compare"),
                "report": _t("report"), "tools": _t("tools"),
-               "tutorial": _t("tutorial"), "settings": "Settings"}
+               "tutorial": _t("tutorial"), "settings": "Settings",
+               "profile": "Profile"}
 # Section switcher: a horizontal radio, NOT st.tabs.
 # Streamlit's tab selection is not sticky — it resets to the first
 # tab after some actions (downloads, saves), yanking the user away
@@ -2040,8 +2085,11 @@ if "settings" in tab:
         _backend = auth.get_auth_backend()
         _backend_label = ("Local (this server)" if _backend == "local"
                           else "Cloud (Supabase)")
-        st.write(f"Signed in as **{_user.get('username') or _user.get('email') or '?'}** "
+        st.write(f"Signed in as **{_user.get('display_name') or _user.get('username') or _user.get('email') or '?'}** "
                  f"(account backend: **{_backend_label}**).")
+        if st.button("Open Profile", key="settings_open_profile"):
+            st.session_state["pending_tab"] = "profile"
+            st.rerun()
         _config_exists = auth.SUPABASE_CONFIG_PATH.is_file()
         _env_configured = bool((os.environ.get("SUPABASE_URL") or "").strip()
                                and (os.environ.get("SUPABASE_ANON_KEY") or "").strip())
@@ -2234,3 +2282,11 @@ if "settings" in tab:
                         else "this computer")
                      + ". The app is deployed and running here — see DEPLOY.md "
                        "for the hosting notes.")
+
+# -------------------------------------------------------------- profile ---
+if "profile" in tab:
+    if _active_tab == "profile":
+        _profile_result = feat_profile.render_profile_view(
+            st, _user, _skey, on_logout=_do_logout)
+        if _profile_result in ("deleted", "logout"):
+            _do_logout()

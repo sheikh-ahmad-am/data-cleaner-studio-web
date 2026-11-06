@@ -376,3 +376,104 @@ def _reset_storage_cache() -> None:
     """Test helper: forget the cached Supabase Storage client."""
     global _SB_STORAGE_CLIENT
     _SB_STORAGE_CLIENT = None
+
+
+# ---------------------------------------------------------------------------
+# PROFILE HELPERS — storage usage, full file listing, account wipe
+# (used by the Profile section; another worker depends on these names)
+# ---------------------------------------------------------------------------
+
+def get_service_client():
+    """Return the cached service-role Supabase client.
+
+    Same client _sb_client() builds (and the same RuntimeError when the
+    service key is not configured) — no duplicated key lookup here.
+    """
+    return _sb_client()
+
+
+def storage_usage(username: str) -> tuple[int, dict[str, int]]:
+    """Return (total_bytes, {subfolder: bytes}) across ALL subfolders.
+
+    Never raises for a missing/empty user: a missing folder (or a
+    404 in Supabase mode) counts 0 bytes for that subfolder.
+    """
+    per_sub = {sub: 0 for sub in SUBFOLDERS}
+    if _is_supabase_mode():
+        _validate_username(username)
+        bucket = _sb_bucket()
+        for sub in SUBFOLDERS:
+            try:
+                entries = bucket.list(f"{username}/{sub}")
+            except Exception as exc:  # noqa: BLE001 - classified below
+                if _sb_is_not_found(exc):
+                    continue
+                raise RuntimeError(
+                    f"Could not list Supabase Storage: {exc}")
+            for entry in entries or []:
+                if not isinstance(entry, dict):
+                    continue
+                name = entry.get("name")
+                # list() returns only direct children; skip nested prefixes.
+                if not name or "/" in name:
+                    continue
+                metadata = entry.get("metadata") or {}
+                size = metadata.get("size") if isinstance(metadata, dict) else 0
+                if isinstance(size, (int, float)):
+                    per_sub[sub] += int(size)
+    else:
+        _validate_username(username)
+        root = _resolve_within(BASE_DIR, username)
+        for sub in SUBFOLDERS:
+            folder = _resolve_within(root, sub)
+            if not folder.is_dir():
+                continue
+            for path in folder.iterdir():
+                if path.is_file():
+                    per_sub[sub] += os.path.getsize(path)
+    return sum(per_sub.values()), per_sub
+
+
+def list_all_files(username: str) -> dict[str, list[str]]:
+    """Return {subfolder: sorted names} for every subfolder.
+
+    A missing folder lists as [].
+    """
+    return {sub: list_files(username, sub) for sub in SUBFOLDERS}
+
+
+def delete_user_files(username: str) -> int:
+    """Delete EVERY file of the user in every subfolder; return the count.
+
+    Missing folders/files are not errors. Nothing outside the user's
+    own tree is touched.
+    """
+    deleted = 0
+    if _is_supabase_mode():
+        _validate_username(username)
+        bucket = _sb_bucket()
+        for sub in SUBFOLDERS:
+            names = _sb_list(username, sub)
+            if not names:
+                continue
+            paths = [f"{username}/{sub}/{name}" for name in names]
+            try:
+                bucket.remove(paths)
+            except Exception as exc:  # noqa: BLE001 - surfaced as a plain error
+                raise RuntimeError(
+                    f"Could not delete from Supabase Storage: {exc}")
+            deleted += len(names)
+    else:
+        _validate_username(username)
+        root = _resolve_within(BASE_DIR, username)
+        for sub in SUBFOLDERS:
+            folder = _resolve_within(root, sub)
+            if not folder.is_dir():
+                continue
+            for path in folder.iterdir():
+                if path.is_file():
+                    # Resolve each file inside its folder first, so a
+                    # symlink inside the tree can never delete elsewhere.
+                    _resolve_within(folder, path.name).unlink()
+                    deleted += 1
+    return deleted

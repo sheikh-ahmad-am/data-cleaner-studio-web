@@ -8,7 +8,7 @@
 -- What it creates:
 --   * public.profiles  — one row per user (id = Supabase Auth user id)
 --   * public.sessions  — the app's server-side 7-day session tokens
---   * 5 SECURITY DEFINER functions the app calls via client.rpc().
+--   * 8 SECURITY DEFINER functions the app calls via client.rpc().
 --     RLS is ON with NO permissive policies on either table, so the
 --     anon key cannot read or write them directly — only these
 --     functions can, and each does exactly one narrow job.
@@ -48,6 +48,10 @@ create table if not exists public.sessions (
 
 create index if not exists idx_sessions_user_id
   on public.sessions (user_id);
+
+-- Profile: the name shown in the app (null until the user sets one).
+alter table public.profiles
+  add column if not exists display_name text;
 
 -- RLS on, no permissive policies: direct access with the anon key is
 -- denied. Only the SECURITY DEFINER functions below may touch these
@@ -131,6 +135,49 @@ as $$
   delete from public.sessions where token = p_token;
 $$;
 
+-- Set a user's display name; returns the updated row as JSON
+-- (null when the profile row does not exist).
+create or replace function public.app_set_display_name(p_id uuid, p_display_name text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  result jsonb;
+begin
+  update public.profiles p set display_name = p_display_name where p.id = p_id
+  returning to_jsonb(p) into result;
+  return result;
+end;
+$$;
+
+-- List a user's sessions as metadata only (never the token values).
+create or replace function public.app_list_sessions(p_user_id uuid)
+returns table(created_at timestamptz, expires_at timestamptz)
+language sql
+security definer
+set search_path = public
+as $$
+  select created_at, expires_at from public.sessions
+  where user_id = p_user_id order by created_at desc;
+$$;
+
+-- Delete a user's sessions + profile row, in one transaction.
+-- (The Supabase Auth user itself is deleted through the auth admin
+-- channel, not here.)
+create or replace function public.app_delete_account_data(p_user_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  delete from public.sessions where user_id = p_user_id;
+  delete from public.profiles where id = p_user_id;
+end;
+$$;
+
 -- Only the anon + authenticated roles may call these (revoke the
 -- default PUBLIC grant first so the surface is explicit).
 revoke execute on function public.app_upsert_profile(uuid, text) from public;
@@ -138,11 +185,17 @@ revoke execute on function public.app_get_profile(uuid) from public;
 revoke execute on function public.app_create_session(text, uuid, timestamptz, timestamptz) from public;
 revoke execute on function public.app_validate_session(text) from public;
 revoke execute on function public.app_delete_session(text) from public;
+revoke execute on function public.app_set_display_name(uuid, text) from public;
+revoke execute on function public.app_list_sessions(uuid) from public;
+revoke execute on function public.app_delete_account_data(uuid) from public;
 grant execute on function public.app_upsert_profile(uuid, text) to anon, authenticated;
 grant execute on function public.app_get_profile(uuid) to anon, authenticated;
 grant execute on function public.app_create_session(text, uuid, timestamptz, timestamptz) to anon, authenticated;
 grant execute on function public.app_validate_session(text) to anon, authenticated;
 grant execute on function public.app_delete_session(text) to anon, authenticated;
+grant execute on function public.app_set_display_name(uuid, text) to anon, authenticated;
+grant execute on function public.app_list_sessions(uuid) to anon, authenticated;
+grant execute on function public.app_delete_account_data(uuid) to anon, authenticated;
 
 -- ------------------------------------------------------------------
 -- Storage: private bucket + per-user policies (direct client access)

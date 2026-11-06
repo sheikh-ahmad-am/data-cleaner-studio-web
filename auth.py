@@ -58,11 +58,16 @@ Public API (backend-agnostic; the app imports these):
     validate_session(token) -> user dict or None
     delete_session(token) -> None
     get_user_by_id(user_id) -> user dict or None
+    set_display_name(user_id, display_name) -> (ok, error)
+    request_password_reset(email) -> (ok, error)
+    list_user_sessions(user_id) -> [{"created_at", "expires_at"}]
+    delete_account_rows(user_id) -> None (raises in Supabase mode)
     get_google_sign_in_url(redirect_to=None) -> str | None
     handle_oauth_code(code) -> (user, session_token, error)
     supabase_keepalive() -> bool  (tiny real query; scheduler keep-alive)
 
-User dicts always have: {"id", "username", "email", "created_at"}.
+User dicts always have: {"id", "username", "email", "created_at",
+"display_name"} — "display_name" is None until the user sets one.
 Local mode: id is an int, email is None. Supabase mode: id is the
 Supabase auth user id (uuid str), username == email.
 """
@@ -318,6 +323,13 @@ def _local_init_db(conn: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
         """
     )
+    # Profile: display name (added later than the original schema, so
+    # older local databases gain the column on first use). SQLite has
+    # no ADD COLUMN IF NOT EXISTS — check PRAGMA table_info first so
+    # re-running this on an existing database is a no-op.
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(users)")}
+    if "display_name" not in columns:
+        conn.execute("ALTER TABLE users ADD COLUMN display_name TEXT")
     conn.commit()
 
 
@@ -333,6 +345,9 @@ def _local_row_to_user(row: sqlite3.Row) -> dict:
         "username": row["username"],
         "email": None,
         "created_at": row["created_at"],
+        # Older rows predate the column; the SELECTs below include it,
+        # so this is only a guard for callers that select fewer columns.
+        "display_name": row["display_name"] if "display_name" in row.keys() else None,
     }
 
 
@@ -374,8 +389,8 @@ def _local_authenticate(username, password) -> dict | None:
         conn = _local_ensure_db()
         try:
             row = conn.execute(
-                "SELECT id, username, password_hash, salt, created_at"
-                " FROM users WHERE username = ?",
+                "SELECT id, username, password_hash, salt, created_at,"
+                " display_name FROM users WHERE username = ?",
                 (username,),
             ).fetchone()
         finally:
@@ -423,7 +438,8 @@ def _local_validate_session(token) -> dict | None:
         conn = _local_ensure_db()
         try:
             row = conn.execute(
-                "SELECT s.user_id, s.expires_at, u.id, u.username, u.created_at"
+                "SELECT s.user_id, s.expires_at, u.id, u.username,"
+                " u.created_at, u.display_name"
                 " FROM sessions s JOIN users u ON u.id = s.user_id"
                 " WHERE s.token = ?",
                 (token,),
@@ -440,6 +456,7 @@ def _local_validate_session(token) -> dict | None:
                 "username": row["username"],
                 "email": None,
                 "created_at": row["created_at"],
+                "display_name": row["display_name"],
             }
         finally:
             conn.close()
@@ -468,7 +485,8 @@ def _local_get_user_by_id(user_id) -> dict | None:
         conn = _local_ensure_db()
         try:
             row = conn.execute(
-                "SELECT id, username, created_at FROM users WHERE id = ?",
+                "SELECT id, username, created_at, display_name"
+                " FROM users WHERE id = ?",
                 (user_id,),
             ).fetchone()
         finally:
@@ -495,7 +513,8 @@ def _local_get_user_by_id(user_id) -> dict | None:
 #     access is denied. All reads/writes go through SECURITY DEFINER
 #     Postgres functions (supabase_setup.sql) called via client.rpc():
 #     app_upsert_profile, app_get_profile, app_create_session,
-#     app_validate_session, app_delete_session, app_ping. The functions
+#     app_validate_session, app_delete_session, app_set_display_name,
+#     app_list_sessions, app_delete_account_data, app_ping. The functions
 #     run with the database owner's rights and only do the one narrow
 #     job each — the anon key plus RLS does the authorisation, and no
 #     service-role key is needed anywhere in auth.
@@ -655,12 +674,14 @@ def supabase_keepalive() -> bool:
     return True
 
 
-def _sb_user_dict(user_id: str, email: str, created_at: str | None) -> dict:
+def _sb_user_dict(user_id: str, email: str, created_at: str | None,
+                  display_name: str | None = None) -> dict:
     return {
         "id": user_id,
         "username": email,
         "email": email,
         "created_at": created_at or _iso(_utcnow()),
+        "display_name": display_name,
     }
 
 
@@ -686,11 +707,13 @@ def _sb_upsert_profile(user_id: str, email: str) -> dict:
     )
     if isinstance(data, dict) and data.get("id"):
         return _sb_user_dict(str(data["id"]), data.get("email") or email,
-                             data.get("created_at"))
+                             data.get("created_at"),
+                             data.get("display_name"))
     if isinstance(data, list) and data and isinstance(data[0], dict):
         row = data[0]
         return _sb_user_dict(str(row["id"]), row.get("email") or email,
-                             row.get("created_at"))
+                             row.get("created_at"),
+                             row.get("display_name"))
     # The function ran but returned nothing usable — fall back to the
     # values we already know rather than failing the login.
     return _sb_user_dict(user_id, email, None)
@@ -841,7 +864,7 @@ def _sb_get_user_by_id(user_id) -> dict | None:
     if row is None:
         return None
     return _sb_user_dict(str(row["id"]), row.get("email") or "",
-                         row.get("created_at"))
+                         row.get("created_at"), row.get("display_name"))
 
 
 # ---------------------------------------------------------------------------
@@ -921,6 +944,213 @@ def get_user_by_id(user_id) -> dict | None:
     if get_auth_backend() == "supabase":
         return _sb_get_user_by_id(user_id)
     return _local_get_user_by_id(user_id)
+
+
+# ---------------------------------------------------------------------------
+# Profile: display name, password reset, session list, account deletion
+# ---------------------------------------------------------------------------
+
+#: Plain-word message when the profile RPCs do not exist yet — i.e.
+#: supabase_setup.sql has not been re-run in the SQL editor after the
+#: profile functions were added.
+_DISPLAY_NAME_SETUP_MESSAGE = (
+    "Display name saving needs the updated database setup \u2014 run "
+    "supabase_setup.sql in the Supabase SQL editor."
+)
+_DISPLAY_NAME_INVALID_MESSAGE = "Display name must be 1-60 characters."
+_LOCAL_RESET_MESSAGE = (
+    "Password reset by email is only available for cloud accounts."
+)
+
+
+def _validate_display_name(display_name) -> tuple[str | None, str | None]:
+    """Return (cleaned_name, None) or (None, error message).
+
+    A display name is a string of 1-60 characters after stripping
+    surrounding whitespace.
+    """
+    if not isinstance(display_name, str):
+        return None, _DISPLAY_NAME_INVALID_MESSAGE
+    cleaned = display_name.strip()
+    if not cleaned or len(cleaned) > 60:
+        return None, _DISPLAY_NAME_INVALID_MESSAGE
+    return cleaned, None
+
+
+def set_display_name(user_id, display_name) -> tuple[bool, str | None]:
+    """Set the user's display name. Returns (ok, error).
+
+    Supabase mode raises AuthServiceError when the service is
+    unreachable; when the app_set_display_name function does not
+    exist yet (supabase_setup.sql not re-run), the error is the
+    plain setup message instead of a crash.
+    """
+    name, error = _validate_display_name(display_name)
+    if error is not None:
+        return False, error
+    if get_auth_backend() == "supabase":
+        return _sb_set_display_name(user_id, name)
+    return _local_set_display_name(user_id, name)
+
+
+def _sb_set_display_name(user_id, display_name) -> tuple[bool, str | None]:
+    if not isinstance(user_id, str) or not user_id:
+        return False, "User not found."
+    client = _get_client()
+    try:
+        client.rpc(
+            "app_set_display_name",
+            {"p_id": user_id, "p_display_name": display_name},
+        ).execute()
+    except Exception as exc:  # noqa: BLE001 - classified below
+        # The RPC goes through the raw client (not _sb_rpc) on purpose:
+        # _sb_rpc classifies the error first, which would hide the
+        # PGRST202 marker this check needs.
+        if _is_missing_table_error(exc):
+            return False, _DISPLAY_NAME_SETUP_MESSAGE
+        raise _classify_error(exc, "saving the display name")
+    return True, None
+
+
+def _local_set_display_name(user_id, display_name) -> tuple[bool, str | None]:
+    if not isinstance(user_id, int):
+        return False, "User not found."
+    try:
+        conn = _local_ensure_db()
+        try:
+            cur = conn.execute(
+                "UPDATE users SET display_name = ? WHERE id = ?",
+                (display_name, user_id),
+            )
+            conn.commit()
+            if cur.rowcount == 0:
+                return False, "User not found."
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return False, "Could not save the display name (database error)."
+    return True, None
+
+
+def request_password_reset(email) -> tuple[bool, str | None]:
+    """Email the user a password-reset link. Returns (ok, error).
+
+    Supabase mode sends the link via Supabase Auth; a failure returns
+    the plain-word classified error. Local accounts have no email
+    address on file, so this is a clear no-op there.
+    """
+    if get_auth_backend() == "supabase":
+        return _sb_request_password_reset(email)
+    return False, _LOCAL_RESET_MESSAGE
+
+
+def _sb_request_password_reset(email) -> tuple[bool, str | None]:
+    if not isinstance(email, str) or not _EMAIL_RE.match(email):
+        return False, "Enter a valid email address."
+    client = _get_client()
+    try:
+        client.auth.reset_password_email(email)
+    except Exception as exc:  # noqa: BLE001 - classified below
+        return False, str(_classify_error(exc, "requesting a password reset"))
+    return True, None
+
+
+def list_user_sessions(user_id) -> list[dict]:
+    """Return the user's sessions as metadata only.
+
+    Each entry is {"created_at": str, "expires_at": str} — token
+    values are NEVER included. Returns [] on any failure; callers
+    treat an empty list as "no sessions shown".
+    """
+    if get_auth_backend() == "supabase":
+        return _sb_list_user_sessions(user_id)
+    return _local_list_user_sessions(user_id)
+
+
+def _sessions_to_metadata(data) -> list[dict]:
+    """Pick only the created_at/expires_at metadata out of RPC rows."""
+    if not isinstance(data, list):
+        return []
+    sessions = []
+    for row in data:
+        if not isinstance(row, dict):
+            continue
+        created = row.get("created_at")
+        expires = row.get("expires_at")
+        if created is None or expires is None:
+            continue
+        sessions.append({"created_at": str(created),
+                         "expires_at": str(expires)})
+    return sessions
+
+
+def _sb_list_user_sessions(user_id) -> list[dict]:
+    if not isinstance(user_id, str) or not user_id:
+        return []
+    try:
+        data = _sb_rpc(
+            "app_list_sessions", {"p_user_id": user_id}, "listing sessions"
+        )
+    except AuthServiceError:
+        return []
+    return _sessions_to_metadata(data)
+
+
+def _local_list_user_sessions(user_id) -> list[dict]:
+    if not isinstance(user_id, int):
+        return []
+    try:
+        conn = _local_ensure_db()
+        try:
+            rows = conn.execute(
+                "SELECT created_at, expires_at FROM sessions"
+                " WHERE user_id = ? ORDER BY created_at DESC",
+                (user_id,),
+            ).fetchall()
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return []
+    return [{"created_at": r["created_at"], "expires_at": r["expires_at"]}
+            for r in rows]
+
+
+def delete_account_rows(user_id) -> None:
+    """Delete the user's app-side rows: sessions + profile row.
+
+    Supabase mode raises AuthServiceError on failure; local mode
+    never raises. This does NOT delete the Supabase Auth user itself
+    — that goes through the auth admin channel, not here.
+    """
+    if get_auth_backend() == "supabase":
+        _sb_delete_account_rows(user_id)
+    else:
+        _local_delete_account_rows(user_id)
+
+
+def _sb_delete_account_rows(user_id) -> None:
+    if not isinstance(user_id, str) or not user_id:
+        raise AuthServiceError("User not found.")
+    _sb_rpc(
+        "app_delete_account_data",
+        {"p_user_id": user_id},
+        "deleting the account data",
+    )
+
+
+def _local_delete_account_rows(user_id) -> None:
+    if not isinstance(user_id, int):
+        return
+    try:
+        conn = _local_ensure_db()
+        try:
+            conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+            conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+            conn.commit()
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return
 
 
 # ---------------------------------------------------------------------------
