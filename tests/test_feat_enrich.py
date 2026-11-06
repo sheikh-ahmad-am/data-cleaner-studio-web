@@ -285,15 +285,19 @@ def test_settings_roundtrip():
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / "settings.json"
         assert ai_settings.load_settings(path)["groq_api_key"] == ""
-        assert ai_settings.load_settings(path)["theme"] == "Dark green"
+        assert ai_settings.load_settings(path)["theme"] == "Classic"
         assert ai_settings.get_api_key(path) is None
         ai_settings.save_settings({"groq_api_key": "gsk_abc",
-                                   "theme": "Light"}, path)
+                                   "theme": "Classic"}, path)
         assert ai_settings.load_settings(path)["groq_api_key"] == "gsk_abc"
         assert ai_settings.get_api_key(path) == "gsk_abc"
+        # A stored legacy theme name migrates to Classic on load.
+        ai_settings.save_settings({"groq_api_key": "gsk_abc",
+                                   "theme": "Dark blue"}, path)
+        assert ai_settings.load_settings(path)["theme"] == "Classic"
         # A broken file falls back to defaults, never crashes.
         path.write_text("{not json", encoding="utf-8")
-        assert ai_settings.load_settings(path)["theme"] == "Dark green"
+        assert ai_settings.load_settings(path)["theme"] == "Classic"
     print("settings round-trip OK")
 
 
@@ -443,14 +447,16 @@ def test_workspace_roundtrip():
 # --------------------------------------------------------------------------
 
 def test_themes():
-    assert set(fe.THEMES) == {"Dark green", "Dark blue", "Light"}
-    green = fe.theme_css("Dark green")
-    assert "#121212" in green and "#2F5D5A" in green
-    blue = fe.theme_css("Dark blue")
-    assert "#0d1b2a" in blue and "#4da6ff" in blue
-    light = fe.theme_css("Light")
-    assert "#ffffff" in light and "#1a7f37" in light
-    assert fe.theme_css("Nope") == fe.theme_css("Dark green")
+    # One Classic theme: the warm off-white / ink / deep-teal palette,
+    # and no trace of the retired dark themes.
+    assert set(fe.THEMES) == {"Classic"}
+    classic = fe.theme_css("Classic")
+    for colour in ("#FAF7F2", "#23272E", "#2F5D5A", "#F3EFE8", "#FFFFFF"):
+        assert colour in classic, f"{colour} missing from Classic CSS"
+    for banned in ("#121212", "#0d1b2a", "#4da6ff", "#1a7f37"):
+        assert banned not in classic, f"{banned} must not be in Classic CSS"
+    assert fe.theme_css("Nope") == fe.theme_css("Classic")
+    assert fe.theme_css("Dark green") == fe.theme_css("Classic")
     print("themes OK")
 
 
@@ -745,10 +751,13 @@ def test_render_workspace_theme_masking_versioned_language():
     with tempfile.TemporaryDirectory() as tmp:
         settings_path = Path(tmp) / "settings.json"
         with mock.patch.object(ai_settings, "SETTINGS_PATH", settings_path):
-            fake3 = FakeSt(presets={"n_theme_pick": "Dark blue"})
-            assert fe.render_theme_picker(fake3) == "Dark blue"
-            assert ai_settings.load_settings()["theme"] == "Dark blue"
-            assert fake3.session_state["n_theme_data"] == "Dark blue"
+            # The theme picker is retired: it applies Classic and returns
+            # it, with no picker UI (a stale stored name migrates too).
+            ai_settings.save_settings({"theme": "Dark blue"}, settings_path)
+            fake3 = FakeSt()
+            assert fe.render_theme_picker(fake3) == "Classic"
+            assert ai_settings.load_settings()["theme"] == "Classic"
+            assert fake3.session_state["n_theme_data"] == "Classic"
             fake4 = FakeSt(presets={"n_lang_pick": "हिन्दी"})
             assert fe.render_language_picker(fake4) == "hi"
             assert ai_settings.load_settings()["language"] == "hi"

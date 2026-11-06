@@ -442,15 +442,16 @@ def render_email_schedule(st, kpis, actions, raw, clean):
                     "Your Data Cleaner Studio report is attached.\n\n"
                     + summary, pdf_bytes)
                 port_n = int(port.strip())
-                if port_n == 465:
-                    smtp = smtplib.SMTP_SSL(server.strip(), port_n, timeout=30)
-                else:
-                    smtp = smtplib.SMTP(server.strip(), port_n, timeout=30)
-                    if port_n == 587:
-                        smtp.starttls()
-                with smtp:
-                    smtp.login(username.strip(), password)
-                    smtp.send_message(msg)
+                with st.spinner("Sending the test email…"):
+                    if port_n == 465:
+                        smtp = smtplib.SMTP_SSL(server.strip(), port_n, timeout=30)
+                    else:
+                        smtp = smtplib.SMTP(server.strip(), port_n, timeout=30)
+                        if port_n == 587:
+                            smtp.starttls()
+                    with smtp:
+                        smtp.login(username.strip(), password)
+                        smtp.send_message(msg)
                 st.success(f"Test email sent to {recipient.strip()}.")
             except Exception as e:  # noqa: BLE001 - show the real error
                 st.error(f"Could not send the email: {e}")
@@ -492,7 +493,8 @@ def render_db_connect(st):
         if not ok:
             st.error(msg)
         else:
-            ok, msg = feat_db.test_connection(db_type, params=params)
+            with st.spinner("Testing the connection…"):
+                ok, msg = feat_db.test_connection(db_type, params=params)
             if ok:
                 st.success(msg)
                 connected = True
@@ -513,8 +515,9 @@ def render_db_connect(st):
             table = st.selectbox("Table", tables, key="e_db_table_pick")
             if st.button("Load table", key="e_db_load"):
                 try:
-                    df = feat_db.load_table(db_type, params=params,
-                                            table=table)
+                    with st.spinner(f"Loading {table}…"):
+                        df = feat_db.load_table(db_type, params=params,
+                                                table=table)
                     st.success(f"Loaded {len(df):,} rows from {table}.")
                     return df, f"{db_type} : {table}"
                 except Exception as e:  # noqa: BLE001

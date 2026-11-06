@@ -7,6 +7,7 @@ PDF attachment, charts build on the sample, Sheets creds validation.
 No real email is ever sent and no network call is ever made.
 """
 
+import contextlib
 import datetime
 import io
 import json
@@ -66,6 +67,10 @@ class FakeSt:
 
     def error(self, text):
         self._rec("error", text)
+
+    def spinner(self, text):
+        self._rec("spinner", text)
+        return contextlib.nullcontext()
 
     def markdown(self, text):
         self._rec("markdown", text)

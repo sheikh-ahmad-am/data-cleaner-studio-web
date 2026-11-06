@@ -93,9 +93,107 @@ except ImportError:  # Cloud rework: fall back to a local stand-in
     class AuthServiceError(Exception):
         """Auth service error (fallback if auth.py does not define it)."""
 
-st.set_page_config(page_title="Data Cleaner Studio", layout="wide")
-
 _APP_DIR = Path(__file__).resolve().parent
+
+# ------------------------------------------------- design system (Classic) --
+# The app's ONE consolidated stylesheet: warm off-white background, white
+# cards, ink text, one deep-teal accent. Injected at the top of the app
+# (right after set_page_config, below) so the login / signup screen gets
+# it too — the teal primary-button rules here are the fallback if the
+# [theme] section of .streamlit/config.toml is ever missing. This folds
+# in the old fix-batch CSS block (KPI metrics, file-uploader chips,
+# alerts, tab-bar radio) that used to live further down the file, so
+# there is exactly one stylesheet to maintain.
+DESIGN_SYSTEM_CSS = """<style>
+/* ---- page ---- */
+.stApp { background-color: #FAF7F2; color: #23272E; }
+.stApp p, .stApp li, .stApp span { color: #23272E; }
+/* ---- typography ---- */
+.stApp h1 { font-size: 1.9rem; font-weight: 700; color: #23272E;
+  line-height: 1.2; margin-bottom: 0.25rem; }
+.stApp h2 { font-size: 1.4rem; font-weight: 700; color: #23272E;
+  margin-top: 1.25rem; margin-bottom: 0.5rem; }
+.stApp h3 { font-size: 1.15rem; font-weight: 600; color: #23272E;
+  margin-top: 1rem; margin-bottom: 0.4rem; }
+.stApp [data-testid="stCaptionContainer"], .stApp small {
+  color: #6E6A61; }
+/* ---- cards ---- */
+.dcs-card { background-color: #FFFFFF; border: 1px solid #E5E0D8;
+  border-radius: 12px; padding: 1rem 1.25rem;
+  box-shadow: 0 1px 3px rgba(35, 39, 46, 0.06); margin-bottom: 1rem; }
+div[data-testid="stExpander"] { background-color: #FFFFFF;
+  border: 1px solid #E5E0D8; border-radius: 12px; }
+/* ---- spacing: consistent gaps between sections ---- */
+div[data-testid="stVerticalBlock"] > div { gap: 0.75rem; }
+/* ---- buttons ---- */
+.stApp .stButton > button[kind="primary"],
+div[data-testid="stButton"] > button[kind="primary"] {
+  background-color: #2F5D5A; color: #FFFFFF; border-color: #2F5D5A; }
+.stApp .stButton > button[kind="primary"]:hover,
+div[data-testid="stButton"] > button[kind="primary"]:hover {
+  background-color: #264845; border-color: #264845; color: #FFFFFF; }
+.stApp .stButton > button[kind="secondary"],
+div[data-testid="stButton"] > button[kind="secondary"] {
+  background-color: #EFEDE8; color: #23272E; border-color: #D9D4C9; }
+.stApp .stButton > button[kind="secondary"]:hover,
+div[data-testid="stButton"] > button[kind="secondary"]:hover {
+  background-color: #E5E0D8; color: #23272E; border-color: #D9D4C9; }
+/* Danger buttons (delete / clear / reset / remove) are secondary buttons
+   (type="secondary", never primary). Streamlit buttons cannot carry a
+   custom class, so the danger colour lives on this .dcs-danger hook for
+   any future wrapper that can target it — the buttons themselves rely
+   on the secondary treatment above. */
+.dcs-danger button[kind="secondary"] { color: #9A4A38 !important;
+  border-color: #9A4A38 !important; }
+div[data-testid="stDownloadButton"] > button {
+  background-color: #EFEDE8; color: #23272E; border-color: #D9D4C9; }
+/* ---- inputs ---- */
+.stApp input, .stApp textarea, .stApp select {
+  background-color: #FFFFFF; color: #23272E;
+  border-color: #E5E0D8; border-radius: 8px; }
+.stApp label { color: #23272E; }
+/* ---- sidebar ---- */
+section[data-testid="stSidebar"] { background-color: #F3EFE8; }
+section[data-testid="stSidebar"] * { color: #23272E; }
+section[data-testid="stSidebar"] a { color: #2F5D5A; }
+/* ---- links ---- */
+.stApp a { color: #2F5D5A; }
+/* ---- KPI metric values + labels: ink, never faint grey ---- */
+div[data-testid="stMetricValue"], div[data-testid="stMetricValue"] * {
+  color: #23272E !important; }
+div[data-testid="stMetricLabel"], div[data-testid="stMetricLabel"] * {
+  color: #6E6A61 !important; }
+/* ---- file-uploader dropzone + uploaded-file chips: ink on white ---- */
+div[data-testid="stFileUploader"], div[data-testid="stFileUploader"] * {
+  color: #23272E !important; }
+/* ---- info / success / warning / error boxes: nested elements ink ---- */
+div[data-testid="stAlert"], div[data-testid="stAlert"] * {
+  color: #23272E !important; }
+div[data-testid="stAlert"] a { color: #2F5D5A !important; }
+/* ---- section switcher (radio styled as a tab bar) ---- */
+div[data-testid="stRadio"] div[role="radiogroup"] {
+  gap: 0.35rem !important; }
+div[data-testid="stRadio"] div[role="radiogroup"] label {
+  background-color: #EFEDE8 !important;
+  border: 1px solid #D9D4C9 !important;
+  border-radius: 8px !important;
+  padding: 0.35rem 0.9rem !important;
+  color: #23272E !important; }
+div[data-testid="stRadio"] div[role="radiogroup"] label:has(input:checked) {
+  background-color: #2F5D5A !important;
+  border-color: #2F5D5A !important;
+  color: #FFFFFF !important; }
+/* ---- footer ---- */
+.dcs-footer { color: #6E6A61; font-size: 0.85rem; text-align: center;
+  padding: 1.5rem 0 0.5rem; }
+</style>"""
+
+st.set_page_config(page_title="Data Cleaner Studio", layout="wide",
+                   page_icon=str(_APP_DIR / "assets" / "favicon.png"))
+
+# Injected before the login view renders (and before the share-link
+# handling below), so the auth screen gets the design system too.
+st.markdown(DESIGN_SYSTEM_CSS, unsafe_allow_html=True)
 _SHARES_FILENAME = "shares.json"
 _STORAGE_KEY_RE = re.compile(r"^[a-zA-Z0-9_]{3,30}$")
 
@@ -468,184 +566,193 @@ if st.session_state.get("auth_token"):
         st.session_state["storage_key"] = _storage_key(_current_user)
 
 if _current_user is None:
-    # ---- login / signup screen ONLY. No data, no sidebar, no tabs. ----
-    st.title("Data Cleaner Studio")
-    st.write("Put in messy data. Get clean data, KPIs, charts and a report.")
-    banner = auth.get_local_mode_banner()
-    if banner:
-        st.info(banner)
-    warning = auth.get_backend_warning()
-    if warning:
-        st.warning(warning)
-    backend = auth.get_auth_backend()
-    if backend == "local":
-        st.caption("Local mode — accounts live on this server only. "
-                   "Cloud accounts need Supabase configured "
-                   "(see Settings).")
-    else:
-        st.caption("Cloud accounts are active.")
-    if st.session_state.get("google_error"):
-        st.error(st.session_state.pop("google_error"))
-    mode = st.radio("Account", ["Log in", "Sign up"], key="auth_mode",
-                    horizontal=True)
-    id_label = "Email" if backend != "local" else "Username"
-    id_help = ("Your email address." if backend != "local"
-               else "3–30 characters, letters, digits or underscore only.")
-    ident = st.text_input(id_label, key="auth_id_input", help=id_help)
-    password = st.text_input("Password", type="password",
-                             key="auth_pw_input",
-                             help="At least 8 characters.")
-    # Turnstile security check (cloud mode + key configured only; local
-    # mode has no check). One widget serves both Log in and Sign up:
-    # it sits above the buttons, and its token rides to Supabase with
-    # the submit. Tokens are single-use, so after every attempt the
-    # counter below remounts the widget for a fresh token.
-    _turnstile_key = _turnstile_site_key() if backend != "local" else None
-    _turnstile_token = None
-    if _turnstile_key:
-        if "turnstile_counter" not in st.session_state:
-            st.session_state["turnstile_counter"] = 0
-        _turnstile_token = turnstile_component.turnstile_token(
-            _turnstile_key,
-            key=f"turnstile-{st.session_state['turnstile_counter']}",
-            reset=st.session_state["turnstile_counter"],
-        )
-    if mode == "Log in":
-        if st.button("Log in", key="auth_login_btn", type="primary"):
-            if not ident.strip() or not password:
-                st.error("Enter your email/username and password.")
-            elif _turnstile_key and not _turnstile_token:
-                st.error("Complete the security check above first.")
-            else:
-                _unconfirmed = False
-                _captcha_failed = False
-                with st.spinner("Logging you in…"):
-                    try:
-                        user = auth.authenticate(
-                            ident.strip(), password,
-                            captcha_token=_turnstile_token)
-                    except auth.EmailNotConfirmedError:
-                        # Registered but the email is not confirmed yet:
-                        # neither a wrong password nor a service error.
-                        st.error("Check your inbox — click the verification "
-                                 "link first, then log in.")
-                        user = None
-                        _unconfirmed = True
-                    except auth.CaptchaFailedError:
-                        st.error(auth.CAPTCHA_FAILED_MESSAGE)
-                        user = None
-                        _captcha_failed = True
-                    except AuthServiceError as exc:
-                        st.error(f"Account service error: {exc}")
-                        user = None
-                # The token is spent now (single-use): the next
-                # attempt gets a fresh widget.
-                if _turnstile_key:
-                    st.session_state["turnstile_counter"] = (
-                        st.session_state.get("turnstile_counter", 0) + 1)
-                if user is None:
-                    if not _unconfirmed and not _captcha_failed:
-                        st.error("Wrong email/username or password. Try again.")
-                elif _log_user_in(user):
-                    st.rerun()
-    else:
-        if st.button("Create account", key="auth_signup_btn", type="primary"):
-            if not ident.strip() or not password:
-                st.error("Enter an email/username and a password "
-                         "(at least 8 characters).")
-            elif _turnstile_key and not _turnstile_token:
-                st.error("Complete the security check above first.")
-            else:
-                _captcha_failed = False
-                with st.spinner("Creating your account…"):
-                    try:
-                        ok, error = auth.create_user(
-                            ident.strip(), password,
-                            captcha_token=_turnstile_token)
-                    except auth.CaptchaFailedError:
-                        st.error(auth.CAPTCHA_FAILED_MESSAGE)
-                        ok, error = False, None
-                        _captcha_failed = True
-                    except AuthServiceError as exc:
-                        st.error(f"Account service error: {exc}")
-                        ok, error = False, None
-                # The token is spent now (single-use): the next
-                # attempt gets a fresh widget.
-                if _turnstile_key:
-                    st.session_state["turnstile_counter"] = (
-                        st.session_state.get("turnstile_counter", 0) + 1)
-                if not ok:
-                    if not _captcha_failed:
-                        st.error(error or "Could not create the account.")
-                elif error == auth.SIGNUP_NEEDS_CONFIRMATION:
-                    # The account exists but the email is not confirmed
-                    # yet ("Confirm email" is on): no auto-login and no
-                    # session cookie — the user must click the link in
-                    # their inbox first.
-                    st.success("Account created — check your inbox and click "
-                               "the verification link first, then log in here.")
+    _lc1, _lc2, _lc3 = st.columns([1, 1.4, 1])
+    with _lc2:
+        # ---- login / signup screen ONLY. No data, no sidebar, no tabs. ----
+        # Brand header: logo mark + name + the tagline, in the centred
+        # narrow column. The Log in / Create account buttons below are
+        # teal via the [theme] primary colour (plus the design-system
+        # stylesheet injected at the top of this file as a fallback).
+        _login_logo = _APP_DIR / "assets" / "logo.svg"
+        if _login_logo.is_file():
+            st.image(str(_login_logo), width=72)
+        st.title("Data Cleaner Studio")
+        st.write("Put in messy data. Get clean data, KPIs, charts and a report.")
+        banner = auth.get_local_mode_banner()
+        if banner:
+            st.info(banner)
+        warning = auth.get_backend_warning()
+        if warning:
+            st.warning(warning)
+        backend = auth.get_auth_backend()
+        if backend == "local":
+            st.caption("Local mode — accounts live on this server only. "
+                       "Cloud accounts need Supabase configured "
+                       "(see Settings).")
+        else:
+            st.caption("Cloud accounts are active.")
+        if st.session_state.get("google_error"):
+            st.error(st.session_state.pop("google_error"))
+        mode = st.radio("Account", ["Log in", "Sign up"], key="auth_mode",
+                        horizontal=True)
+        id_label = "Email" if backend != "local" else "Username"
+        id_help = ("Your email address." if backend != "local"
+                   else "3–30 characters, letters, digits or underscore only.")
+        ident = st.text_input(id_label, key="auth_id_input", help=id_help)
+        password = st.text_input("Password", type="password",
+                                 key="auth_pw_input",
+                                 help="At least 8 characters.")
+        # Turnstile security check (cloud mode + key configured only; local
+        # mode has no check). One widget serves both Log in and Sign up:
+        # it sits above the buttons, and its token rides to Supabase with
+        # the submit. Tokens are single-use, so after every attempt the
+        # counter below remounts the widget for a fresh token.
+        _turnstile_key = _turnstile_site_key() if backend != "local" else None
+        _turnstile_token = None
+        if _turnstile_key:
+            if "turnstile_counter" not in st.session_state:
+                st.session_state["turnstile_counter"] = 0
+            _turnstile_token = turnstile_component.turnstile_token(
+                _turnstile_key,
+                key=f"turnstile-{st.session_state['turnstile_counter']}",
+                reset=st.session_state["turnstile_counter"],
+            )
+        if mode == "Log in":
+            if st.button("Log in", key="auth_login_btn", type="primary"):
+                if not ident.strip() or not password:
+                    st.error("Enter your email/username and password.")
+                elif _turnstile_key and not _turnstile_token:
+                    st.error("Complete the security check above first.")
                 else:
-                    # Confirmed account (or local mode, which has no
-                    # confirmation step): log the new user straight in,
-                    # on the same session path the Log in button uses.
-                    # If that ever fails, fall back to the old
-                    # "switch to Log in" message.
                     _unconfirmed = False
-                    _captcha_spent = False
+                    _captcha_failed = False
                     with st.spinner("Logging you in…"):
                         try:
-                            # Same token as the sign-up call: with
-                            # CAPTCHA still off in Supabase it is
-                            # ignored and the login succeeds; with
-                            # CAPTCHA on it is spent (single-use) and
-                            # the login asks for a fresh check instead
-                            # — the account already exists, so the
-                            # user just logs in with a new check.
                             user = auth.authenticate(
                                 ident.strip(), password,
                                 captcha_token=_turnstile_token)
                         except auth.EmailNotConfirmedError:
+                            # Registered but the email is not confirmed yet:
+                            # neither a wrong password nor a service error.
+                            st.error("Check your inbox — click the verification "
+                                     "link first, then log in.")
                             user = None
                             _unconfirmed = True
                         except auth.CaptchaFailedError:
+                            st.error(auth.CAPTCHA_FAILED_MESSAGE)
                             user = None
-                            _captcha_spent = True
-                        except AuthServiceError:
+                            _captcha_failed = True
+                        except AuthServiceError as exc:
+                            st.error(f"Account service error: {exc}")
                             user = None
-                    if user is not None and _log_user_in(user):
-                        st.session_state["just_signed_up"] = True
+                    # The token is spent now (single-use): the next
+                    # attempt gets a fresh widget.
+                    if _turnstile_key:
+                        st.session_state["turnstile_counter"] = (
+                            st.session_state.get("turnstile_counter", 0) + 1)
+                    if user is None:
+                        if not _unconfirmed and not _captcha_failed:
+                            st.error("Wrong email/username or password. Try again.")
+                    elif _log_user_in(user):
                         st.rerun()
-                    elif _unconfirmed:
+        else:
+            if st.button("Create account", key="auth_signup_btn", type="primary"):
+                if not ident.strip() or not password:
+                    st.error("Enter an email/username and a password "
+                             "(at least 8 characters).")
+                elif _turnstile_key and not _turnstile_token:
+                    st.error("Complete the security check above first.")
+                else:
+                    _captcha_failed = False
+                    with st.spinner("Creating your account…"):
+                        try:
+                            ok, error = auth.create_user(
+                                ident.strip(), password,
+                                captcha_token=_turnstile_token)
+                        except auth.CaptchaFailedError:
+                            st.error(auth.CAPTCHA_FAILED_MESSAGE)
+                            ok, error = False, None
+                            _captcha_failed = True
+                        except AuthServiceError as exc:
+                            st.error(f"Account service error: {exc}")
+                            ok, error = False, None
+                    # The token is spent now (single-use): the next
+                    # attempt gets a fresh widget.
+                    if _turnstile_key:
+                        st.session_state["turnstile_counter"] = (
+                            st.session_state.get("turnstile_counter", 0) + 1)
+                    if not ok:
+                        if not _captcha_failed:
+                            st.error(error or "Could not create the account.")
+                    elif error == auth.SIGNUP_NEEDS_CONFIRMATION:
+                        # The account exists but the email is not confirmed
+                        # yet ("Confirm email" is on): no auto-login and no
+                        # session cookie — the user must click the link in
+                        # their inbox first.
                         st.success("Account created — check your inbox and click "
                                    "the verification link first, then log in here.")
-                    elif _captcha_spent:
-                        st.success("Account created — log in with your new "
-                                   "account.")
                     else:
-                        st.success("Account created — switch to 'Log in' "
-                                   "above and log in with it.")
-    google_url = None
-    _google_entry = (getattr(auth, "get_google_sign_in_url", None)
-                     or getattr(auth, "google_sign_in_url", None))
-    if callable(_google_entry):
-        try:
-            google_url = _google_entry()
-        except Exception:  # noqa: BLE001 - no Google URL, show the note
-            google_url = None
-    if google_url and _google_oauth_enabled():
-        st.write("— or —")
-        st.link_button("Continue with Google", google_url)
-    elif not google_url:
-        # Local mode: get_google_sign_in_url() returns None, so there
-        # is no button — show the plain-words reason instead.
-        st.caption("Google sign-in needs Supabase configured first: "
-                   "add the Supabase details to the app's secrets "
-                   "(see README.md) and enable Google in the Supabase "
-                   "dashboard. "
-                   "For now, use email and password above.")
-    # else: Supabase is up but GOOGLE_OAUTH_ENABLED is off (the
-    # default) — the button stays hidden, no dead end, no note.
-    st.stop()
+                        # Confirmed account (or local mode, which has no
+                        # confirmation step): log the new user straight in,
+                        # on the same session path the Log in button uses.
+                        # If that ever fails, fall back to the old
+                        # "switch to Log in" message.
+                        _unconfirmed = False
+                        _captcha_spent = False
+                        with st.spinner("Logging you in…"):
+                            try:
+                                # Same token as the sign-up call: with
+                                # CAPTCHA still off in Supabase it is
+                                # ignored and the login succeeds; with
+                                # CAPTCHA on it is spent (single-use) and
+                                # the login asks for a fresh check instead
+                                # — the account already exists, so the
+                                # user just logs in with a new check.
+                                user = auth.authenticate(
+                                    ident.strip(), password,
+                                    captcha_token=_turnstile_token)
+                            except auth.EmailNotConfirmedError:
+                                user = None
+                                _unconfirmed = True
+                            except auth.CaptchaFailedError:
+                                user = None
+                                _captcha_spent = True
+                            except AuthServiceError:
+                                user = None
+                        if user is not None and _log_user_in(user):
+                            st.session_state["just_signed_up"] = True
+                            st.rerun()
+                        elif _unconfirmed:
+                            st.success("Account created — check your inbox and click "
+                                       "the verification link first, then log in here.")
+                        elif _captcha_spent:
+                            st.success("Account created — log in with your new "
+                                       "account.")
+                        else:
+                            st.success("Account created — switch to 'Log in' "
+                                       "above and log in with it.")
+        google_url = None
+        _google_entry = (getattr(auth, "get_google_sign_in_url", None)
+                         or getattr(auth, "google_sign_in_url", None))
+        if callable(_google_entry):
+            try:
+                google_url = _google_entry()
+            except Exception:  # noqa: BLE001 - no Google URL, show the note
+                google_url = None
+        if google_url and _google_oauth_enabled():
+            st.write("— or —")
+            st.link_button("Continue with Google", google_url)
+        elif not google_url:
+            # Local mode: get_google_sign_in_url() returns None, so there
+            # is no button — show the plain-words reason instead.
+            st.caption("Google sign-in needs Supabase configured first: "
+                       "add the Supabase details to the app's secrets "
+                       "(see README.md) and enable Google in the Supabase "
+                       "dashboard. "
+                       "For now, use email and password above.")
+        # else: Supabase is up but GOOGLE_OAUTH_ENABLED is off (the
+        # default) — the button stays hidden, no dead end, no note.
+        st.stop()
 
 # ---- logged in from here on. ----
 _user = st.session_state["current_user"]
@@ -715,8 +822,16 @@ def _t(key):
 
 _title = (_brand.get("name") if _brand.get("name")
           and _brand["name"] != "Data Cleaner Studio" else _t("app_title"))
-st.title(_title)
-st.write("Put in messy data. Get clean data, KPIs, charts and a report.")
+# App header (same on every tab — it sits above the section switcher):
+# logo mark + title + the flow caption.
+_hc_logo, _hc_title = st.columns([0.6, 12])
+with _hc_logo:
+    _header_logo = _APP_DIR / "assets" / "logo.svg"
+    if _header_logo.is_file():
+        st.image(str(_header_logo), width=44)
+with _hc_title:
+    st.title(_title)
+    st.write("Put in messy data. Get clean data, KPIs, charts and a report.")
 # The main flow, at a glance: upload -> clean -> KPIs -> export.
 # One step is "you are here"; finished steps get a tick.
 _flow_current = 2 if st.session_state.clean is None else 3
@@ -928,12 +1043,13 @@ if st.session_state.get("pending_excel"):
             "Sheet", ex_sheets + ["All sheets combined"], key="excel_sheet_pick")
         if st.sidebar.button("Load sheet", key="excel_sheet_load"):
             try:
-                if ex_choice == "All sheets combined":
-                    ex_df, _ = feat_combine.load_excel_all(ex_bytes)
-                    _set_raw(ex_df, f"{ex_name} (all sheets)")
-                else:
-                    _set_raw(feat_combine.load_excel_sheet(ex_bytes, ex_choice),
-                             f"{ex_name} : {ex_choice}")
+                with st.spinner("Loading that sheet…"):
+                    if ex_choice == "All sheets combined":
+                        ex_df, _ = feat_combine.load_excel_all(ex_bytes)
+                        _set_raw(ex_df, f"{ex_name} (all sheets)")
+                    else:
+                        _set_raw(feat_combine.load_excel_sheet(ex_bytes, ex_choice),
+                                 f"{ex_name} : {ex_choice}")
                 st.session_state["pending_excel"] = None
             except Exception as e:  # noqa: BLE001
                 st.sidebar.error(f"Could not load that sheet: {e}")
@@ -960,9 +1076,10 @@ if _saved_uploads:
         if _c1.button("Open", key="saved_upload_open",
                       disabled=not _saved_pick) and _saved_pick:
             try:
-                _saved_bytes = storage.read_file(_skey, "uploads", _saved_pick)
-                _set_raw(engine.load_file(_saved_pick, _saved_bytes),
-                         _saved_pick, kind="upload")
+                with st.spinner("Opening that file…"):
+                    _saved_bytes = storage.read_file(_skey, "uploads", _saved_pick)
+                    _set_raw(engine.load_file(_saved_pick, _saved_bytes),
+                             _saved_pick, kind="upload")
                 st.session_state["last_upload"] = None
                 if _restore_cleaned_state(_saved_pick):
                     st.sidebar.success(
@@ -974,6 +1091,7 @@ if _saved_uploads:
             except Exception as e:  # noqa: BLE001
                 st.sidebar.error(f"Could not open that file: {e}")
         if _c2.button("Delete", key="saved_upload_delete",
+                      type="secondary",
                       disabled=not _saved_pick) and _saved_pick:
             try:
                 storage.delete_file(_skey, "uploads", _saved_pick)
@@ -993,8 +1111,9 @@ with st.sidebar.expander("More ways to load"):
                      "paste the link here.")
         else:
             try:
-                _set_raw(engine.load_sheets_url(sheet_url.strip()), "Google Sheet",
-                         kind="sheets", url=sheet_url.strip())
+                with st.spinner("Loading that sheet…"):
+                    _set_raw(engine.load_sheets_url(sheet_url.strip()), "Google Sheet",
+                             kind="sheets", url=sheet_url.strip())
                 st.session_state["last_upload"] = None
             except Exception as e:  # noqa: BLE001
                 st.error(f"Could not load that sheet: {e}")
@@ -1013,8 +1132,9 @@ with st.sidebar.expander("More ways to load"):
             table = st.selectbox("Table", tables, key="db_table")
             if st.button("Load table", key="db_load"):
                 try:
-                    _set_raw(engine.load_sqlite(db_file.getvalue(), table),
-                             f"{db_file.name} : {table}")
+                    with st.spinner("Loading that table…"):
+                        _set_raw(engine.load_sqlite(db_file.getvalue(), table),
+                                 f"{db_file.name} : {table}")
                     st.session_state["last_upload"] = None
                 except Exception as e:  # noqa: BLE001
                     st.error(f"Could not load that table: {e}")
@@ -1039,51 +1159,10 @@ feat_analyse.render_client_mode_toggle(st)
 with st.sidebar.expander("Settings (API key)"):
     ai_settings.render_settings(st)
 
-feat_enrich.render_theme_picker(st)
-# Extra readable-contrast rules: the theme stylesheet already covers
-# secondary buttons, but KPI metric values, file-uploader chips and
-# info boxes still relied on Streamlit's faint defaults. Ink #23272E
-# on warm neutrals; accent teal #2F5D5A for primary actions only.
-# Injected AFTER the theme picker (which injects its own CSS), so
-# these rules win. The section-switcher rules style the radio below
-# as a tab bar; if Streamlit ever changes those selectors it
-# degrades to a plain option row, still fully working.
-st.markdown("""<style>
-/* KPI metric values + labels: ink, never faint grey. */
-div[data-testid="stMetricValue"], div[data-testid="stMetricValue"] * {
-  color: #23272E !important;
-}
-div[data-testid="stMetricLabel"], div[data-testid="stMetricLabel"] * {
-  color: #6E6A61 !important;
-}
-/* File-uploader dropzone + uploaded-file chips: ink text on white. */
-div[data-testid="stFileUploader"], div[data-testid="stFileUploader"] * {
-  color: #23272E !important;
-}
-/* Info / success / warning / error boxes: every nested element ink. */
-div[data-testid="stAlert"], div[data-testid="stAlert"] * {
-  color: #23272E !important;
-}
-div[data-testid="stAlert"] a {
-  color: #2F5D5A !important;
-}
-/* Section switcher (radio styled as a tab bar). */
-div[data-testid="stRadio"] div[role="radiogroup"] {
-  gap: 0.35rem !important;
-}
-div[data-testid="stRadio"] div[role="radiogroup"] label {
-  background-color: #EFEDE8 !important;
-  border: 1px solid #D9D4C9 !important;
-  border-radius: 8px !important;
-  padding: 0.35rem 0.9rem !important;
-  color: #23272E !important;
-}
-div[data-testid="stRadio"] div[role="radiogroup"] label:has(input:checked) {
-  background-color: #2F5D5A !important;
-  border-color: #2F5D5A !important;
-  color: #FFFFFF !important;
-}
-</style>""", unsafe_allow_html=True)
+# No theme picker any more: the app has one Classic theme (set in
+# .streamlit/config.toml and in the design-system stylesheet at the top
+# of this file). The old per-theme CSS block that lived here is folded
+# into that stylesheet — there is exactly one stylesheet now.
 feat_enrich.render_language_picker(st)
 _ws_on = feat_enrich.render_workspace_toggle(st)
 
@@ -1118,8 +1197,24 @@ if raw is not None and st.session_state.source_kind == "sheets":
                 st.error(f"Refresh failed: {e}")
 
 if raw is None:
-    st.info("Upload a file, load a Google Sheet, open a database table, "
-            "or try the messy sample to begin.")
+    # Guided empty state: what to do first, plus a one-click way to try
+    # the sample — the same loader the sidebar "Try the messy sample"
+    # button uses, not a second mechanism.
+    st.subheader("Nothing loaded yet")
+    st.info("Start in the sidebar on the left: upload a file, load a "
+            "Google Sheet, or open a database table. Or skip the setup "
+            "and explore with the sample file — it loads the messy sales "
+            "data (80 rows) so you can see cleaning, KPIs and the report "
+            "right away.")
+    if st.button("Try the sample data", key="empty_try_sample",
+                 type="primary"):
+        _sample_path = _APP_DIR / "sample_data" / "messy_sales.csv"
+        with st.spinner("Loading the sample file…"):
+            _set_raw(engine.load_file("messy_sales.csv",
+                                      _sample_path.read_bytes()),
+                     "messy_sales.csv (sample)", kind="sample")
+        st.session_state["last_upload"] = None
+        st.rerun()
     st.stop()
 
 if (st.session_state.get("auto_refresh")
@@ -1225,12 +1320,20 @@ _tab_labels = {"preview": _t("preview"), "join": _t("join"),
 # from where they were. A radio IS sticky: its value lives in
 # session state under "active_tab", survives every rerun, and can
 # be set programmatically (e.g. back to the first section on
-# logout). The CSS below (injected after the theme picker) styles
+# logout). The design-system stylesheet at the top of this file styles
 # the options as a tab bar; if those selectors ever stop matching
 # a new Streamlit version it degrades to a plain option row, still
 # fully working. `tab` stays a set of the available keys so the
 # `if "join" in tab:` guards below keep working.
 _tab_options = [_tab_labels[k] for k in _tab_keys]
+# A "Go to the Clean tab" empty-state button (or any other code) asks
+# for a section switch by setting pending_tab, then rerunning: it is
+# applied here, BEFORE the Section radio is created — writing the
+# radio's session key after it exists raises
+# StreamlitWidgetAlreadyInstantiatedError. Same idea as an_pending_view.
+_pending_tab = st.session_state.pop("pending_tab", None)
+if _pending_tab in _tab_labels:
+    st.session_state["active_tab"] = _tab_labels[_pending_tab]
 if st.session_state.get("active_tab") not in _tab_options:
     st.session_state["active_tab"] = _tab_options[0]
 _active_label = st.radio("Section", _tab_options, key="active_tab",
@@ -1543,7 +1646,16 @@ if _active_tab == "clean":
 # ------------------------------------------------------------------ KPIs ---
 if _active_tab == "kpis":
     if clean is None:
-        st.info("Clean the data first — the KPIs will appear here.")
+        st.subheader("No KPIs yet")
+        st.info("Your file is loaded — now clean it and the KPIs will "
+                "appear here. Go to the Clean tab, tick what to fix, and "
+                "press the clean button.")
+        if st.button("Go to the Clean tab", key="kpi_goto_clean",
+                     type="primary"):
+            # Via pending_tab, not a direct active_tab write: the Section
+            # radio is already instantiated by the time this button runs.
+            st.session_state["pending_tab"] = "clean"
+            st.rerun()
     else:
         st.subheader("KPIs")
         kpis = engine.auto_kpis(filtered)
@@ -1575,7 +1687,16 @@ if _active_tab == "kpis":
 # -------------------------------------------------------------- dashboard ---
 if _active_tab == "dashboard":
     if clean is None:
-        st.info("Clean the data first — the charts will appear here.")
+        st.subheader("No charts yet")
+        st.info("Your file is loaded — now clean it and the charts will "
+                "appear here. Go to the Clean tab, tick what to fix, and "
+                "press the clean button.")
+        if st.button("Go to the Clean tab", key="dash_goto_clean",
+                     type="primary"):
+            # Via pending_tab, not a direct active_tab write: the Section
+            # radio is already instantiated by the time this button runs.
+            st.session_state["pending_tab"] = "clean"
+            st.rerun()
     else:
         import altair as alt
 
@@ -1773,7 +1894,17 @@ if "compare" in tab:
 # ---------------------------------------------------------------- report ---
 if _active_tab == "report":
     if clean is None:
-        st.info("Clean the data first — the report will appear here.")
+        st.subheader("No report yet")
+        st.info("Your file is loaded — now clean it and the report will "
+                "appear here, with the cleaned file to download. Go to "
+                "the Clean tab, tick what to fix, and press the clean "
+                "button.")
+        if st.button("Go to the Clean tab", key="report_goto_clean",
+                     type="primary"):
+            # Via pending_tab, not a direct active_tab write: the Section
+            # radio is already instantiated by the time this button runs.
+            st.session_state["pending_tab"] = "clean"
+            st.rerun()
     else:
         st.subheader("Report")
         report = engine.build_report(raw, clean, st.session_state.actions,
@@ -2020,7 +2151,8 @@ if "settings" in tab:
                         st.rerun()
                     except Exception as e:  # noqa: BLE001
                         st.error(f"Could not save the job list: {e}")
-                if _c3.button("Delete", key=f"sched_delete_{_pos}"):
+                if _c3.button("Delete", key=f"sched_delete_{_pos}",
+                               type="secondary"):
                     del _all_jobs[_ji]
                     try:
                         scheduler.save_registry(_jobs_file, _payload)
@@ -2075,7 +2207,8 @@ if "settings" in tab:
                               f"created {_snap.get('created_at', '?')} — "
                               f"{'REVOKED' if _snap.get('revoked') else 'active'}")
                     if not _snap.get("revoked"):
-                        if _c2.button("Revoke", key=f"share_revoke_{_pos}"):
+                        if _c2.button("Revoke", key=f"share_revoke_{_pos}",
+                                       type="secondary"):
                             _shares[_tok]["revoked"] = True
                             try:
                                 storage.save_json(_skey, "views", _SHARES_FILENAME,

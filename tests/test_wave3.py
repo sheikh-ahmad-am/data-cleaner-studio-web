@@ -232,12 +232,12 @@ def _fake_signup_resp(confirmed):
 
 
 # ------------------------------------------------------------------ unit
-def test_enrich_dark_green_button_text():
-    theme = feat_enrich.THEMES["Dark green"]
+def test_enrich_classic_button_text():
+    theme = feat_enrich.THEMES["Classic"]
     assert theme["button_text"] == "#FFFFFF", theme
-    css = feat_enrich.theme_css("Dark green")
+    css = feat_enrich.theme_css("Classic")
     assert "#2F5D5A" in css and "#FFFFFF" in css
-    print("enrich one-liner OK: Dark green button text #FFFFFF on #2F5D5A")
+    print("enrich one-liner OK: Classic button text #FFFFFF on #2F5D5A")
 
 
 def test_backup_double_render_no_crash():
@@ -777,7 +777,7 @@ def test_no_status_embed_iframe():
 
 
 def main():
-    test_enrich_dark_green_button_text()
+    test_enrich_classic_button_text()
     test_backup_double_render_no_crash()
     test_one_click_uses_spinner()
     test_signup_unconfirmed_marker()

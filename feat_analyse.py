@@ -132,7 +132,7 @@ WHATS_NEW = {
         "Filter rows: build 'show only rows where…' rules and download just the matching rows.",
         "Sampling: clean a 1,000-row sample of a huge file first, then apply it to the full file.",
         "Auto-save workspace: close the app and your file and cleaning come back when you reopen it.",
-        "Themes: Dark green, Dark blue or Light — your choice is remembered.",
+        "Classic light theme: warm off-white, ink text, one deep-teal accent — the same look on every screen, whatever your browser's own theme is.",
         "Data masking: hide phone numbers and emails before sharing a file.",
         "Versioned exports: every download gets a new version number, so old files are never overwritten.",
         "Language: the main headings and buttons now speak English, हिन्दी or اردو.",

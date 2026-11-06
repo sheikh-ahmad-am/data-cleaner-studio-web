@@ -624,7 +624,8 @@ def render_validation(st, df: pd.DataFrame) -> None:
         for i, r in enumerate(rules):
             st.write(f"{i}. **{r['column']}** {r['rule']}"
                      + (f" {r['value']}" if r.get("value") is not None else ""))
-        if st.button("Clear all rules", key="q_rule_clear"):
+        if st.button("Clear all rules", key="q_rule_clear",
+                      type="secondary"):
             st.session_state["q_rules_data"] = []
             rules = []
     if not rules:

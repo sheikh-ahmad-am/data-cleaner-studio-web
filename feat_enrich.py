@@ -14,7 +14,7 @@ Features
 6.  Row filter builder     — apply_filter_rules(df, rules), filtered_to_csv_bytes(df)
 7.  Sampling for huge files — sample_frame(df, n, method, seed)
 8.  Auto-save workspace    — save_workspace(...), load_workspace(...)
-9.  Dark mode + accent     — theme_css(theme), apply_theme(st, theme)
+9.  Classic light theme  — theme_css(theme), apply_theme(st, theme)
 10. Data masking           — mask_columns(df, columns, kinds), masked_csv_bytes(df),
                              masked_excel_bytes(df)
 11. Versioned exports      — next_versioned_name(base)
@@ -32,15 +32,17 @@ Tabs (simple_app.py) — suggested homes; the coordinator wires these in:
   - KPIs tab (under the KPI list)     : render_ai_insights(st, clean, kpis)
   - Report tab (under the downloads)  : render_versioned_download(st, clean, base)
   - Sidebar (under "Load your data")  : render_settings(st) [ai_settings],
-      render_theme_picker(st), render_language_picker(st),
-      render_workspace_toggle(st)
+      render_language_picker(st), render_workspace_toggle(st)
+      (the theme picker is retired — the app has one Classic theme now;
+      render_theme_picker() still exists as a no-UI shim that applies
+      Classic, for backwards compatibility)
 
 Session-state keys (data — never widget keys):
   - "n_fx_rates_data"    : {"INR": 1.0, "USD": 83.0, ...} edited FX rates
   - "n_filter_rules_data": list of {"column","condition","value"} filter rules
   - "n_ai_insight_data"  : last AI insight paragraph (str)
   - "n_version_name_data": last reserved versioned filename (str)
-  - "n_theme_data"       : chosen theme name (str)
+  - "n_theme_data"       : chosen theme name (str) — always "Classic"
   - "n_lang_data"        : chosen language code "en" | "hi" | "ur"
   - "n_sample_clean_data" / "n_sample_actions_data" / "n_sample_opts_data":
       last sample-clean run (frame / log / engine.clean options)
@@ -52,7 +54,7 @@ Widget keys (all start with "n_", none doubles as a data key):
   n_fx_target, n_fx_rate_<CUR>, n_fx_apply, n_ai_get, n_paste_text,
   n_paste_load, n_filter_col, n_filter_cond, n_filter_value, n_filter_add,
   n_filter_clear, n_sample_n, n_sample_method, n_sample_seed, n_sample_run,
-  n_sample_apply, n_workspace_toggle, n_theme_pick, n_mask_cols,
+  n_sample_apply, n_workspace_toggle, n_mask_cols,
   n_mask_apply, n_version_base, n_version_reserve, n_version_download,
   n_lang_pick, n_ai_open_settings
   (ai_settings owns: ai_key_input, ai_key_save, ai_key_test)
@@ -606,37 +608,30 @@ def load_workspace(base_dir=None):
 
 
 # --------------------------------------------------------------------------
-# 9. Dark mode + accent colour
+# 9. Classic light theme (the app's ONE theme)
 # --------------------------------------------------------------------------
 
-#: Streamlit's own theme is static config, so a picker cannot re-theme the
-#: app by itself. This is honest about that: the choice is saved to
-#: settings.json (remembered for next launch — the coordinator can also
-#: write it into .streamlit/config.toml) AND live CSS overrides are
-#: injected right away, so the change is visible immediately.
+#: The app has a single Classic theme — warm off-white background, ink
+#: text, one deep-teal accent — matching .streamlit/config.toml, which
+#: themes the app from first paint (login screen included). Streamlit's
+#: own theme is static config, so a picker cannot re-theme the app by
+#: itself; the old Dark green / Dark blue / Light picker is retired.
+#: theme_css() / apply_theme() keep their signatures: any old theme name
+#: (including a stale "theme" value in an existing settings.json) falls
+#: back to Classic.
 THEMES = {
-    "Dark green": {
-        "background": "#121212", "text": "#e8e8e8",
-        "accent": "#2F5D5A", "secondary": "#1e1e1e",
+    "Classic": {
+        "background": "#FAF7F2", "text": "#23272E",
+        "accent": "#2F5D5A", "secondary": "#F3EFE8",
         "button_text": "#FFFFFF",
-    },
-    "Dark blue": {
-        "background": "#0d1b2a", "text": "#e0e7ff",
-        "accent": "#4da6ff", "secondary": "#16283d",
-        "button_text": "#0d1b2a",
-    },
-    "Light": {
-        "background": "#ffffff", "text": "#1a1a1a",
-        "accent": "#1a7f37", "secondary": "#f0f0f0",
-        "button_text": "#ffffff",
     },
 }
 
 
 def theme_css(theme_name: str) -> str:
     """The live CSS overrides for a theme name. Unknown names fall back
-    to "Dark green"."""
-    theme = THEMES.get(theme_name) or THEMES["Dark green"]
+    to "Classic"."""
+    theme = THEMES.get(theme_name) or THEMES["Classic"]
     return f"""<style>
 .stApp {{ background-color: {theme["background"]}; color: {theme["text"]}; }}
 .stApp h1, .stApp h2, .stApp h3 {{ color: {theme["text"]}; }}
@@ -652,8 +647,9 @@ section[data-testid="stSidebar"] * {{ color: {theme["text"]}; }}
 
 def apply_theme(st, theme_name: str) -> str:
     """Inject the theme's live CSS overrides and remember the choice in
-    settings.json for next launch. Returns the theme name actually used."""
-    name = theme_name if theme_name in THEMES else "Dark green"
+    settings.json for next launch. Returns the theme name actually used
+    (always "Classic" — any other name falls back to it)."""
+    name = theme_name if theme_name in THEMES else "Classic"
     st.markdown(theme_css(name), unsafe_allow_html=True)
     settings = ai_settings.load_settings()
     settings["theme"] = name
@@ -1070,7 +1066,8 @@ def render_filter_builder(st, df: pd.DataFrame) -> None:
         for i, r in enumerate(rules):
             suffix = f" {r['value']}" if r.get("value") not in (None, "") else ""
             st.write(f"{i}. **{r['column']}** {r['condition']}{suffix}")
-        if st.button("Clear all rules", key="n_filter_clear"):
+        if st.button("Clear all rules", key="n_filter_clear",
+                      type="secondary"):
             st.session_state["n_filter_rules_data"] = []
             rules = []
     if not rules:
@@ -1159,28 +1156,14 @@ def render_workspace_toggle(st) -> bool:
 
 
 def render_theme_picker(st) -> str:
-    """Sidebar: pick Dark green / Dark blue / Light. The choice is saved
-    to settings.json (remembered for next launch) and live CSS overrides
-    are injected straight away, so you see the change immediately.
-    Returns the chosen theme name."""
-    st.subheader("Theme")
-    st.write("Streamlit's own theme is fixed when the app starts, so this "
-             "picker also applies the colours live — your choice is "
-             "remembered for next launch.")
-    current = ai_settings.load_settings().get("theme", "Dark green")
-    options = list(THEMES)
-    choice = st.selectbox("Theme", options,
-                          index=options.index(current)
-                          if current in options else 0,
-                          key="n_theme_pick")
-    if choice != current:
-        apply_theme(st, choice)
-        st.session_state["n_theme_data"] = choice
-        st.success(f"Theme set to {choice} — remembered for next launch.")
-    else:
-        st.markdown(theme_css(choice), unsafe_allow_html=True)
-        st.session_state["n_theme_data"] = choice
-    return choice
+    """Retired: the app has one Classic theme now (see THEMES), set in
+    .streamlit/config.toml, so there is no picker UI any more. Kept for
+    backwards compatibility — it applies Classic, records it in
+    settings.json and session state, and returns "Classic". Any old
+    stored theme name is migrated to Classic."""
+    name = apply_theme(st, "Classic")
+    st.session_state["n_theme_data"] = name
+    return name
 
 
 def render_masking(st, df: pd.DataFrame):
