@@ -191,6 +191,24 @@ section[data-testid="stSidebar"] a { color: #117f50; }
 .dcs-nav-row:hover { background-color: #f8f8f8; color: #0e7e4e; }
 .dcs-nav-row.dcs-nav-active { background-color: #f3f3f3;
   font-weight: 600; color: #030303; border-left: 2px solid #030303; }
+/* ---- sidebar avatar: green circle, initial only ---- */
+div[data-testid="stPopover"] { margin-bottom: 0.75rem; }
+div[data-testid="stPopover"] button[data-testid="stPopoverButton"] {
+  width: 44px !important; height: 44px !important;
+  min-width: 44px !important; max-width: 44px !important;
+  border-radius: 50% !important;
+  background-color: #117f50 !important; background: #117f50 !important;
+  color: #ffffff !important; border: 1px solid #117f50 !important;
+  font-size: 18px !important; font-weight: 600 !important;
+  padding: 0 !important; justify-content: center !important;
+  align-items: center !important; }
+div[data-testid="stPopover"] button[data-testid="stPopoverButton"]:hover {
+  background-color: #0e7d4e !important; background: #0e7d4e !important; }
+div[data-testid="stPopover"] button[data-testid="stPopoverButton"] svg {
+  display: none !important; }
+/* ---- avatar menu (popover body): white card, hairline border ---- */
+div[data-testid="stPopoverBody"] { background-color: #ffffff;
+  border: 1px solid #e8e8e8; border-radius: 12px; }
 /* ---- links: deep green, sparingly ---- */
 .stApp a { color: #117f50; }
 .stApp a:hover { color: #0e7e4e; }
@@ -544,6 +562,12 @@ def _do_logout():
     for _k in ("auth_token", "current_user", "storage_key", "user_paths",
                "raw", "clean", "actions", "kpis"):
         st.session_state[_k] = None
+    # The Account radio ("Log in" / "Sign up") sticks on "Sign up"
+    # after a sign-up: without this, logging out lands the user on the
+    # Create-account form instead of the login screen. The radio is not
+    # rendered in a logout run (login screen only), so assigning its key
+    # here is safe — unlike active_tab above.
+    st.session_state["auth_mode"] = "Log in"
     # "active_tab" is the Section radio's widget key: assigning it after
     # the radio was created in this run (a logout from the Profile
     # section) raises — deleting it is allowed at any point, and the
@@ -1195,32 +1219,26 @@ def _restore_cleaned_state(source_name):
 
 
 # ------------------------------------------------------------------ load ---
-# Sidebar profile card (Supabase shell: white card, hairline border,
-# name in ink, email muted) + grouped nav below it. The nav is
-# display-only — the section radio further down is the selection
-# control; this mirrors it via the shared _nav_labels mapping.
+# Sidebar avatar (Supabase shell: a single green circle with the
+# user's initial — the only profile element in the sidebar) + grouped
+# nav below it. The nav is display-only — the section radio further
+# down is the selection control; this mirrors it via the shared
+# _nav_labels mapping.
 _logo = feat_brand.brand_for_exports(base_dir=_user_root).get("logo")
 if _logo:
     try:
         st.sidebar.image(_logo, width=140)
     except Exception:  # noqa: BLE001 - a bad logo must not stop the app
         pass
-_profile_name = (_user.get("display_name") or _user.get("username")
-                 or _user.get("email") or "?")
-_profile_email = str(_user.get("email") or "")
-_profile_card = (
-    '<div class="dcs-card" style="margin-bottom: 0.75rem;">'
-    '<div style="font-size: 14px; font-weight: 600; color: #030303;">'
-    f"{html.escape(_profile_name)}</div>"
-    + (f'<div style="font-size: 13px; color: #696969;">'
-       f"{html.escape(_profile_email)}</div>" if _profile_email else "")
-    + "</div>")
-st.sidebar.markdown(_profile_card, unsafe_allow_html=True)
-_pc1, _pc2 = st.sidebar.columns(2)
-if _pc1.button("Profile", key="profile_btn"):
+# The email, Profile, and Log out live ONLY inside the avatar menu
+# (ui_design.render_sidebar_avatar); the old card + standalone
+# buttons are gone. The Profile tab keeps its full account info and
+# its own Log out unchanged.
+_avatar_action = ui_design.render_sidebar_avatar(user=_user)
+if _avatar_action == "profile":
     st.session_state["pending_tab"] = "profile"
     st.rerun()
-if _pc2.button("Log out", key="logout_btn"):
+elif _avatar_action == "logout":
     _do_logout()
 # Theme toggle (sidebar): Light/Dark switch writing
 # st.session_state["dcs_theme"]; the stylesheet injected at the top of
