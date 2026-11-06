@@ -84,6 +84,7 @@ import feat_profile
 import feat_quality
 import feat_schedule
 import feat_share
+import feat_status
 import feat_tutorial
 import scheduler
 import storage
@@ -923,9 +924,22 @@ if not st.session_state.get("a_recipes"):
         st.session_state["a_recipes"] = _saved_recipes
 
 # ------------------------------------------------------- language + title ---
+# The language picker widget (key "n_lang_pick", in
+# feat_enrich.render_language_picker) only runs later in this script,
+# after the top bar — but its value is already in session state at
+# the top of the run. Read it HERE, before the top bar renders:
+# otherwise the top bar (and every label built from _lang) shows the
+# previous language for one run after a switch. The label->code map
+# below mirrors the picker's options dict — if the picker ever
+# changes its labels, this map must change with it.
+_LANG_PICK_LABELS = {"English": "en", "हिन्दी": "hi", "اردو": "ur"}
 try:
-    _lang = (st.session_state.get("n_lang_data")
-             or ai_settings.load_settings().get("language", "en"))
+    _lang_pick = st.session_state.get("n_lang_pick")
+    if _lang_pick in _LANG_PICK_LABELS:
+        _lang = _LANG_PICK_LABELS[_lang_pick]
+    else:
+        _lang = (st.session_state.get("n_lang_data")
+                 or ai_settings.load_settings().get("language", "en"))
 except Exception:  # noqa: BLE001 - a broken settings file must not stop the app
     _lang = "en"
 if _lang not in ("en", "hi", "ur"):
@@ -940,20 +954,21 @@ _title = (_brand.get("name") if _brand.get("name")
           and _brand["name"] != "Data Cleaner Studio" else _t("app_title"))
 # Section labels, one mapping shared by the top bar, the sidebar nav
 # and the section radio below, so the three stay in agreement.
-# (Settings / Profile are plain labels, not translated keys.)
+# (Settings / Profile / Status are plain labels, not translated keys.)
 _nav_labels = {"preview": _t("preview"), "join": _t("join"),
                "clean": _t("clean"), "kpis": _t("kpis"),
                "dashboard": _t("dashboard"), "compare": _t("compare"),
                "report": _t("report"), "tools": _t("tools"),
                "tutorial": _t("tutorial"), "settings": "Settings",
-               "profile": "Profile"}
+               "profile": "Profile", "status": "Status"}
 # Sidebar nav groups (Supabase shell: tiny uppercase labels over plain
 # rows). Only the tabs the current mode offers are shown — client mode
 # hides the advanced ones; the radio below is the authority on that.
 _nav_groups = [("Data", ["preview", "clean", "join"]),
                ("Analyse", ["kpis", "dashboard", "compare"]),
                ("Output", ["report"]),
-               ("Workspace", ["tools", "tutorial", "settings", "profile"])]
+               ("Workspace", ["tools", "tutorial", "settings", "profile",
+                              "status"])]
 # A "Go to the Clean tab" empty-state button (or any other code) asks
 # for a section switch by setting pending_tab, then rerunning: apply it
 # here, BEFORE the top bar and the sidebar nav render — writing the
@@ -1150,11 +1165,24 @@ if _pc1.button("Profile", key="profile_btn"):
     st.rerun()
 if _pc2.button("Log out", key="logout_btn"):
     _do_logout()
+# Sync client_mode from the toggle widget BEFORE the sidebar nav
+# renders: the toggle itself (feat_analyse.render_client_mode_toggle)
+# only runs later in this script, after the upload block, and it is
+# the only place that copies the widget value into the "client_mode"
+# data key — so reading client_mode here would lag one run behind
+# the flip, and the nav would show the previous mode's tabs until
+# the next rerun. The widget value ("an_client_mode_toggle") is
+# already in session state at the top of the run, so read it
+# directly; the toggle's own copy later in the run then agrees.
+if "an_client_mode_toggle" in st.session_state:
+    st.session_state["client_mode"] = bool(
+        st.session_state["an_client_mode_toggle"])
 _nav_client = bool(st.session_state.get("client_mode", False))
 _nav_keys = (["preview", "clean", "kpis", "dashboard", "report",
-              "tutorial", "profile"] if _nav_client else
+              "tutorial", "profile", "status"] if _nav_client else
              ["preview", "clean", "join", "kpis", "dashboard", "compare",
-              "report", "tools", "tutorial", "settings", "profile"])
+              "report", "tools", "tutorial", "settings", "profile",
+              "status"])
 _nav_sections = [
     (label, [(k, _nav_labels[k]) for k in keys if k in _nav_keys])
     for label, keys in _nav_groups]
@@ -1163,6 +1191,10 @@ _nav_active = next(
     (k for k, v in _nav_labels.items() if v == _top_active), "preview")
 with st.sidebar:
     ui_design.sidebar_nav(_nav_sections, active=_nav_active)
+    # Quiet status pill (feat_status): the app's own health — the
+    # mode in local mode, "All systems operational" only when the
+    # cloud health check genuinely passed.
+    feat_status.render_status_pill(st)
 _banner = auth.get_local_mode_banner()
 if _banner:
     st.sidebar.info(_banner)
@@ -1384,6 +1416,15 @@ if raw is None:
         if _profile_result in ("deleted", "logout"):
             _do_logout()
         st.stop()
+    # The Status tab needs no data either (it reports the app's own
+    # health and history): render it here too, same as Profile above.
+    if st.session_state.get("active_tab") == "Status":
+        if st.button("← Back to data", key="status_empty_back"):
+            st.session_state.pop("pending_tab", None)
+            st.session_state.pop("active_tab", None)
+            st.rerun()
+        feat_status.render_status_section(st)
+        st.stop()
     # Guided empty state: what to do first, plus a one-click way to try
     # the sample — the same loader the sidebar "Try the messy sample"
     # button uses, not a second mechanism.
@@ -1495,10 +1536,11 @@ _client = bool(st.session_state.get("client_mode", False))
 # secondary views. Nothing removed — just ordered by how often it
 # is used. Labels come from the shared _nav_labels mapping above.
 _tab_keys = ["preview", "clean", "kpis", "dashboard", "report",
-             "join", "compare", "tools", "tutorial", "settings", "profile"]
+             "join", "compare", "tools", "tutorial", "settings", "profile",
+             "status"]
 if _client:
     _tab_keys = ["preview", "clean", "kpis", "dashboard", "report", "tutorial",
-                 "profile"]
+                 "profile", "status"]
 _tab_labels = {k: _nav_labels[k] for k in _tab_keys}
 # Section switcher: a horizontal radio, NOT st.tabs.
 # Streamlit's tab selection is not sticky — it resets to the first
@@ -2444,3 +2486,8 @@ if "profile" in tab:
             st, _user, _skey, on_logout=_do_logout)
         if _profile_result in ("deleted", "logout"):
             _do_logout()
+
+# --------------------------------------------------------------- status ---
+if "status" in tab:
+    if _active_tab == "status":
+        feat_status.render_status_section(st)
