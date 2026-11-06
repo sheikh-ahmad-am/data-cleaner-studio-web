@@ -778,6 +778,10 @@ if _current_user is None:
                 _turnstile_key,
                 key=f"turnstile-{st.session_state['turnstile_counter']}",
                 reset=st.session_state["turnstile_counter"],
+                # The widget follows the app theme (dcs_theme, "light"
+                # by default): a light-only widget would show as a
+                # white box on the dark page.
+                theme=st.session_state.get("dcs_theme") or "light",
             )
         if mode == "Log in":
             if st.button("Log in", key="auth_login_btn", type="primary"):
