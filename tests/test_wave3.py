@@ -421,7 +421,15 @@ def test_signup_unconfirmed_no_autologin_no_cookie():
         sets = []
 
         def __init__(self, key="cookies"):
-            pass
+            # Model the real component registering its value in
+            # session state when it renders, so the app's cookie
+            # read counts as resolved on the first run (no loading
+            # wait for an unanswered read).
+            try:
+                import streamlit as st
+                st.session_state[key] = dict(type(self).store)
+            except Exception:  # noqa: BLE001 - no session state yet
+                pass
 
         def get(self, name):
             return type(self).store.get(name)
@@ -432,6 +440,9 @@ def test_signup_unconfirmed_no_autologin_no_cookie():
 
         def remove(self, name, **kwargs):
             type(self).store.pop(name, None)
+
+        def refresh(self):
+            return None
 
     streamlit_cookies_controller.CookieController = _RecordingCookies
     try:

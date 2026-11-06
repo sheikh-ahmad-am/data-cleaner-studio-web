@@ -502,8 +502,24 @@ for key, default in [
 # out. Only the random token is stored — never a password. If the
 # cookie library is missing at runtime, the app falls back to the
 # old session-state-only behaviour without crashing.
+#
+# Two timing facts shape this code (both verified against the
+# library + Streamlit 1.66.1 source, 2026-11-07):
+#   * WRITE: a cookie write goes through a component iframe, which
+#     writes document.cookie when it mounts. A write issued in a
+#     run that ends with an immediate st.rerun() is LOST — the
+#     rerun tears the iframe down before it mounts. That is why
+#     _remember_session() only MARKS the cookie pending and the
+#     write happens in _ensure_login_cookie(), in a run that
+#     completes normally (see below).
+#   * READ: the component's snapshot is empty on the first run
+#     after a refresh (its iframe has not answered yet). The
+#     request cookies (st.context.cookies, sent with the session's
+#     initial WebSocket handshake) ARE present on that first run,
+#     so they are read first.
 _AUTH_COOKIE = "dcs_auth_token"
 _AUTH_COOKIE_MAX_AGE = 7 * 24 * 3600  # seconds; matches auth.SESSION_TTL
+_AUTH_COOKIE_VERIFY_RETRIES = 3  # re-issues of a lost cookie write
 
 try:
     from streamlit_cookies_controller import CookieController
@@ -512,8 +528,25 @@ except Exception:  # noqa: BLE001 - no cookie library: session-state only
     _cookie_controller = None
 
 
-def _cookie_get(name):
-    """Cookie value, or None when cookies are unavailable/empty."""
+def _request_cookies():
+    """Cookies the browser sent with this session's initial request
+    (the WebSocket handshake), or {} when unavailable.
+
+    A snapshot from session start: a cookie written during this
+    session does NOT appear here until the next page load. Never
+    raises."""
+    try:
+        cookies = st.context.cookies
+    except Exception:  # noqa: BLE001 - no request context (AppTest, …)
+        return {}
+    try:
+        return dict(cookies)
+    except Exception:  # noqa: BLE001 - not a mapping: treat as empty
+        return {}
+
+
+def _controller_cookie_get(name):
+    """Cookie value from the controller's snapshot, or None."""
     if _cookie_controller is None:
         return None
     try:
@@ -521,6 +554,47 @@ def _cookie_get(name):
     except Exception:  # noqa: BLE001 - a cookie read never crashes login
         return None
     return value if isinstance(value, str) and value else None
+
+
+def _cookie_get(name):
+    """Cookie value, or None when cookies are unavailable/empty.
+
+    The request cookies come first: they are present on the very
+    first run after a page load/refresh, when the controller's
+    snapshot is still empty (its iframe has not answered yet)."""
+    request_value = _request_cookies().get(name)
+    if isinstance(request_value, str) and request_value:
+        return request_value
+    return _controller_cookie_get(name)
+
+
+def _cookie_read_resolved():
+    """True when an empty cookie read can be trusted to mean 'no cookie'.
+
+    The request cookies are authoritative from the first run: if
+    the browser had the login cookie it would be in them. When
+    there is no request context, the read only counts as resolved
+    once the cookie component has registered its value (the
+    'cookies' key in session state) — before that, an empty read
+    means 'not loaded yet', not 'logged out'."""
+    if _request_cookies():
+        return True
+    return "cookies" in st.session_state
+
+
+def _controller_refresh():
+    """Ask the cookie component for a fresh browser read (no-op when
+    the cookie library is missing or its controller has no refresh).
+    The fresh snapshot arrives on the next run. Never raises."""
+    if _cookie_controller is None:
+        return
+    refresh = getattr(_cookie_controller, "refresh", None)
+    if refresh is None:
+        return
+    try:
+        refresh()
+    except Exception:  # noqa: BLE001 - a refresh never crashes login
+        pass
 
 
 def _cookie_set(name, value):
@@ -545,9 +619,20 @@ def _cookie_clear(name):
 
 
 def _remember_session(token):
-    """Persist a login: session state AND the login cookie."""
+    """Persist a login in session state and mark the login cookie
+    for writing.
+
+    The cookie itself is NOT written here: this runs in the login
+    run, which ends with an immediate st.rerun() — and a cookie
+    write issued in that run is lost, because the component iframe
+    that performs the write is torn down before it mounts (verified
+    2026-11-07, see the module comment above). The write happens
+    in _ensure_login_cookie(), on the next run, which completes
+    normally — and is verified + retried there."""
     st.session_state["auth_token"] = token
-    _cookie_set(_AUTH_COOKIE, token)
+    st.session_state["_auth_cookie_pending"] = token
+    st.session_state["_auth_cookie_retries"] = 0
+    st.session_state.pop("_auth_cookie_gave_up", None)
 
 
 def _do_logout():
@@ -624,6 +709,80 @@ def _restore_session_from_cookie():
     st.session_state["current_user"] = user
     st.session_state["storage_key"] = _storage_key(user)
     return user
+
+
+def _ensure_login_cookie():
+    """Keep the login cookie in the browser while logged in.
+
+    Runs on every logged-in run (after the auth gate). Two jobs:
+      * WRITE: after a login the cookie is only marked pending
+        (see _remember_session) — issue the write here, in a run
+        that completes normally, so the component iframe that
+        performs it actually mounts and writes.
+      * VERIFY: a write can still be lost (the browser blocks
+        cookies, the tab closes too fast). The controller's
+        snapshot is optimistically updated by set(), so it cannot
+        confirm a write on its own — refresh() re-reads the
+        browser and the fresh snapshot arrives on the next run.
+        While a write is pending, re-issue it when the fresh read
+        still lacks the token, up to _AUTH_COOKIE_VERIFY_RETRIES
+        times. A cookie the browser really sent with the page
+        request counts as confirmed. After the retries are spent,
+        give up quietly for this token (the session-state login
+        still works for this session; the next login retries the
+        write). Never raises."""
+    token = st.session_state.get("auth_token")
+    if not token:
+        st.session_state.pop("_auth_cookie_pending", None)
+        st.session_state.pop("_auth_cookie_retries", None)
+        st.session_state.pop("_auth_cookie_gave_up", None)
+        return
+    if _cookie_controller is None:
+        return
+    # Confirmed: the browser really sent this token with the page
+    # request, so it predates this session — the write stuck.
+    if _request_cookies().get(_AUTH_COOKIE) == token:
+        st.session_state.pop("_auth_cookie_pending", None)
+        st.session_state.pop("_auth_cookie_retries", None)
+        st.session_state.pop("_auth_cookie_gave_up", None)
+        return
+    pending = st.session_state.get("_auth_cookie_pending")
+    if pending is None:
+        if st.session_state.get("_auth_cookie_gave_up") == token:
+            return  # already retried + gave up for this token
+        if _controller_cookie_get(_AUTH_COOKIE) == token:
+            return  # already in the browser (or just written)
+        _cookie_set(_AUTH_COOKIE, token)
+        st.session_state["_auth_cookie_pending"] = token
+        st.session_state["_auth_cookie_retries"] = 0
+        _controller_refresh()
+        return
+    if pending != token:
+        # A different token is pending (re-login in this session):
+        # restart the verify cycle for the new token.
+        st.session_state["_auth_cookie_pending"] = token
+        st.session_state["_auth_cookie_retries"] = 0
+        st.session_state.pop("_auth_cookie_gave_up", None)
+        _cookie_set(_AUTH_COOKIE, token)
+        _controller_refresh()
+        return
+    # A write is pending: ask the browser for a fresh read and judge
+    # by the snapshot it returns on the next run.
+    _controller_refresh()
+    if _controller_cookie_get(_AUTH_COOKIE) == token:
+        st.session_state.pop("_auth_cookie_pending", None)
+        st.session_state.pop("_auth_cookie_retries", None)
+        st.session_state.pop("_auth_cookie_gave_up", None)
+        return
+    retries = st.session_state.get("_auth_cookie_retries", 0)
+    if retries < _AUTH_COOKIE_VERIFY_RETRIES:
+        st.session_state["_auth_cookie_retries"] = retries + 1
+        _cookie_set(_AUTH_COOKIE, token)
+        _controller_refresh()
+    else:
+        st.session_state.pop("_auth_cookie_pending", None)
+        st.session_state.pop("_auth_cookie_retries", None)
+        st.session_state["_auth_cookie_gave_up"] = token
 
 
 def _google_oauth_enabled() -> bool:
@@ -746,7 +905,23 @@ if st.session_state.get("auth_token"):
         st.session_state["current_user"] = _current_user
         st.session_state["storage_key"] = _storage_key(_current_user)
 
+# While logged in, keep the login cookie in the browser (write it
+# after a login, verify + re-issue a lost write). A no-op when
+# logged out or when the cookie library is missing.
+if _current_user is not None:
+    _ensure_login_cookie()
+
 if _current_user is None:
+    if not _cookie_read_resolved() and not st.session_state.get("_cookie_wait_done"):
+        # The cookie read has not resolved yet (no request cookies
+        # and the cookie component has not registered a value):
+        # do NOT conclude "logged out" — show a brief loading
+        # state and let the component's rerun decide. Bounded to
+        # one wait per session so a broken component can never
+        # wedge the login screen.
+        st.session_state["_cookie_wait_done"] = True
+        with st.spinner("Loading…"):
+            st.stop()
     _lc1, _lc2, _lc3 = st.columns([1, 1.4, 1])
     with _lc2:
         # ---- login / signup screen ONLY. No data, no sidebar, no tabs. ----
