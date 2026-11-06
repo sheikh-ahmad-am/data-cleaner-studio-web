@@ -233,11 +233,14 @@ def _fake_signup_resp(confirmed):
 
 # ------------------------------------------------------------------ unit
 def test_enrich_classic_button_text():
-    theme = feat_enrich.THEMES["Classic"]
+    theme = feat_enrich.THEMES["Supabase"]
     assert theme["button_text"] == "#FFFFFF", theme
-    css = feat_enrich.theme_css("Classic")
-    assert "#2F5D5A" in css and "#FFFFFF" in css
-    print("enrich one-liner OK: Classic button text #FFFFFF on #2F5D5A")
+    css = feat_enrich.theme_css("Supabase")
+    assert "#117f50" in css and "#FFFFFF" in css
+    # A stale Classic name falls back to the same Supabase CSS.
+    assert feat_enrich.theme_css("Classic") == css
+    assert "#2F5D5A" not in css
+    print("enrich one-liner OK: Supabase button text #FFFFFF on #117f50")
 
 
 def test_backup_double_render_no_crash():

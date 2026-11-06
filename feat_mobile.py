@@ -11,25 +11,28 @@ Two parts, in this order:
    phones stack columns, get full-width finger-sized buttons, smaller
    headings and tighter padding. Desktop screens (> 768px) see none
    of these rules.
-2. The base theme, applied on every screen: the classic, premium
-   palette — warm off-white page, white cards, deep charcoal ink,
-   one muted deep-teal accent. No bright colours, no gradients, no
-   external fonts, nothing fetched over the network.
+2. The base theme, applied on every screen: the Supabase palette —
+   near-white page, white cards, near-black ink, one deep-green
+   accent. No bright colours, no gradients except the subtle primary
+   -button gradient, no external fonts, nothing fetched over the
+   network.
 
-Palette (single source of truth — keep in sync with feat_brand.py):
-  page background  #FAF7F2   cards/surfaces  #FFFFFF
-  card border      #E5E0D8   ink             #23272E
-  secondary text   #6E6A61   accent (teal)   #2F5D5A
-  accent hover     #264845   secondary btn   #EFEDE8 bg / #D9D4C9 border
-  danger (sparingly) #9A4A38   warning (muted amber) #8A6D3B
+Palette (single source of truth — keep in sync with ui_design.py
+TOKENS and feat_brand.py):
+  page background  #FDFDFD   cards/surfaces  #FFFFFF
+  card border      #E8E8E8   ink             #030303
+  secondary text   #696969   accent (green)  #117F50
+  accent hover     #0E7D4E   secondary btn   #FFFFFF bg / #E5E5E5 border
+  danger (sparingly) #B91C1C   warning (muted amber) #E69344
 
 Contrast (WCAG, text on background — all pass 4.5:1):
-  ink on page 14.03:1 · ink on white 14.99:1
-  secondary text on page 5.04:1 · on white 5.39:1
-  white on accent 7.41:1 · white on accent hover 10.02:1
-  accent on page 6.93:1 · accent on white 7.41:1
-  ink on secondary-button bg 12.81:1 · on its hover bg 11.61:1
-  danger on page 5.76:1 · warning on page 4.54:1
+  ink on page 20.28:1 · ink on white 20.62:1
+  secondary text on page 5.40:1 · on white 5.49:1
+  white on accent 5.03:1 · white on accent hover 5.17:1
+  accent on page 4.94:1 · accent on white 5.03:1
+  ink on secondary-button bg 20.62:1
+  danger on page 6.36:1 · amber is pill-only (large/bold labels),
+  never body text.
 
 The CSS is a plain string — no JavaScript, no external URLs, nothing
 fetched — so it is safe to inject with st.markdown(..., unsafe_allow_html=True).
@@ -40,19 +43,21 @@ from __future__ import annotations
 MOBILE_BREAKPOINT_PX = 768
 
 # The palette, as constants, so the theme and the brand default agree.
-PAGE_BG = "#FAF7F2"
+# Supabase tokens — keep in sync with ui_design.py TOKENS.
+PAGE_BG = "#FDFDFD"
 CARD_BG = "#FFFFFF"
-CARD_BORDER = "#E5E0D8"
-INK = "#23272E"
-SECONDARY_TEXT = "#6E6A61"
-ACCENT = "#2F5D5A"
-ACCENT_HOVER = "#264845"
-SECONDARY_BTN_BG = "#EFEDE8"
-SECONDARY_BTN_BG_HOVER = "#E7E2D8"
-SECONDARY_BTN_BORDER = "#D9D4C9"
-SIDEBAR_BG = "#F3EFE8"
-DANGER = "#9A4A38"
-WARNING = "#8A6D3B"
+CARD_BORDER = "#E8E8E8"
+INK = "#030303"
+SECONDARY_TEXT = "#696969"
+ACCENT = "#117F50"
+ACCENT_HOVER = "#0E7D4E"
+GRADIENT_TOP = "#118050"  # primary-button gradient top (TOKENS gradient_top)
+SECONDARY_BTN_BG = "#FFFFFF"
+SECONDARY_BTN_BG_HOVER = "#F8F8F8"
+SECONDARY_BTN_BORDER = "#E5E5E5"
+SIDEBAR_BG = "#FDFDFD"
+DANGER = "#B91C1C"
+WARNING = "#E69344"
 
 
 def mobile_css() -> str:
@@ -118,8 +123,8 @@ def mobile_css() -> str:
   }}
 }}
 
-/* ---- Base theme: classic, premium, muted. Applies on every screen. ---- */
-/* Page: warm off-white, deep charcoal ink. */
+/* ---- Base theme: Supabase — near-white, hairlines, one green. ---- */
+/* Page: near-white, near-black ink. */
 .stApp {{
   background-color: {PAGE_BG} !important;
   color: {INK} !important;
@@ -144,7 +149,7 @@ div[data-testid="stCaptionContainer"] {{
 .stApp h2 {{
   margin-top: 1.25rem !important;
 }}
-/* Sidebar: warm neutral, clearly separated from the page. */
+/* Sidebar: near-white, clearly separated from the page. */
 section[data-testid="stSidebar"] {{
   background-color: {SIDEBAR_BG} !important;
   border-right: 1px solid {CARD_BORDER} !important;
@@ -155,20 +160,23 @@ section[data-testid="stSidebar"] h1,
 section[data-testid="stSidebar"] h2 {{
   color: {INK} !important;
 }}
-/* Primary action: deep teal, white text. One per view. */
+/* Primary action: deep green, white text, subtle vertical gradient.
+   One per view. */
 .stButton > button[kind="primary"],
 .stButton > button[data-testid="stBaseButton-primary"] {{
   background-color: {ACCENT} !important;
+  background: linear-gradient(180deg, {GRADIENT_TOP} 0%, {ACCENT_HOVER} 100%) !important;
   border-color: {ACCENT} !important;
   color: #FFFFFF !important;
 }}
 .stButton > button[kind="primary"]:hover,
 .stButton > button[data-testid="stBaseButton-primary"]:hover {{
   background-color: {ACCENT_HOVER} !important;
+  background: linear-gradient(180deg, {GRADIENT_TOP} 0%, {ACCENT_HOVER} 100%) !important;
   border-color: {ACCENT_HOVER} !important;
   color: #FFFFFF !important;
 }}
-/* Secondary actions: warm neutral fill, ink text, soft border — clearly
+/* Secondary actions: white fill, ink text, hairline border — clearly
    readable, and clearly not the primary button. */
 .stButton > button,
 .stDownloadButton > button,
@@ -193,7 +201,7 @@ section[data-testid="stSidebar"] h2 {{
   min-height: 44px;
   line-height: 1.35 !important;
 }}
-/* Tabs: inactive labels warm grey, active label teal with a teal bar. */
+/* Tabs: inactive labels muted grey, active label green. */
 button[data-testid="stTab"] {{
   color: {SECONDARY_TEXT} !important;
 }}
@@ -203,8 +211,8 @@ button[data-testid="stTab"][aria-selected="true"] {{
 div[data-testid="stTab"] {{
   color: {SECONDARY_TEXT} !important;
 }}
-/* Cards: KPI tiles, expanders and tables sit on white with a warm
-   neutral border, so the page reads as one calm surface. */
+/* Cards: KPI tiles, expanders and tables sit on white with a hairline
+   border, so the page reads as one calm surface. */
 div[data-testid="stMetric"] {{
   background-color: {CARD_BG} !important;
   border: 1px solid {CARD_BORDER} !important;
@@ -250,12 +258,12 @@ input[type="checkbox"], input[type="radio"] {{
 div[data-testid="stProgress"] > div > div {{
   background-color: {ACCENT} !important;
 }}
-/* Alert boxes: muted tints, one per kind — success is teal, never
-   green; errors are muted brick; warnings are muted amber. Text
+/* Alert boxes: muted tints, one per kind — success is green;
+   errors are restrained red; warnings are amber. Text
    stays readable ink on the soft tint. */
 div[data-testid="stAlertContentSuccess"] {{
-  background-color: rgba(47, 93, 90, 0.08) !important;
-  border: 1px solid rgba(47, 93, 90, 0.35) !important;
+  background-color: rgba(17, 127, 80, 0.08) !important;
+  border: 1px solid rgba(17, 127, 80, 0.35) !important;
   border-radius: 10px !important;
   color: {INK} !important;
 }}
@@ -266,14 +274,14 @@ div[data-testid="stAlertContentInfo"] {{
   color: {INK} !important;
 }}
 div[data-testid="stAlertContentWarning"] {{
-  background-color: rgba(138, 109, 59, 0.08) !important;
-  border: 1px solid rgba(138, 109, 59, 0.35) !important;
+  background-color: rgba(230, 147, 68, 0.08) !important;
+  border: 1px solid rgba(230, 147, 68, 0.35) !important;
   border-radius: 10px !important;
   color: {INK} !important;
 }}
 div[data-testid="stAlertContentError"] {{
-  background-color: rgba(154, 74, 56, 0.08) !important;
-  border: 1px solid rgba(154, 74, 56, 0.35) !important;
+  background-color: rgba(185, 28, 28, 0.08) !important;
+  border: 1px solid rgba(185, 28, 28, 0.35) !important;
   border-radius: 10px !important;
   color: {INK} !important;
 }}

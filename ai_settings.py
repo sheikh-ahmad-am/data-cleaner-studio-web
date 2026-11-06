@@ -14,9 +14,9 @@ keep these names and signatures exactly as they are):
 
 Settings file keys:
   groq_api_key : the user's Groq API key ("" when not set)
-  theme        : "Classic" (the app's one theme; old Dark green / Dark blue /
-                 Light values in an existing settings.json are migrated
-                 to "Classic" on load)
+  theme        : "Supabase" (the app's one theme; old Classic / Dark green /
+                 Dark blue / Light values in an existing settings.json are
+                 migrated to "Supabase" on load)
   language     : "en" | "hi" | "ur"
   fx_rates     : {"INR": 1.0, "USD": 83.0, "EUR": 90.0, "GBP": 105.0}
                  (fixed estimates, edited in the currency screen)
@@ -36,7 +36,7 @@ GROQ_MODEL = "llama-3.3-70b-versatile"
 
 DEFAULT_SETTINGS = {
     "groq_api_key": "",
-    "theme": "Classic",
+    "theme": "Supabase",
     "language": "en",
     "fx_rates": {"INR": 1.0, "USD": 83.0, "EUR": 90.0, "GBP": 105.0},
 }
@@ -69,10 +69,10 @@ def load_settings(path=None) -> dict:
                 settings["fx_rates"] = merged
             else:
                 settings[key] = value
-    # The old theme names (Dark green / Dark blue / Light) no longer
-    # exist: migrate any stored value to the one Classic theme.
-    if settings.get("theme") != "Classic":
-        settings["theme"] = "Classic"
+    # The old theme names (Classic / Dark green / Dark blue / Light) no
+    # longer exist: migrate any stored value to the one Supabase theme.
+    if settings.get("theme") != "Supabase":
+        settings["theme"] = "Supabase"
     return settings
 
 

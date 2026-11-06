@@ -226,6 +226,15 @@ def render_profile_view(st, user, storage_key, on_logout=None):
         st.error(f"Could not read your storage usage: {exc}")
         _total_bytes, _files = 0, {}
     st.write(f"Total storage used: **{_total_bytes / (1024 * 1024):.1f} MB**")
+    # Supabase profile pattern: storage as one thin hairline, green fill.
+    _used_pct = _total_bytes / _FREE_TIER_BYTES * 100
+    try:
+        from ui_design import storage_bar as _storage_bar
+    except Exception:  # noqa: BLE001 - fall back to the text lines below
+        _storage_bar = None
+    if _storage_bar is not None:
+        _storage_bar(_used_pct,
+                     f"{_total_bytes / (1024 * 1024):.1f} MB of 1 GB used")
     for _sub in storage.SUBFOLDERS:
         _names = _files.get(_sub, []) if isinstance(_files, dict) else []
         st.write(f"{_sub}: {len(_names)} file(s)")

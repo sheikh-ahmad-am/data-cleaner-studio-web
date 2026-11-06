@@ -273,3 +273,31 @@ def test_frontend_files_carry_the_protocol():
     assert "apiVersion: 1" in js
     # No site key or secret may ever be baked into the frontend.
     assert "0x4AAAAA" not in html and "0x4AAAAA" not in js
+
+
+# ---------------------------------------------------------------------------
+# Turnstile width fix (2026-11-06, Supabase reskin): the widget must be
+# fluid, not a fixed 300px box, or it overflows narrow layouts.
+# ---------------------------------------------------------------------------
+
+def test_turnstile_widget_size_is_flexible():
+    js = (PROJECT_ROOT / "turnstile_component" / "frontend"
+          / "turnstile.js").read_text(encoding="utf-8")
+    assert 'size: "flexible"' in js
+    assert 'size: "normal"' not in js
+
+
+def test_turnstile_container_is_fluid_width():
+    html = (PROJECT_ROOT / "turnstile_component" / "frontend"
+            / "index.html").read_text(encoding="utf-8")
+    assert "width: 100%" in html
+    # The old fixed-width rule must be gone ("max-width: 300px" still
+    # contains the substring "width: 300px", so match the full rule).
+    assert "#turnstile-container { width: 300px" not in html
+
+
+def test_turnstile_container_keeps_max_width_cap():
+    html = (PROJECT_ROOT / "turnstile_component" / "frontend"
+            / "index.html").read_text(encoding="utf-8")
+    assert "max-width: 300px" in html
+    assert "height: 65px" in html

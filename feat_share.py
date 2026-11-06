@@ -100,6 +100,14 @@ import engine
 import privacy
 import storage
 
+try:
+    from ui_design import column_type_label as _column_type_label
+except Exception:  # noqa: BLE001 - ui_design is presentation-only
+    def _column_type_label(name, dtype):
+        return (f'<span class="dcs-coltype">{html.escape(str(name))} '
+                f'<span class="dcs-coltype-kind">'
+                f"{html.escape(str(dtype))}</span></span>")
+
 __all__ = [
     "suggest_fixes", "apply_suggestion",
     "override_column_type",
@@ -108,7 +116,7 @@ __all__ = [
     "add_recent", "list_recent", "load_recent",
     "backup_raw", "list_backups", "restore_backup",
     "html_dashboard_bytes", "portfolio_zip_bytes",
-    "chart_png_bytes", "to_excel_bytes_styled",
+    "chart_png_bytes", "to_excel_bytes_styled", "column_type_labels",
     "render_suggestions", "render_type_override",
     "render_standardize_phones", "render_strip_specials",
     "render_goal", "render_search", "render_sort",
@@ -141,11 +149,11 @@ OPT_KEY_MAP = {
 CLEAN_OPT_KEYS = list(OPT_KEY_MAP)
 DEFAULT_CLEAN_OPTS = {k: True for k in CLEAN_OPT_KEYS}
 
-_BG = "#121212"
-_GREEN = "#2F5D5A"
-_TEXT = "#f2f2f2"
-_MUTED = "#9a9a9a"
-_GRID = "#2e2e2e"
+_BG = "#ffffff"
+_GREEN = "#117f50"
+_TEXT = "#030303"
+_MUTED = "#696969"
+_GRID = "#e8e8e8"
 
 
 def _to_engine_opts(clean_opts):
@@ -211,6 +219,32 @@ def _fmt_num(v) -> str:
     if f == int(f) and abs(f) < 10_000_000:
         return f"{int(f):,}"
     return f"{f:,.1f}"
+
+
+def _display_dtype(series: pd.Series) -> str:
+    """A column's dtype in Supabase words — text / numeric / boolean /
+    timestamp — falling back to the raw pandas dtype string."""
+    dtype = str(series.dtype)
+    if dtype in ("object", "str", "string"):
+        return "text"
+    if dtype.startswith(("int", "float", "Int", "Float")):
+        return "numeric"
+    if dtype == "bool":
+        return "boolean"
+    if "datetime" in dtype:
+        return "timestamp"
+    return dtype
+
+
+def column_type_labels(df: pd.DataFrame) -> list:
+    """One Supabase-style column header per column — ``name text``,
+    ``price numeric``: the name in ink, the type in muted monospace
+    (see ui_design.column_type_label). Pure HTML strings, no Streamlit
+    calls, so the caller can join them into a caption or a table
+    header row. The type is part of the table's honesty."""
+    if df is None:
+        return []
+    return [_column_type_label(c, _display_dtype(df[c])) for c in df.columns]
 
 
 # --------------------------------------------------------------------------
@@ -773,14 +807,14 @@ def restore_backup(path, base_dir=None, storage_key=None) -> pd.DataFrame:
 # 11. Standalone HTML dashboard
 # --------------------------------------------------------------------------
 
-def _svg_bar_chart(grouped_df, x_col, y_col, title, accent="#2F5D5A") -> str:
+def _svg_bar_chart(grouped_df, x_col, y_col, title, accent="#117f50") -> str:
     """Inline SVG vertical bar chart, hand-drawn (no JS, no libraries).
-    Dark theme, bars in the accent colour (deep teal by default)."""
+    White theme, bars in the accent colour (deep green by default)."""
     if grouped_df is None or len(grouped_df) == 0 or x_col not in grouped_df.columns \
             or y_col not in grouped_df.columns:
         return "<p>No chart data yet — clean the data and pick a group and a number first.</p>"
     bar_color = accent if isinstance(accent, str) and accent.startswith("#") \
-        and len(accent) == 7 else "#2F5D5A"
+        and len(accent) == 7 else "#117f50"
     data = grouped_df.head(12).copy()
     labels = [str(v)[:18] for v in data[x_col]]
     values = [float(v) for v in pd.to_numeric(data[y_col], errors="coerce").fillna(0)]
@@ -794,12 +828,12 @@ def _svg_bar_chart(grouped_df, x_col, y_col, title, accent="#2F5D5A") -> str:
     bar_w = max(8, slot * 0.6)
     parts = [f'<svg width="{w}" height="{h}" viewBox="0 0 {w} {h}" '
              f'role="img" aria-label="{html.escape(str(title))}">']
-    parts.append(f'<rect x="0" y="0" width="{w}" height="{h}" fill="#121212"/>')
+    parts.append(f'<rect x="0" y="0" width="{w}" height="{h}" fill="#ffffff"/>')
     for frac in (0.25, 0.5, 0.75, 1.0):
         y = top_pad + plot_h * (1 - frac)
         parts.append(f'<line x1="{left}" y1="{y:.0f}" x2="{w - 20}" y2="{y:.0f}" '
-                     f'stroke="#2e2e2e" stroke-width="1"/>')
-        parts.append(f'<text x="{left - 8}" y="{y + 4:.0f}" fill="#9a9a9a" '
+                     f'stroke="#e8e8e8" stroke-width="1"/>')
+        parts.append(f'<text x="{left - 8}" y="{y + 4:.0f}" fill="#696969" '
                      f'font-size="12" text-anchor="end">{_fmt_num(top * frac)}</text>')
     for i, (label, value) in enumerate(zip(labels, values)):
         bh = plot_h * value / top
@@ -807,12 +841,12 @@ def _svg_bar_chart(grouped_df, x_col, y_col, title, accent="#2F5D5A") -> str:
         y = top_pad + plot_h - bh
         parts.append(f'<rect x="{x:.0f}" y="{y:.0f}" width="{bar_w:.0f}" '
                      f'height="{bh:.0f}" fill="{bar_color}" rx="3"/>')
-        parts.append(f'<text x="{x + bar_w / 2:.0f}" y="{y - 6:.0f}" fill="#f2f2f2" '
+        parts.append(f'<text x="{x + bar_w / 2:.0f}" y="{y - 6:.0f}" fill="#030303" '
                      f'font-size="12" text-anchor="middle">{_fmt_num(value)}</text>')
-        parts.append(f'<text x="{x + bar_w / 2:.0f}" y="{h - bottom + 20:.0f}" fill="#f2f2f2" '
+        parts.append(f'<text x="{x + bar_w / 2:.0f}" y="{h - bottom + 20:.0f}" fill="#030303" '
                      f'font-size="12" text-anchor="middle">{html.escape(label)}</text>')
     parts.append(f'<line x1="{left}" y1="{top_pad + plot_h}" x2="{w - 20}" '
-                 f'y2="{top_pad + plot_h}" stroke="#9a9a9a" stroke-width="1"/>')
+                 f'y2="{top_pad + plot_h}" stroke="#696969" stroke-width="1"/>')
     parts.append("</svg>")
     return "\n".join(parts)
 
@@ -832,7 +866,7 @@ def html_dashboard_bytes(kpis, actions, grouped_df, x_col, y_col,
     kpis = kpis or []
     actions = actions or []
     brand_name = None
-    accent = "#2F5D5A"
+    accent = "#117f50"
     if isinstance(brand, dict):
         name = brand.get("name")
         if isinstance(name, str) and name.strip():
@@ -858,17 +892,17 @@ def html_dashboard_bytes(kpis, actions, grouped_df, x_col, y_col,
 <meta charset="utf-8">
 <title>{html.escape(str(title))}</title>
 <style>
-body {{ background: #121212; color: #f2f2f2; font-family: Arial, Helvetica, sans-serif; margin: 0; padding: 24px; }}
+body {{ background: #ffffff; color: #030303; font-family: Arial, Helvetica, sans-serif; margin: 0; padding: 24px; }}
 h1 {{ color: {accent}; font-size: 28px; margin: 0 0 4px 0; }}
-p.sub {{ color: #9a9a9a; margin: 0 0 24px 0; }}
+p.sub {{ color: #696969; margin: 0 0 24px 0; }}
 h2 {{ color: {accent}; font-size: 20px; margin: 28px 0 12px 0; }}
 .cards {{ display: flex; flex-wrap: wrap; gap: 12px; }}
-.card {{ background: #1e1e1e; border: 1px solid #2e2e2e; border-radius: 10px; padding: 16px 20px; min-width: 160px; }}
-.kpi-label {{ color: #9a9a9a; font-size: 13px; }}
-.kpi-value {{ color: #f2f2f2; font-size: 22px; font-weight: bold; margin-top: 4px; }}
+.card {{ background: #ffffff; border: 1px solid #e8e8e8; border-radius: 10px; padding: 16px 20px; min-width: 160px; }}
+.kpi-label {{ color: #696969; font-size: 13px; }}
+.kpi-value {{ color: #030303; font-size: 22px; font-weight: bold; margin-top: 4px; }}
 ul {{ line-height: 1.7; }}
-.chart {{ background: #121212; border: 1px solid #2e2e2e; border-radius: 10px; padding: 12px; overflow-x: auto; }}
-footer {{ color: #9a9a9a; font-size: 12px; margin-top: 28px; }}
+.chart {{ background: #ffffff; border: 1px solid #e8e8e8; border-radius: 10px; padding: 12px; overflow-x: auto; }}
+footer {{ color: #696969; font-size: 12px; margin-top: 28px; }}
 </style>
 </head>
 <body>
@@ -925,7 +959,7 @@ def chart_png_bytes(grouped_df, x_col, y_col, title,
                     kind="bar") -> bytes:
     """Draw a clean bar or line chart with PIL and return PNG bytes.
 
-    1200x675, dark theme (#121212 background, deep-teal #2F5D5A bars /
+    1200x675, white theme (#ffffff background, deep-green #117f50 bars /
     line), axes, labels and values. No matplotlib, no vl-convert.
     kind is "bar" or "line". Raises ValueError for an unknown kind.
     """
@@ -1159,6 +1193,9 @@ def render_type_override(st, df: pd.DataFrame):
     st.write("If the app guessed a column's type wrong, force it here — "
              "text, number or date.")
     col = st.selectbox("Column", list(df.columns), key="s_type_col")
+    # Supabase table honesty: show the column with its current type.
+    st.markdown(_column_type_label(col, _display_dtype(df[col])),
+                unsafe_allow_html=True)
     kind_label = st.selectbox("Force it to be",
                               ["text", "number", "date"], key="s_type_kind")
     if st.button("Apply type", key="s_type_apply"):

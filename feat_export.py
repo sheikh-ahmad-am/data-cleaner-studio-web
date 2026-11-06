@@ -549,12 +549,14 @@ def render_column_charts(st, df):
     for col in num_cols:
         st.write(f"**{engine._pretty(col)}** — distribution")
         chart = (alt.Chart(df)
-                 .mark_bar()
+                 .mark_bar(color="#117f50")
                  .encode(x=alt.X(col, bin=True,
                                  title=engine._pretty(col)),
                          y=alt.Y("count()", title="Rows"),
                          tooltip=["count()"])
-                 .properties(height=200))
+                 .properties(height=200)
+                 .configure_axis(labelColor="#696969", titleColor="#030303")
+                 .configure_view(stroke="#e8e8e8"))
         st.altair_chart(chart, width="stretch")
     cat_cols = [c for c in df.columns
                 if str(df[c].dtype) in ("object", "str")
@@ -565,10 +567,12 @@ def render_column_charts(st, df):
         counts.columns = ["value", "count"]
         st.write(f"**{engine._pretty(col)}** — value counts")
         chart = (alt.Chart(counts)
-                 .mark_bar()
+                 .mark_bar(color="#117f50")
                  .encode(x=alt.X("value:N", title=engine._pretty(col),
                                  sort="-y"),
                          y=alt.Y("count:Q", title="Rows"),
                          tooltip=["value", "count"])
-                 .properties(height=200))
+                 .properties(height=200)
+                 .configure_axis(labelColor="#696969", titleColor="#030303")
+                 .configure_view(stroke="#e8e8e8"))
         st.altair_chart(chart, width="stretch")

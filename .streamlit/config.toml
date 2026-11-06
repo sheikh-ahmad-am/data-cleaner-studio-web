@@ -3,14 +3,16 @@ headless = true
 port = 8501
 maxUploadSize = 1000
 
-# Classic light theme: warm off-white background, ink text, one deep-teal
+# Supabase theme: near-white background, near-black ink, one deep-green
 # accent. This themes the whole app from first paint — login screen
 # included — so the app never follows the browser/OS dark mode, and every
-# primary button is teal instead of Streamlit's default red.
+# primary button is Supabase green instead of Streamlit's default red.
+# Tokens measured off the live Supabase dashboard — see
+# supabase-design-study.md in the repo root.
 [theme]
 base = "light"
-backgroundColor = "#FAF7F2"
-secondaryBackgroundColor = "#F3EFE8"
-textColor = "#23272E"
-primaryColor = "#2F5D5A"
+backgroundColor = "#fdfdfd"
+secondaryBackgroundColor = "#fdfdfd"
+textColor = "#030303"
+primaryColor = "#117f50"
 font = "sans serif"

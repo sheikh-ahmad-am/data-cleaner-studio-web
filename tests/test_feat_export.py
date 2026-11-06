@@ -315,6 +315,22 @@ def test_render_column_charts():
     print("column charts OK: 6 charts rendered via FakeSt")
 
 
+def test_column_charts_supabase_green():
+    """Column charts render on white with one green accent: green bars,
+    ink axis titles, muted axis labels, hairline view stroke."""
+    _, clean, _, _ = _sample_clean()
+    st = FakeSt()
+    feat_export.render_column_charts(st, clean)
+    assert len(st.charts) == 6
+    for c in st.charts:
+        spec = c.to_dict()
+        assert spec["mark"] == {"type": "bar", "color": "#117f50"}, spec["mark"]
+        assert spec["config"]["view"]["stroke"] == "#e8e8e8"
+        assert spec["config"]["axis"]["labelColor"] == "#696969"
+        assert spec["config"]["axis"]["titleColor"] == "#030303"
+    print("column charts OK: green bars on white, ink/muted axes")
+
+
 def test_render_pptx_download():
     _, clean, actions, kpis = _sample_clean()
     st = FakeSt()
@@ -395,6 +411,7 @@ if __name__ == "__main__":
     test_funnel_chart()
     test_squarify_layout_pure()
     test_render_column_charts()
+    test_column_charts_supabase_green()
     test_render_pptx_download()
     test_render_sheets_export()
     test_render_email_schedule_saves_no_password()
