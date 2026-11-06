@@ -421,8 +421,13 @@ for key, default in [
         st.session_state[key] = default
 
 # Recipes persist per user (recipes/); restore them into the session.
+# A storage failure here (e.g. Supabase Storage not configured yet)
+# must never stop the app: a first-time user has no recipes anyway.
 if not st.session_state.get("a_recipes"):
-    _saved_recipes = storage.load_json(_skey, "recipes", "recipes.json")
+    try:
+        _saved_recipes = storage.load_json(_skey, "recipes", "recipes.json")
+    except Exception:  # noqa: BLE001 - missing recipes are not fatal
+        _saved_recipes = None
     if isinstance(_saved_recipes, list):
         st.session_state["a_recipes"] = _saved_recipes
 
@@ -1625,7 +1630,10 @@ if "settings" in tab:
                     st.error(f"Could not save the job list: {e}")
 
         st.subheader("Shared dashboard links")
-        _shares = storage.load_json(_skey, "views", _SHARES_FILENAME)
+        try:
+            _shares = storage.load_json(_skey, "views", _SHARES_FILENAME)
+        except Exception:  # noqa: BLE001 - no share links without storage
+            _shares = None
         if not isinstance(_shares, dict) or not _shares:
             st.info("No share links yet — create one from the Dashboard tab.")
         else:
