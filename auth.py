@@ -130,6 +130,25 @@ class EmailNotConfirmedError(AuthServiceError):
     """
 
 
+#: Plain-word message shown when Supabase rejects a login or sign-up
+#: over the security check (Turnstile CAPTCHA). The raw Supabase error
+#: ("captcha verification failed" and friends) must never reach the
+#: user — see _classify_error and CaptchaFailedError below.
+CAPTCHA_FAILED_MESSAGE = ("Security check failed — please complete the "
+                          "check and try again.")
+
+
+class CaptchaFailedError(AuthServiceError):
+    """Supabase rejected the Turnstile security check.
+
+    A subclass of AuthServiceError (so every existing
+    ``except AuthServiceError`` still catches it), raised only when a
+    sign-up or sign-in fails on captcha verification — a spent or
+    missing token, or a failed check. The app catches this subclass
+    FIRST and shows CAPTCHA_FAILED_MESSAGE instead of a raw error.
+    """
+
+
 #: create_user() return marker: the account WAS created, but the email
 #: is not confirmed yet (Supabase "Confirm email" is on). The second
 #: element of the (ok, error) tuple is this string instead of None.
@@ -560,6 +579,10 @@ def _classify_error(exc: Exception, action: str) -> AuthServiceError:
             f"{SETUP_MESSAGE} (failed while {action})."
         )
     msg = str(exc) or type(exc).__name__
+    if "captcha" in msg.lower():
+        # Supabase rejected the Turnstile check (spent/missing token
+        # or a failed verification). Never expose the raw error.
+        return CaptchaFailedError(CAPTCHA_FAILED_MESSAGE)
     if "invalid api key" in msg.lower() or "jwt" in msg.lower():
         return AuthServiceError(
             "Supabase rejected the anon key — check supabase_config.json "
@@ -673,14 +696,22 @@ def _sb_upsert_profile(user_id: str, email: str) -> dict:
     return _sb_user_dict(user_id, email, None)
 
 
-def _sb_create_user(email, password) -> tuple[bool, str | None]:
+def _sb_create_user(email, password, captcha_token=None) -> tuple[bool, str | None]:
     if not isinstance(email, str) or not _EMAIL_RE.match(email):
         return False, "Enter a valid email address."
     if not isinstance(password, str) or len(password) < 8:
         return False, "Password must be at least 8 characters."
     client = _get_client()
+    # The token rides INSIDE the credentials dict, under options.
+    # captcha_token is NotRequired in supabase-py's types: omit
+    # `options` entirely when there is no token (local runs and
+    # deploys without Turnstile configured must send exactly what
+    # they sent before).
+    credentials = {"email": email, "password": password}
+    if captcha_token:
+        credentials["options"] = {"captcha_token": captcha_token}
     try:
-        resp = client.auth.sign_up({"email": email, "password": password})
+        resp = client.auth.sign_up(credentials)
     except Exception as exc:  # noqa: BLE001 - classified below
         err = _classify_error(exc, "signing up")
         raise err
@@ -713,22 +744,26 @@ def _sb_create_user(email, password) -> tuple[bool, str | None]:
     return True, None
 
 
-def _sb_authenticate(email, password) -> dict | None:
+def _sb_authenticate(email, password, captcha_token=None) -> dict | None:
     """Sign in via Supabase Auth.
 
     Returns the user dict on success, None on wrong email/password.
     Raises EmailNotConfirmedError (an AuthServiceError subclass) when
-    the email is not confirmed yet, and AuthServiceError if Supabase
-    is unreachable/misconfigured — neither is a wrong password and
-    both must be shown as such.
+    the email is not confirmed yet, CaptchaFailedError when the
+    Turnstile check fails, and AuthServiceError if Supabase is
+    unreachable/misconfigured — neither is a wrong password and
+    each must be shown as its own message.
     """
     if not isinstance(email, str) or not isinstance(password, str):
         return None
     client = _get_client()
+    # Same shape as sign-up: the token rides in options, omitted
+    # entirely when there is none.
+    credentials = {"email": email, "password": password}
+    if captcha_token:
+        credentials["options"] = {"captcha_token": captcha_token}
     try:
-        resp = client.auth.sign_in_with_password(
-            {"email": email, "password": password}
-        )
+        resp = client.auth.sign_in_with_password(credentials)
     except Exception as exc:  # noqa: BLE001 - classified below
         msg = str(exc)
         lowered = msg.lower()
@@ -813,7 +848,7 @@ def _sb_get_user_by_id(user_id) -> dict | None:
 # BACKEND-AGNOSTIC PUBLIC API
 # ---------------------------------------------------------------------------
 
-def create_user(username_or_email, password) -> tuple[bool, str | None]:
+def create_user(username_or_email, password, captcha_token=None) -> tuple[bool, str | None]:
     """Sign up. Local mode: identifier is a username (3-30 [a-zA-Z0-9_]).
     Supabase mode: identifier is an email address. Returns (ok, error).
 
@@ -823,23 +858,30 @@ def create_user(username_or_email, password) -> tuple[bool, str | None]:
     never returns that marker.
 
     Raises AuthServiceError in Supabase mode when the service is
-    unreachable or the tables are not set up yet.
+    unreachable or the tables are not set up yet. Raises
+    CaptchaFailedError when the Turnstile check fails (Supabase mode
+    with CAPTCHA on). `captcha_token` is ignored in local mode, which
+    has no security check.
     """
     if get_auth_backend() == "supabase":
-        return _sb_create_user(username_or_email, password)
+        return _sb_create_user(username_or_email, password,
+                               captcha_token=captcha_token)
     return _local_create_user(username_or_email, password)
 
 
-def authenticate(email_or_username, password) -> dict | None:
+def authenticate(email_or_username, password, captcha_token=None) -> dict | None:
     """Log in. Returns the user dict, or None for wrong credentials.
 
     Raises EmailNotConfirmedError (an AuthServiceError subclass) when
-    the email is registered but not confirmed yet, and AuthServiceError
-    when the Supabase backend is configured but unreachable — the app
-    must show each as its own message, not as a wrong-password message.
+    the email is registered but not confirmed yet, CaptchaFailedError
+    when the Turnstile check fails, and AuthServiceError when the
+    Supabase backend is configured but unreachable — the app must
+    show each as its own message, not as a wrong-password message.
+    `captcha_token` is ignored in local mode.
     """
     if get_auth_backend() == "supabase":
-        return _sb_authenticate(email_or_username, password)
+        return _sb_authenticate(email_or_username, password,
+                                captcha_token=captcha_token)
     return _local_authenticate(email_or_username, password)
 
 

@@ -33,6 +33,10 @@ def _copy_code_only(dest: Path) -> None:
     dest.mkdir(parents=True, exist_ok=True)
     for py in PROJECT_ROOT.glob("*.py"):
         shutil.copy2(py, dest / py.name)
+    # The Turnstile widget is a package, not a top-level .py file:
+    # app.py imports it, so the copy needs it too.
+    shutil.copytree(PROJECT_ROOT / "turnstile_component",
+                    dest / "turnstile_component")
     tests_dir = dest / "tests"
     tests_dir.mkdir(exist_ok=True)
     shutil.copy2(Path(__file__).resolve(), tests_dir / "test_auth_cookie.py")

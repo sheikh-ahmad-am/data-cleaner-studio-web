@@ -133,6 +133,21 @@ switching backends means re-registering.
 > `SUPABASE_SERVICE_ROLE_KEY` environment variable (server-side).
 > If a key ever leaks, roll it in the Supabase dashboard.
 
+**Turnstile security check (optional, Cloudflare):** the login and
+sign-up screens show a Cloudflare Turnstile check when a site key
+is configured, and pass its token to Supabase Auth — so CAPTCHA
+can be switched on in Supabase without breaking logins. Add the
+site key (public — it ships in the page) to the app's Streamlit
+secrets or environment as `TURNSTILE_SITE_KEY` (get it from the
+Cloudflare dashboard: Turnstile → Add Widget, Managed mode, the
+app's hostname). With no key configured the screens behave exactly
+as before: no widget, no token sent, local mode unaffected. The
+**secret** key never goes in the repo or the app's secrets — it
+belongs in the Supabase dashboard only (Authentication → Attack
+Protection → Bot and Abuse Protection), and only AFTER the app
+has the site key: switching CAPTCHA on first would reject logins
+that carry no token.
+
 ### If the Supabase project ever pauses (free tier)
 
 Free-tier Supabase projects **pause after 1 week with no real

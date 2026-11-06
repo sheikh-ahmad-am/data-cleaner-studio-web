@@ -85,6 +85,7 @@ import feat_share
 import feat_tutorial
 import scheduler
 import storage
+import turnstile_component
 
 try:
     from auth import AuthServiceError
@@ -365,6 +366,24 @@ def _google_oauth_enabled() -> bool:
     return raw in ("true", "True", "1")
 
 
+def _turnstile_site_key() -> str | None:
+    """The Cloudflare Turnstile site key, or None when the check is off.
+
+    Delegates to turnstile_component.get_site_key(): Streamlit secret
+    TURNSTILE_SITE_KEY first, then the environment — the same shape
+    as _google_oauth_enabled above. The key is public by design (it
+    ships in the page); the secret key never lives here — it belongs
+    in the Supabase dashboard (Authentication -> Attack Protection)
+    and only matters once CAPTCHA is switched on there. Until a key
+    is configured the login screen behaves exactly as before, with
+    no widget and no token sent.
+    """
+    try:
+        return turnstile_component.get_site_key()
+    except Exception:  # noqa: BLE001 - no key, no widget
+        return None
+
+
 def _consume_oauth_callback() -> None:
     """Consume an OAuth redirect (?code=...) once, if one ever arrives.
 
@@ -476,15 +495,35 @@ if _current_user is None:
     password = st.text_input("Password", type="password",
                              key="auth_pw_input",
                              help="At least 8 characters.")
+    # Turnstile security check (cloud mode + key configured only; local
+    # mode has no check). One widget serves both Log in and Sign up:
+    # it sits above the buttons, and its token rides to Supabase with
+    # the submit. Tokens are single-use, so after every attempt the
+    # counter below remounts the widget for a fresh token.
+    _turnstile_key = _turnstile_site_key() if backend != "local" else None
+    _turnstile_token = None
+    if _turnstile_key:
+        if "turnstile_counter" not in st.session_state:
+            st.session_state["turnstile_counter"] = 0
+        _turnstile_token = turnstile_component.turnstile_token(
+            _turnstile_key,
+            key=f"turnstile-{st.session_state['turnstile_counter']}",
+            reset=st.session_state["turnstile_counter"],
+        )
     if mode == "Log in":
         if st.button("Log in", key="auth_login_btn", type="primary"):
             if not ident.strip() or not password:
                 st.error("Enter your email/username and password.")
+            elif _turnstile_key and not _turnstile_token:
+                st.error("Complete the security check above first.")
             else:
                 _unconfirmed = False
+                _captcha_failed = False
                 with st.spinner("Logging you in…"):
                     try:
-                        user = auth.authenticate(ident.strip(), password)
+                        user = auth.authenticate(
+                            ident.strip(), password,
+                            captcha_token=_turnstile_token)
                     except auth.EmailNotConfirmedError:
                         # Registered but the email is not confirmed yet:
                         # neither a wrong password nor a service error.
@@ -492,11 +531,20 @@ if _current_user is None:
                                  "link first, then log in.")
                         user = None
                         _unconfirmed = True
+                    except auth.CaptchaFailedError:
+                        st.error(auth.CAPTCHA_FAILED_MESSAGE)
+                        user = None
+                        _captcha_failed = True
                     except AuthServiceError as exc:
                         st.error(f"Account service error: {exc}")
                         user = None
+                # The token is spent now (single-use): the next
+                # attempt gets a fresh widget.
+                if _turnstile_key:
+                    st.session_state["turnstile_counter"] = (
+                        st.session_state.get("turnstile_counter", 0) + 1)
                 if user is None:
-                    if not _unconfirmed:
+                    if not _unconfirmed and not _captcha_failed:
                         st.error("Wrong email/username or password. Try again.")
                 elif _log_user_in(user):
                     st.rerun()
@@ -505,15 +553,30 @@ if _current_user is None:
             if not ident.strip() or not password:
                 st.error("Enter an email/username and a password "
                          "(at least 8 characters).")
+            elif _turnstile_key and not _turnstile_token:
+                st.error("Complete the security check above first.")
             else:
+                _captcha_failed = False
                 with st.spinner("Creating your account…"):
                     try:
-                        ok, error = auth.create_user(ident.strip(), password)
+                        ok, error = auth.create_user(
+                            ident.strip(), password,
+                            captcha_token=_turnstile_token)
+                    except auth.CaptchaFailedError:
+                        st.error(auth.CAPTCHA_FAILED_MESSAGE)
+                        ok, error = False, None
+                        _captcha_failed = True
                     except AuthServiceError as exc:
                         st.error(f"Account service error: {exc}")
                         ok, error = False, None
+                # The token is spent now (single-use): the next
+                # attempt gets a fresh widget.
+                if _turnstile_key:
+                    st.session_state["turnstile_counter"] = (
+                        st.session_state.get("turnstile_counter", 0) + 1)
                 if not ok:
-                    st.error(error or "Could not create the account.")
+                    if not _captcha_failed:
+                        st.error(error or "Could not create the account.")
                 elif error == auth.SIGNUP_NEEDS_CONFIRMATION:
                     # The account exists but the email is not confirmed
                     # yet ("Confirm email" is on): no auto-login and no
@@ -528,12 +591,25 @@ if _current_user is None:
                     # If that ever fails, fall back to the old
                     # "switch to Log in" message.
                     _unconfirmed = False
+                    _captcha_spent = False
                     with st.spinner("Logging you in…"):
                         try:
-                            user = auth.authenticate(ident.strip(), password)
+                            # Same token as the sign-up call: with
+                            # CAPTCHA still off in Supabase it is
+                            # ignored and the login succeeds; with
+                            # CAPTCHA on it is spent (single-use) and
+                            # the login asks for a fresh check instead
+                            # — the account already exists, so the
+                            # user just logs in with a new check.
+                            user = auth.authenticate(
+                                ident.strip(), password,
+                                captcha_token=_turnstile_token)
                         except auth.EmailNotConfirmedError:
                             user = None
                             _unconfirmed = True
+                        except auth.CaptchaFailedError:
+                            user = None
+                            _captcha_spent = True
                         except AuthServiceError:
                             user = None
                     if user is not None and _log_user_in(user):
@@ -542,6 +618,9 @@ if _current_user is None:
                     elif _unconfirmed:
                         st.success("Account created — check your inbox and click "
                                    "the verification link first, then log in here.")
+                    elif _captcha_spent:
+                        st.success("Account created — log in with your new "
+                                   "account.")
                     else:
                         st.success("Account created — switch to 'Log in' "
                                    "above and log in with it.")

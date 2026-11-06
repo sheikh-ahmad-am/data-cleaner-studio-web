@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Turnstile check</title>
+  <style>
+    html, body { margin: 0; padding: 0; background: transparent; }
+    #turnstile-container { width: 300px; height: 65px; }
+    #turnstile-note {
+      display: none;
+      font-family: sans-serif;
+      font-size: 13px;
+      color: #6E6A61;
+      padding: 8px 0;
+    }
+  </style>
+  <!-- Explicit render: the API calls window.onTurnstileApiLoad when ready. -->
+  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit&onload=onTurnstileApiLoad" async defer></script>
+  <script src="./turnstile.js"></script>
+</head>
+<body>
+  <div id="turnstile-container"></div>
+  <div id="turnstile-note">Security check could not load — check your
+    connection and refresh the page.</div>
+</body>
+</html>
