@@ -85,7 +85,7 @@
     widgetId = window.turnstile.render(container, {
       sitekey: sitekey,
       theme: "light", // matches the app's warm off-white palette
-      size: "normal",
+      size: "flexible",
       callback: function (token) {
         sendToken(token);
       },

@@ -608,30 +608,31 @@ def load_workspace(base_dir=None):
 
 
 # --------------------------------------------------------------------------
-# 9. Classic light theme (the app's ONE theme)
+# 9. Supabase light theme (the app's ONE theme)
 # --------------------------------------------------------------------------
 
-#: The app has a single Classic theme — warm off-white background, ink
-#: text, one deep-teal accent — matching .streamlit/config.toml, which
+#: The app has a single Supabase theme — near-white background, near-black
+#: ink, one deep-green accent — matching .streamlit/config.toml, which
 #: themes the app from first paint (login screen included). Streamlit's
 #: own theme is static config, so a picker cannot re-theme the app by
-#: itself; the old Dark green / Dark blue / Light picker is retired.
-#: theme_css() / apply_theme() keep their signatures: any old theme name
-#: (including a stale "theme" value in an existing settings.json) falls
-#: back to Classic.
+#: itself; the old Classic / Dark green / Dark blue / Light picker is
+#: retired. theme_css() / apply_theme() keep their signatures: any old
+#: theme name (including a stale "theme" value in an existing
+#: settings.json) falls back to Supabase.
 THEMES = {
-    "Classic": {
-        "background": "#FAF7F2", "text": "#23272E",
-        "accent": "#2F5D5A", "secondary": "#F3EFE8",
+    "Supabase": {
+        "background": "#fdfdfd", "text": "#030303",
+        "accent": "#117f50", "secondary": "#fdfdfd",
         "button_text": "#FFFFFF",
     },
 }
 
 
 def theme_css(theme_name: str) -> str:
-    """The live CSS overrides for a theme name. Unknown names fall back
-    to "Classic"."""
-    theme = THEMES.get(theme_name) or THEMES["Classic"]
+    """The live CSS overrides for a theme name. Any name — "Supabase",
+    "Classic", "Dark green", "Dark blue", anything unknown — returns the
+    identical Supabase CSS: there is only one theme now."""
+    theme = THEMES.get(theme_name) or THEMES["Supabase"]
     return f"""<style>
 .stApp {{ background-color: {theme["background"]}; color: {theme["text"]}; }}
 .stApp h1, .stApp h2, .stApp h3 {{ color: {theme["text"]}; }}
@@ -648,8 +649,8 @@ section[data-testid="stSidebar"] * {{ color: {theme["text"]}; }}
 def apply_theme(st, theme_name: str) -> str:
     """Inject the theme's live CSS overrides and remember the choice in
     settings.json for next launch. Returns the theme name actually used
-    (always "Classic" — any other name falls back to it)."""
-    name = theme_name if theme_name in THEMES else "Classic"
+    (always "Supabase" — any other name falls back to it)."""
+    name = theme_name if theme_name in THEMES else "Supabase"
     st.markdown(theme_css(name), unsafe_allow_html=True)
     settings = ai_settings.load_settings()
     settings["theme"] = name
@@ -1156,12 +1157,12 @@ def render_workspace_toggle(st) -> bool:
 
 
 def render_theme_picker(st) -> str:
-    """Retired: the app has one Classic theme now (see THEMES), set in
+    """Retired: the app has one Supabase theme now (see THEMES), set in
     .streamlit/config.toml, so there is no picker UI any more. Kept for
-    backwards compatibility — it applies Classic, records it in
-    settings.json and session state, and returns "Classic". Any old
-    stored theme name is migrated to Classic."""
-    name = apply_theme(st, "Classic")
+    backwards compatibility — it applies Supabase, records it in
+    settings.json and session state, and returns "Supabase". Any old
+    stored theme name is migrated to Supabase."""
+    name = apply_theme(st, "Supabase")
     st.session_state["n_theme_data"] = name
     return name
 
