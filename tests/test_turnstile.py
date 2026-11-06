@@ -232,7 +232,27 @@ def test_token_passes_args_and_return_through(monkeypatch):
     assert calls[0][0] == "turnstile"
     assert Path(calls[0][1]).name == "frontend"
     assert calls[1] == {"site_key": "0xSITEKEY", "reset": 3,
+                        "theme": "light",
                         "key": "turnstile-3", "default": None}
+
+
+def test_token_passes_dark_theme_through(monkeypatch):
+    calls = _stub_component(monkeypatch, "tok-abc")
+    assert turnstile_component.turnstile_token(
+        "0xSITEKEY", theme="dark") == "tok-abc"
+    assert calls[1]["theme"] == "dark"
+
+
+def test_token_normalizes_unknown_theme_to_light(monkeypatch):
+    calls = _stub_component(monkeypatch, "tok-abc")
+    assert turnstile_component.turnstile_token(
+        "0xSITEKEY", theme="sepia") == "tok-abc"
+    assert calls[1]["theme"] == "light"
+    assert turnstile_component.turnstile_token(
+        "0xSITEKEY", theme=None) == "tok-abc"
+    # The stub declares the component once; the second render's
+    # kwargs are the third entry.
+    assert calls[2]["theme"] == "light"
 
 
 def test_token_none_without_key_never_touches_component(monkeypatch):
@@ -264,7 +284,7 @@ def test_frontend_files_carry_the_protocol():
     for marker in ("streamlit:componentReady", "streamlit:setComponentValue",
                    "streamlit:setFrameHeight", "streamlit:render",
                    "turnstile.render", "expired-callback",
-                   "theme: \"light\""):
+                   "theme: theme"):
         assert marker in js, f"missing frontend marker: {marker}"
     # Regression (2026-11-06, live app): the componentReady message
     # must carry apiVersion, or Streamlit rejects the handshake with
@@ -301,3 +321,37 @@ def test_turnstile_container_keeps_max_width_cap():
             / "index.html").read_text(encoding="utf-8")
     assert "max-width: 300px" in html
     assert "height: 65px" in html
+
+
+# ---------------------------------------------------------------------------
+# Turnstile theme follows the app theme (2026-11-07): in dark mode the
+# widget rendered as a white box, because the theme was hardcoded.
+# ---------------------------------------------------------------------------
+
+def test_turnstile_theme_is_dynamic_not_hardcoded():
+    js = (PROJECT_ROOT / "turnstile_component" / "frontend"
+          / "turnstile.js").read_text(encoding="utf-8")
+    # The theme arrives in the render args and is normalised.
+    assert "args.theme" in js
+    assert 'value === "dark" ? "dark" : "light"' in js
+    # It is passed to Turnstile at render time.
+    assert "theme: theme" in js
+    # And it is part of the render stamp, so flipping the theme
+    # remounts the widget in the new style.
+    assert '"|" + theme' in js
+    # No hardcoded theme may remain: a light-only widget shows as a
+    # white box on the dark page.
+    assert 'theme: "light"' not in js
+    assert 'theme: "dark"' not in js
+
+
+def test_turnstile_theme_fix_keeps_flexible_size():
+    # The theme change must not regress the width fix: size stays
+    # flexible and the container stays fluid with its cap.
+    js = (PROJECT_ROOT / "turnstile_component" / "frontend"
+          / "turnstile.js").read_text(encoding="utf-8")
+    html = (PROJECT_ROOT / "turnstile_component" / "frontend"
+            / "index.html").read_text(encoding="utf-8")
+    assert 'size: "flexible"' in js
+    assert "width: 100%" in html
+    assert "max-width: 300px" in html

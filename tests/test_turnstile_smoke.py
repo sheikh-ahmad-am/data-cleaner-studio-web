@@ -15,6 +15,12 @@ without real credentials:
      the follow-up auto-login reuses the spent token and, when
      Supabase rejects it, the account-created message still shows
      (no crash, no raw error).
+  6. The REAL component (not the stub) degrades gracefully in a
+     headless run: no crash, and with no token yet the submit is
+     still stopped.
+  7. Theme follows the app: the login-screen toggle flips
+     dcs_theme, and the widget is called with theme "dark" / "light"
+     to match — no white box on the dark page.
 
 The copy has no data/, no supabase_config.json and no secrets: the
 Supabase client is a fake, the backend is forced to "supabase"
@@ -185,8 +191,8 @@ def _setup(dst, auth, scheduler, storage, calls, fail_captcha=False,
 def _stub_widget(turnstile_component, calls, token):
     """Replace the widget with a stub that records calls."""
 
-    def _stub(site_key, key="turnstile", reset=0):
-        calls.append((site_key, key, reset))
+    def _stub(site_key, key="turnstile", reset=0, theme="light"):
+        calls.append((site_key, key, reset, theme))
         return token
 
     turnstile_component.turnstile_token = _stub
@@ -225,6 +231,8 @@ def _run(tmp, dst, auth, scheduler, storage, turnstile_component, AppTest):
     assert not at.exception, f"startup exception: {at.exception}"
     assert widget_calls, "widget must render when a key is set"
     assert widget_calls[0][0] == "0xSITEKEY"
+    assert widget_calls[0][3] == "light", \
+        f"default theme must reach the widget as light: {widget_calls}"
     _find_text_input(at, "Email").set_value("alice@example.com").run()
     _find_text_input(at, "Password").set_value("password123").run()
     _find_button(at, "Log in").click().run()
@@ -323,6 +331,29 @@ def _run(tmp, dst, auth, scheduler, storage, turnstile_component, AppTest):
         "real component with no token must still stop the submit"
     assert calls == [], f"blocked login must not call auth: {calls}"
     print("6. real component: no crash headless, submit still gated")
+
+    # ---- 7. Theme follows the app: the login-screen toggle flips
+    #      dcs_theme, and the widget is called with the matching
+    #      theme — dark on dark, light on light. ----
+    calls, widget_calls = [], []
+    _setup(dst, auth, scheduler, storage, calls)
+    _stub_widget(turnstile_component, widget_calls, None)
+    os.environ["TURNSTILE_SITE_KEY"] = "0xSITEKEY"
+    at = AppTest.from_file(APP)
+    at.run()
+    assert not at.exception, f"startup exception: {at.exception}"
+    assert widget_calls and widget_calls[-1][3] == "light", \
+        f"default theme must reach the widget as light: {widget_calls}"
+    _find_button(at, "Switch to dark theme").click().run()
+    assert not at.exception, f"exception on theme flip: {at.exception}"
+    assert widget_calls[-1][3] == "dark", \
+        f"dark theme must reach the widget: {widget_calls}"
+    _find_button(at, "Switch to light theme").click().run()
+    assert not at.exception, \
+        f"exception on theme flip back: {at.exception}"
+    assert widget_calls[-1][3] == "light", \
+        f"light theme must reach the widget again: {widget_calls}"
+    print("7. theme follows the app: dark -> dark, light -> light")
 
     os.environ.pop("TURNSTILE_SITE_KEY", None)
     print("TURNSTILE SMOKE TEST PASSED")

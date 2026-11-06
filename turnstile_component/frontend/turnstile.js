@@ -8,11 +8,15 @@
  *   - iframe -> parent:  {isStreamlitMessage: true, type:
  *       "streamlit:componentReady" | "streamlit:setComponentValue" |
  *       "streamlit:setFrameHeight", ...}
- * The widget renders once per (sitekey, reset) pair: Streamlit fires
- * "render" on every rerun (typing in the password field, for
- * example), and re-rendering the widget there would throw the token
- * away. A new `reset` value (the app bumps it after each login /
- * signup attempt) remounts the widget for a fresh single-use token.
+ * The widget renders once per (sitekey, reset, theme) triple:
+ * Streamlit fires "render" on every rerun (typing in the password
+ * field, for example), and re-rendering the widget there would throw
+ * the token away. A new `reset` value (the app bumps it after each
+ * login / signup attempt) remounts the widget for a fresh single-use
+ * token. A theme flip remounts it too — Turnstile's theme is set at
+ * render time and cannot change on a live widget, so the theme is
+ * part of the stamp; the in-flight token is discarded and the check
+ * is simply done again in the new style.
  */
 (function () {
   "use strict";
@@ -50,13 +54,22 @@
     }
   }
 
+  function normalizeTheme(value) {
+    // Turnstile only accepts "light" / "dark" / "auto"; the app
+    // passes its own theme explicitly, never "auto". Anything
+    // unknown falls back to light, so a stale value can never
+    // strand the widget in an unknown style.
+    return value === "dark" ? "dark" : "light";
+  }
+
   function renderWidget(args) {
     var sitekey = args && args.site_key;
     var reset = args && args.reset !== undefined ? args.reset : 0;
+    var theme = normalizeTheme(args && args.theme);
     if (!sitekey || !container) {
       return;
     }
-    var stamp = sitekey + "|" + reset;
+    var stamp = sitekey + "|" + reset + "|" + theme;
     if (stamp === lastRendered && widgetId !== null) {
       // Same widget, e.g. a rerun from typing: keep the token.
       if (currentToken) {
@@ -84,7 +97,7 @@
     }
     widgetId = window.turnstile.render(container, {
       sitekey: sitekey,
-      theme: "light", // matches the app's warm off-white palette
+      theme: theme, // follows the app theme (light / dark)
       size: "flexible",
       callback: function (token) {
         sendToken(token);

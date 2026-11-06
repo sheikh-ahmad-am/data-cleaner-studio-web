@@ -50,7 +50,17 @@ def _get_component():
     return _component
 
 
-def turnstile_token(site_key, key="turnstile", reset=0) -> str | None:
+def _normalize_theme(theme) -> str:
+    """Return ``"dark"`` only for the dark theme; anything else
+    (None, unknown, legacy names) falls back to ``"light"``, so a
+    stale value can never strand the widget in an unknown style.
+    Cloudflare Turnstile only accepts "light" / "dark" / "auto" —
+    the app passes its own theme explicitly, never "auto"."""
+    return "dark" if theme == "dark" else "light"
+
+
+def turnstile_token(site_key, key="turnstile", reset=0,
+                    theme="light") -> str | None:
     """Render the Turnstile widget and return its token, or None.
 
     Returns None when there is no site key (the caller must not
@@ -58,10 +68,17 @@ def turnstile_token(site_key, key="turnstile", reset=0) -> str | None:
     or when the token expired. Tokens are single-use: after an
     attempt, call again with a new `key` (and a bumped `reset`) for
     a fresh widget.
+
+    `theme` follows the app's theme ("light" / "dark"); the widget
+    renders in that style, so it never shows as a white box on the
+    dark page. A theme flip remounts the widget (the frontend keys
+    its render on sitekey + reset + theme), which discards any
+    in-flight token — the check is simply done again.
     """
     if not site_key:
         return None
     component = _get_component()
-    value = component(site_key=site_key, reset=int(reset), key=key,
+    value = component(site_key=site_key, reset=int(reset),
+                      theme=_normalize_theme(theme), key=key,
                       default=None)
     return value if isinstance(value, str) and value else None
