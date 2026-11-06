@@ -548,7 +548,12 @@ def _classify_error(exc: Exception, action: str) -> AuthServiceError:
 
 
 def _ensure_health() -> str:
-    """One cached health check: a tiny real SELECT against profiles.
+    """One cached health check: a tiny real RPC call (app_get_profile).
+
+    The check goes through the SECURITY DEFINER function on purpose:
+    the profiles/sessions tables deliberately grant nothing to the
+    anon role (direct SELECTs fail with 42501 by design), so a direct
+    table SELECT here would report a healthy project as broken.
 
     Returns "ok", "paused", "setup", or a plain-word message. A paused
     free project fails here (connection refused / 5xx); a project
@@ -563,7 +568,12 @@ def _ensure_health() -> str:
         _HEALTH = str(exc)
         return _HEALTH
     try:
-        client.table("profiles").select("id").limit(1).execute()
+        # Nil UUID: never matches a real user, so a healthy project
+        # answers None; a missing setup fails (PGRST202 / 42P01).
+        client.rpc(
+            "app_get_profile",
+            {"p_id": "00000000-0000-0000-0000-000000000000"},
+        ).execute()
     except Exception as exc:  # noqa: BLE001 - classified below
         if _is_network_error(exc):
             _HEALTH = "paused"
@@ -577,19 +587,25 @@ def _ensure_health() -> str:
 
 
 def supabase_keepalive() -> bool:
-    """Run one tiny real SELECT against the profiles table.
+    """Run one tiny real query via the app_get_profile RPC function.
 
     Used by the scheduler (scheduler.py) as the keep-alive: a free
     Supabase project pauses after 1 week of inactivity, and the pause
     clock is reset by REAL database activity, not by opening the app.
-    Returns True when the query ran, False on any failure. Never
-    raises — the scheduler logs the result and carries on.
+    The RPC is used on purpose — the profiles table deliberately
+    grants nothing to the anon role, so a direct SELECT would fail
+    with 42501 on a healthy project. Returns True when the query ran,
+    False on any failure. Never raises — the scheduler logs the result
+    and carries on.
     """
     try:
         if get_auth_backend() != "supabase":
             return False
         client = _get_client()
-        client.table("profiles").select("id").limit(1).execute()
+        client.rpc(
+            "app_get_profile",
+            {"p_id": "00000000-0000-0000-0000-000000000000"},
+        ).execute()
     except Exception:  # noqa: BLE001 - keep-alive must never crash the caller
         return False
     return True
