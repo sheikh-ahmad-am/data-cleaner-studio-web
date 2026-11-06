@@ -413,7 +413,7 @@ def _load_uploaded(st, uploaded, what: str):
     try:
         return engine.load_file(uploaded.name, uploaded.getvalue())
     except Exception as e:  # noqa: BLE001 - show the error, don't crash
-        st.error(f"Could not read that file: {e}")
+        st.error(f"Could not read {uploaded.name}: {e}")
         return None
 
 
@@ -430,13 +430,15 @@ def render_compare(st):
              "it — rows added or removed, and which cells changed.")
     current = _current_df(st)
     if current is None:
-        st.info("Load a file first — there is nothing to compare yet.")
+        st.info("Load a file first — the comparison needs a file loaded "
+                "on this side.")
         return
     uploaded = st.file_uploader(
         "Other file to compare against (CSV, Excel or JSON)",
         type=["csv", "xlsx", "xls", "json"], key="c_compare_upload")
     if uploaded is None:
-        st.info("Upload the other file to compare.")
+        st.info("Upload the other file — the comparison needs two files, "
+                "and one is loaded.")
         return
     other = _load_uploaded(st, uploaded, "compare")
     if other is None:
@@ -459,7 +461,10 @@ def render_compare(st):
         if len(result["detail_df"]):
             st.dataframe(result["detail_df"], width="stretch")
         else:
-            st.success("The two files are identical on every shared column.")
+            st.success("The two files are identical on every shared "
+                       f"column — {result['added']} added, "
+                       f"{result['removed']} removed, "
+                       f"{result['changed_cells']} changed cells.")
 
 
 # =================================================== render: append =======
@@ -478,14 +483,15 @@ def render_append(st):
              "first, then the uploaded ones.")
     current = _current_df(st)
     if current is None:
-        st.info("Load a file first — there is nothing to append to yet.")
+        st.info("Load a file first — appending needs a file to append "
+                "onto.")
         return
     uploaded = st.file_uploader(
         "Files to append (CSV, Excel or JSON)",
         type=["csv", "xlsx", "xls", "json"], accept_multiple_files=True,
         key="c_append_upload")
     if not uploaded:
-        st.info("Upload at least one file to append.")
+        st.info("Upload at least one file to append onto the loaded file.")
         return
     if st.button("Append files", key="c_append_run"):
         frames = [current]
@@ -521,7 +527,8 @@ def render_append(st):
             st.session_state["fuzzy_groups"] = None
             st.session_state["join_result"] = None
             st.session_state["append_result"] = None
-            st.success("Appended — now clean it in the Clean tab.")
+            st.success(f"Appended — {report['total_rows']:,} rows in "
+                       "total. Now clean it in the Clean tab.")
             st.rerun()
 
 
@@ -536,11 +543,13 @@ def render_pivot(st, df):
     st.write("Summarise the data — for example total sales by region "
              "and category.")
     if df is None or len(df) == 0:
-        st.info("Clean the data first — the pivot table will appear here.")
+        st.info("Clean the data first — the pivot table is built from the "
+                "cleaned file.")
         return
     num_cols = engine.numeric_cols(df)
     if not num_cols:
-        st.info("No number column to summarise — pivot needs one.")
+        st.info("No number column in this file — the pivot needs one to "
+                "summarise.")
         return
     c1, c2, c3 = st.columns(3)
     rows = c1.selectbox("Rows (group by)", list(df.columns), key="c_pivot_rows")
@@ -583,11 +592,13 @@ def render_calculated(st, df):
     st.write("Make a new column from a number column — for example "
              "total = quantity × unit price.")
     if df is None or len(df) == 0:
-        st.info("Clean the data first — calculated columns need numbers.")
+        st.info("Clean the data first — calculated columns are built on "
+                "the cleaned file.")
         return None, []
     num_cols = engine.numeric_cols(df)
     if not num_cols:
-        st.info("No number columns in this file.")
+        st.info("No number columns in this file — a calculated column "
+                "needs at least one number to work on.")
         return None, []
     c1, c2, c3 = st.columns(3)
     col_a = c1.selectbox("First column", num_cols, key="c_calc_col_a")
@@ -603,7 +614,8 @@ def render_calculated(st, df):
                              placeholder="e.g. total_price")
     if st.button("Add calculated column", type="primary", key="c_calc_add"):
         if not new_name.strip():
-            st.error("Give the new column a name first.")
+            st.error("Name the new column first — e.g. 'total_price' — "
+                     "then add it.")
             return None, []
         col_b = b_number if col_b_choice == "(enter a number)" else col_b_choice
         try:
@@ -613,7 +625,8 @@ def render_calculated(st, df):
             return None, []
         action = (f"Calculated column: {new_name.strip()}",
                   f"{col_a} {op} {col_b}")
-        st.success(f"Added column '{new_name.strip()}'.")
+        st.success(f"Added column '{new_name.strip()}' "
+                   f"({col_a} {op} {col_b}) — {len(new_df):,} rows filled.")
         st.dataframe(new_df[[new_name.strip()]].head(20), width="stretch")
         return new_df, [action]
     return None, []
@@ -633,13 +646,15 @@ def render_anomaly(st, df):
              "compared with the current file's KPIs, and any KPI that "
              "moved by more than the threshold is flagged.")
     if df is None:
-        st.info("Clean the data first — anomaly alerts need current KPIs.")
+        st.info("Clean the data first — anomaly alerts compare the "
+                "cleaned file's KPIs with the previous file's.")
         return
     uploaded = st.file_uploader(
         "Previous file (CSV, Excel or JSON)",
         type=["csv", "xlsx", "xls", "json"], key="c_anomaly_upload")
     if uploaded is None:
-        st.info("Upload the previous file to compare KPIs against.")
+        st.info("Upload the previous version of this file — the alerts "
+                "compare its KPIs with the current file's.")
         return
     threshold = st.slider("Flag moves bigger than (%)", 1, 100, 20, 1,
                           key="c_anomaly_threshold")
@@ -661,7 +676,8 @@ def render_anomaly(st, df):
             st.warning(f"{len(flagged)} KPI(s) moved by more than "
                        f"{threshold}% — see below.")
         else:
-            st.success(f"No KPI moved by more than {threshold}%.")
+            st.success(f"No KPI moved by more than {threshold}% — the two "
+                       "files agree within that band.")
         if result:
             table = pd.DataFrame(result)
             table["pct_change"] = table["pct_change"].apply(
@@ -670,4 +686,5 @@ def render_anomaly(st, df):
                 lambda f: "⚠️ FLAGGED" if f else "")
             st.dataframe(table, width="stretch")
         else:
-            st.info("No comparable numeric KPIs between the two files.")
+            st.info("No comparable numeric KPIs between the two files — "
+                    "they share no number column to compare.")

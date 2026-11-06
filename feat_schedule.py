@@ -265,9 +265,11 @@ def render_schedule_section(st, folder=None, recipe=None) -> tuple:
                       "what it did — this test works on any computer."):
         ok, output = test_run_now(folder, recipe)
         if ok:
-            st.success("Test run finished — the morning run works.")
+            st.success("Test run finished — the morning run works; the "
+                       "output is below.")
         else:
-            st.error("Test run did not finish cleanly.")
+            st.error("Test run did not finish cleanly — the output below "
+                     "shows where it stopped.")
         st.write(output)
     st.write("Prefer the file instead? `setup_morning_run.bat` in the "
              "app folder does the same thing — double-click it on your "

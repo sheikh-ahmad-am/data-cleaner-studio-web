@@ -294,7 +294,8 @@ def render_correlations(st, df: pd.DataFrame) -> None:
              "means they do not move together at all. This is a pattern "
              "in your data, not proof that one causes the other.")
     if df is None or len(df) == 0:
-        st.info("Load and clean some data first.")
+        st.info("No cleaned data yet — upload a file and clean it, "
+                "and the pairs that move together will appear here.")
         return None
     min_abs = st.slider("Only show pairs at least this strong",
                         0.0, 1.0, 0.3, 0.05, key="an_corr_min")
@@ -395,7 +396,8 @@ def render_forecast(st, df: pd.DataFrame) -> None:
              "from past data, not a promise: real life rarely follows a "
              "straight line.")
     if df is None or len(df) == 0:
-        st.info("Load and clean some data first.")
+        st.info("No cleaned data yet — upload a file and clean it, "
+                "and the forecast will appear here.")
         return None
     date_cols = engine.date_cols(df)
     if not date_cols:
@@ -405,7 +407,8 @@ def render_forecast(st, df: pd.DataFrame) -> None:
         date_cols = text_dates
     num_cols = engine.numeric_cols(df)
     if not date_cols or not num_cols:
-        st.info("Need a date column and a number column for a forecast.")
+        st.info("A forecast needs one date column and one number column "
+                "— this file is missing at least one of them.")
         return None
     c1, c2 = st.columns(2)
     date_col = c1.selectbox("Date column", date_cols, key="an_fc_date")
@@ -451,11 +454,13 @@ def render_what_if(st, df: pd.DataFrame) -> None:
              "every price went up 10%? The totals below update as you "
              "move the slider.")
     if df is None or len(df) == 0:
-        st.info("Load and clean some data first.")
+        st.info("No cleaned data yet — upload a file and clean it, "
+                "and the what-if totals will appear here.")
         return None
     num_cols = engine.numeric_cols(df)
     if not num_cols:
-        st.info("No number columns to try a change on.")
+        st.info("No number columns in this file — the what-if needs at "
+                "least one number column.")
         return None
     c1, c2 = st.columns(2)
     column = c1.selectbox("Number column", num_cols, key="an_whatif_col")
@@ -526,7 +531,8 @@ def render_trust(st, df: pd.DataFrame) -> None:
              "trusted rows are listed first — check those before you "
              "trust the numbers.")
     if df is None or len(df) == 0:
-        st.info("Load some data first.")
+        st.info("No data loaded yet — upload a file or paste a table, "
+                "and the trust scores will appear here.")
         return None
     scored = row_trust_scores(df)
     worst = scored[scored["trust_score"] < 100]
@@ -611,9 +617,11 @@ def render_saved_views(st, current_view_dict) -> dict | None:
                          placeholder="e.g. Sales by region")
     if c2.button("Save this view", key="an_view_save"):
         if not name.strip():
-            st.warning("Give the view a name first.")
+            st.warning("Name the view first — e.g. 'Sales by region' — "
+                       "then save it.")
         elif not current_view_dict:
-            st.warning("Set up a chart first — there is nothing to save yet.")
+            st.warning("Build a chart first (pick a type and columns) — "
+                       "there is nothing to save yet.")
         else:
             try:
                 save_view(name, current_view_dict)
@@ -621,10 +629,12 @@ def render_saved_views(st, current_view_dict) -> dict | None:
                 st.error(str(e))
             else:
                 st.session_state["an_views_data"] = _read_views_file()
-                st.success(f"Saved view '{name.strip()}'.")
+                st.success(f"Saved view '{name.strip()}' — the current "
+                           "chart and its settings are stored.")
     names = list_views()
     if not names:
-        st.info("No saved views yet — save one above.")
+        st.info("No saved views yet — build a chart above, name it and "
+                "save it.")
         return None
     picked = st.selectbox("Saved views", names, key="an_view_pick")
     c1, c2 = st.columns(2)
@@ -639,7 +649,8 @@ def render_saved_views(st, current_view_dict) -> dict | None:
         views.pop(picked, None)
         _write_views_file(views)
         st.session_state["an_views_data"] = views
-        st.success(f"Deleted view '{picked}'.")
+        st.success(f"Deleted view '{picked}' — the chart itself is "
+                   "untouched; only the saved view is gone.")
     return None
 
 
@@ -747,7 +758,8 @@ def render_share_recipe(st, recipe) -> dict | None:
             st.error(f"That recipe file is not valid: {e}")
             return None
         st.success(f"Loaded recipe '{imported['name']}' — apply it from "
-                   "the saved recipes list above.")
+                   "the saved recipes list above; it changes nothing "
+                   "until you apply it.")
         return imported
     return None
 
@@ -1096,14 +1108,16 @@ def render_ask(st, df: pd.DataFrame) -> None:
              "or 'how many orders are Delivered?'. Common questions "
              "are answered straight from the data, no key needed.")
     if df is None or len(df) == 0:
-        st.info("Load and clean some data first.")
+        st.info("No cleaned data yet — upload a file and clean it, "
+                "then ask a question about it.")
         return None
     question = st.text_input("Your question", key="an_ask_q",
                              placeholder="e.g. which region sold the most?")
     if not st.button("Ask", key="an_ask_run"):
         return None
     if not question.strip():
-        st.warning("Type a question first.")
+        st.warning("Type a question first — e.g. 'which region sold the "
+                   "most?'")
         return None
     answer = answer_question(df, question)
     if answer:
@@ -1311,5 +1325,6 @@ def render_morning_run(st) -> None:
     if st.button("Save both files next to the app",
                  key="an_morning_write"):
         written = write_morning_files()
-        st.success("Saved: " + ", ".join(sorted(written)) + ".")
+        st.success("Saved next to the app: "
+                   + ", ".join(sorted(written)) + ".")
     return None

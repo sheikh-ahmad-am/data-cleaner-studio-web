@@ -327,7 +327,8 @@ def render_pptx_download(st, kpis, actions, raw, clean, brand=None):
     the plain Data Cleaner Studio branding.
     """
     if clean is None:
-        st.info("Clean the data first — the PowerPoint report will appear here.")
+        st.info("Clean the data first — the PowerPoint report is built "
+                "from the cleaned file and its KPIs.")
         return
     summary = (f"Rows: {len(raw):,} loaded -> {len(clean):,} after cleaning. "
                f"Columns: {len(raw.columns)} -> {len(clean.columns)}."
@@ -420,14 +421,16 @@ def render_email_schedule(st, kpis, actions, raw, clean):
                    "— the password is never stored). It sends while the app "
                    "is open.")
     elif enable:
-        st.warning("Fill in every field above before the schedule can start.")
+        st.warning("Fill in every field above (server, port, username, "
+                   "password, recipient) before the schedule can start.")
 
     if st.button("Send test email now", key="e_email_test"):
         if not filled:
             st.error("Fill in the server, port, username, password and "
                      "recipient first.")
         elif clean is None:
-            st.error("Clean the data first — there is no report to send yet.")
+            st.error("Clean the data first — the test email sends the "
+                     "report as a PDF, and there is no report yet.")
         else:
             try:
                 summary = (f"Rows: {len(raw):,} loaded -> "
@@ -452,7 +455,9 @@ def render_email_schedule(st, kpis, actions, raw, clean):
                     with smtp:
                         smtp.login(username.strip(), password)
                         smtp.send_message(msg)
-                st.success(f"Test email sent to {recipient.strip()}.")
+                st.success(f"Test email sent to {recipient.strip()} — "
+                           "the PDF report is attached; check the inbox "
+                           "(and spam).")
             except Exception as e:  # noqa: BLE001 - show the real error
                 st.error(f"Could not send the email: {e}")
 
@@ -509,7 +514,7 @@ def render_db_connect(st):
         try:
             tables = feat_db.list_tables(db_type, params=params)
         except Exception as e:  # noqa: BLE001 - show the error, don't crash
-            st.error(f"Could not list tables: {e}")
+            st.error(f"Could not list the tables in '{database}': {e}")
             tables = []
         if tables:
             table = st.selectbox("Table", tables, key="e_db_table_pick")
@@ -523,7 +528,8 @@ def render_db_connect(st):
                 except Exception as e:  # noqa: BLE001
                     st.error(f"Could not load that table: {e}")
         else:
-            st.info("Connected, but no tables found in that database.")
+            st.info(f"Connected to '{database}', but it has no tables to "
+                    "load.")
 
     details = db_connection_details(db_type, host, port, database, "", "")
     if details["host"] and details["database"]:

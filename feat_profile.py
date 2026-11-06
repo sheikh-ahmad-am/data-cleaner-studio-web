@@ -166,10 +166,12 @@ def render_profile_view(st, user, storage_key, on_logout=None):
         disabled=not _has_display_name,
         help="The name shown in the sidebar and on shared dashboards.")
     if not _has_display_name:
-        st.caption("Display names need the updated database setup — "
-                   "this field is disabled for now.")
+        st.caption("Display names need the updated database setup (run "
+                   "supabase_setup.sql) — this field is disabled until "
+                   "then.")
     if st.session_state.pop("profile_display_name_saved", False):
-        st.success("Display name saved.")
+        st.success("Display name saved. It now shows as "
+                   f"'{user.get('display_name')}' in the sidebar.")
     if st.button("Save display name", key="profile_display_name_save",
                  disabled=not _has_display_name):
         _ok, _err = auth.set_display_name(
@@ -181,7 +183,8 @@ def render_profile_view(st, user, storage_key, on_logout=None):
             except Exception:  # noqa: BLE001 - session dict is best-effort
                 pass
             st.session_state["profile_display_name_saved"] = True
-            st.success("Display name saved.")
+            st.success("Display name saved. It now shows as "
+                       f"'{_new_name.strip()}' in the sidebar.")
         else:
             st.error(_err or "Could not save the display name.")
 
@@ -189,13 +192,15 @@ def render_profile_view(st, user, storage_key, on_logout=None):
     st.subheader("Change password")
     if auth.get_auth_backend() == "supabase":
         if st.session_state.pop("profile_reset_sent", False):
-            st.success("Check your inbox for the reset link.")
+            st.success(f"Reset link sent to {user.get('email')} — check "
+                       "your inbox (and spam).")
         if st.button("Send password-reset email",
                      key="profile_reset_password"):
             _ok, _err = auth.request_password_reset(user.get("email"))
             if _ok:
                 st.session_state["profile_reset_sent"] = True
-                st.success("Check your inbox for the reset link.")
+                st.success(f"Reset link sent to {user.get('email')} — "
+                           "check your inbox (and spam).")
             else:
                 st.error(_err or "Could not send the reset email.")
     else:

@@ -347,7 +347,8 @@ def render_recipes(st, df):
                          placeholder="e.g. Monthly sales cleanup")
     if c2.button("Save recipe", key="a_recipe_save"):
         if not name.strip():
-            st.warning("Give the recipe a name first.")
+            st.warning("Name the recipe first — e.g. 'Monthly sales "
+                       "clean-up' — then save it.")
         else:
             try:
                 recipe = save_recipe(opts, fuzzy_maps, name)
@@ -370,10 +371,11 @@ def render_recipes(st, df):
             try:
                 cleaned, actions = apply_recipe(df, recipe)
             except Exception as e:  # noqa: BLE001
-                st.error(f"Could not apply recipe: {e}")
+                st.error(f"Could not apply recipe '{picked}': {e}")
                 return None, None
             st.success(f"Applied recipe '{picked}': "
-                       f"{len(df):,} -> {len(cleaned):,} rows.")
+                       f"{len(df):,} -> {len(cleaned):,} rows. The raw "
+                       "file is untouched — only the cleaned copy changed.")
             return cleaned, actions
         recipe = next(r for r in recipes if r["name"] == picked)
         c2.download_button("Download recipe (.json)",
@@ -381,7 +383,8 @@ def render_recipes(st, df):
                            file_name=f"{picked.replace(' ', '_')}_recipe.json",
                            mime="application/json", key="a_recipe_dl")
     else:
-        st.info("No saved recipes yet — save one above.")
+        st.info("No saved recipes yet — save the fixes above as a recipe "
+                "first.")
 
     uploaded = st.file_uploader("Load a recipe (.json)", type=["json"],
                                 key="a_recipe_upload")
@@ -394,7 +397,8 @@ def render_recipes(st, df):
             recipes = _saved_recipes(st)
             recipes[:] = [r for r in recipes if r["name"] != recipe["name"]]
             recipes.append(recipe)
-            st.success(f"Loaded recipe '{recipe['name']}'.")
+        st.success(f"Loaded recipe '{recipe['name']}' — apply it from "
+                   "the list above; nothing changes until you apply it.")
     return None, None
 
 
@@ -409,7 +413,8 @@ def render_undo(st):
                           placeholder="e.g. Before fuzzy merge")
     if st.button("Save snapshot", key="a_snap_save"):
         used = push_snapshot(st.session_state, label)
-        st.success(f"Snapshot saved: '{used}'.")
+        st.success(f"Snapshot '{used}' saved — Undo can return the data "
+                   "to exactly this state.")
     labels = list_snapshots(st.session_state)
     if labels:
         st.write("Snapshots (newest last): " + ", ".join(
@@ -417,10 +422,12 @@ def render_undo(st):
         if st.button("Undo last snapshot", key="a_snap_undo"):
             undone = undo(st.session_state)
             if undone is not None:
-                st.success(f"Undid to snapshot '{undone}'.")
+                st.success(f"Undid to snapshot '{undone}' — the data is "
+                           "back to how it was at that snapshot.")
                 return undone
     else:
-        st.info("No snapshots yet.")
+        st.info("No snapshots yet — save one before a big change so you "
+                "can undo it.")
     return None
 
 
@@ -435,7 +442,8 @@ def render_find_replace(st, df):
                  if pd.api.types.is_object_dtype(df[c])
                  or pd.api.types.is_string_dtype(df[c])]
     if not text_cols:
-        st.info("No text columns to search in this data.")
+        st.info("No text columns in this file, so there is nothing to "
+                "search — add a text column first.")
         return None, None
     c1, c2 = st.columns(2)
     column = c1.selectbox("Column", text_cols, key="a_fr_col")
@@ -449,7 +457,8 @@ def render_find_replace(st, df):
                             help="Treat 'Find' as a pattern, e.g. \\s+ for spaces.")
     if st.button("Replace", type="primary", key="a_fr_apply"):
         if not find:
-            st.warning("Type something to find first.")
+            st.warning("Type the text to find first — e.g. 'Dehli' — "
+                       "then pick the column.")
             return None, None
         try:
             new_df, count = find_replace(df, column, find, replace,
@@ -461,7 +470,8 @@ def render_find_replace(st, df):
         actions = [(f"Find and replace: {column}",
                     f"{count} cell(s) changed: '{find}' -> '{replace}'")]
         if count:
-            st.success(f"Changed {count} cell(s) in '{column}'.")
+            st.success(f"Changed {count} cell(s) in '{column}': "
+                       f"'{find}' → '{replace}'.")
         else:
             st.info(f"No cells in '{column}' matched '{find}'.")
         return new_df, actions
@@ -490,7 +500,8 @@ def render_templates(st):
             path = Path(__file__).resolve().parent / "sample_data" / sample_file
             raw = engine.load_file(sample_file, path.read_bytes())
         except Exception as e:  # noqa: BLE001
-            st.error(f"Could not load the sample: {e}")
+            st.error(f"Could not load the {picked} sample "
+                     f"({sample_file}): {e}")
             return None, None
         st.session_state["raw"] = raw
         st.session_state["clean"] = None
@@ -499,16 +510,19 @@ def render_templates(st):
         st.session_state["source_name"] = f"{sample_file} (sample)"
         st.session_state["source_kind"] = "sample"
         st.session_state["last_upload"] = None
-        st.success(f"Loaded {sample_file} — now apply the template.")
+        st.success(f"Loaded {sample_file} ({len(raw):,} rows) — now "
+                   f"apply the '{picked}' template.")
         st.rerun()
     raw = st.session_state.get("raw")
     if raw is None:
-        st.info("Load some data first, then apply the template.")
+        st.info(f"Load some data first — the '{picked}' template needs a "
+                "file to work on.")
         return None, None
     if c2.button("Apply template", type="primary", key="a_template_apply"):
         cleaned, actions = apply_template(raw, picked)
         st.success(f"Template '{picked}' applied: "
-                   f"{len(raw):,} -> {len(cleaned):,} rows.")
+                   f"{len(raw):,} -> {len(cleaned):,} rows. The raw file "
+                   "is untouched — only the cleaned copy changed.")
         return cleaned, actions
     return None, None
 
@@ -528,7 +542,8 @@ def render_bulk(st):
     picked = st.selectbox("Recipe", options, key="a_bulk_recipe")
     if st.button("Clean all files", type="primary", key="a_bulk_run"):
         if not files:
-            st.warning("Add at least one file first.")
+            st.warning("Add at least one file first — bulk clean needs a "
+                       "file to clean.")
             return None
         if picked == options[0]:
             recipe = save_recipe(dict(DEFAULT_CLEAN_OPTS), {}, "default")
@@ -538,7 +553,8 @@ def render_bulk(st):
         results = bulk_clean(inputs, recipe)
         st.session_state["a_bulk_results"] = results
         st.success(f"Cleaned {sum(1 for r in results if r['error'] is None)} "
-                   f"of {len(results)} file(s).")
+                   f"of {len(results)} file(s) — the cleaned copies are "
+                   "below; the originals are untouched.")
     results = st.session_state.get("a_bulk_results")
     if results:
         st.dataframe(bulk_summary(results), width="stretch")

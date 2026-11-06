@@ -865,7 +865,8 @@ def render_split_merge(st, df: pd.DataFrame):
             except ValueError as e:
                 st.error(str(e))
                 return None, []
-            st.success(f"Split — {actions[0][1]}.")
+            st.success(f"Split '{col}' into '{new1}' and '{new2}' — "
+                       f"{actions[0][1]}.")
             return new_df, actions
         return None, []
     c1, c2 = st.columns(2)
@@ -885,7 +886,8 @@ def render_split_merge(st, df: pd.DataFrame):
         except ValueError as e:
             st.error(str(e))
             return None, []
-        st.success(f"Merged — {actions[0][1]}.")
+        st.success(f"Merged '{col_a}' and '{col_b}' into '{new_name}' — "
+                   f"{actions[0][1]}.")
         return new_df, actions
     return None, []
 
@@ -913,7 +915,8 @@ def render_date_intelligence(st, df: pd.DataFrame):
         except ValueError as e:
             st.error(str(e))
             return None, []
-        st.success(f"Done — {actions[0][1]}.")
+        st.success(f"Added Year, Month and Weekday from '{col}' — "
+                   f"{actions[0][1]}.")
         return new_df, actions
     return None, []
 
@@ -933,10 +936,12 @@ def render_currency(st, df: pd.DataFrame):
             st.session_state["n_fx_rates_data"] = _live
             st.session_state["n_fx_source"] = _src
             if _src == "live":
-                st.success("Live rates loaded.")
+                st.success("Live rates loaded — fetched just now from "
+                           "the free rate service.")
             else:
                 st.info("No live rates right now — using the fixed "
-                        "estimates below.")
+                        "estimates below (1 USD ≈ ₹83, 1 EUR ≈ ₹90, "
+                        "1 GBP ≈ ₹105).")
         except Exception as e:  # noqa: BLE001 - a failed fetch just falls back
             st.warning(f"Could not fetch live rates: {e}")
     _src = st.session_state.get("n_fx_source", "estimated")
@@ -966,7 +971,8 @@ def render_currency(st, df: pd.DataFrame):
     text_cols = [c for c in df.columns
                  if engine.detect_kind(df[c]) in ("number", "text")]
     if not text_cols:
-        st.info("No column with money values in this file.")
+        st.info("No column with money values in this file — currency "
+                "conversion needs a price column.")
         return None, []
     col = st.selectbox("Price column", text_cols, key="n_fx_col")
     target = st.selectbox("Convert everything into",
@@ -980,7 +986,7 @@ def render_currency(st, df: pd.DataFrame):
         except ValueError as e:
             st.error(str(e))
             return None, []
-        st.success(f"Done — {actions[0][1]}")
+        st.success(f"Converted '{col}' into {target} — {actions[0][1]}")
         return new_df, actions
     return None, []
 
@@ -1058,7 +1064,8 @@ def render_filter_builder(st, df: pd.DataFrame) -> None:
         c3.caption("This condition needs no value.")
     if st.button("Add rule", key="n_filter_add"):
         if cond in _CONDITIONS_NEEDING_VALUE and str(value).strip() == "":
-            st.error("That condition needs a value.")
+            st.error("That condition needs a value — e.g. 'Delivered' for "
+             "equals, or 100 for greater than.")
         else:
             st.session_state["n_filter_rules_data"].append(
                 {"column": col, "condition": cond, "value": value})
@@ -1072,7 +1079,8 @@ def render_filter_builder(st, df: pd.DataFrame) -> None:
             st.session_state["n_filter_rules_data"] = []
             rules = []
     if not rules:
-        st.info("No rules yet — add one above to filter the rows.")
+        st.info("No filter rules yet — add one above and the matching "
+                "rows will show here.")
         return
     try:
         filtered = apply_filter_rules(df, rules)
@@ -1180,7 +1188,8 @@ def render_masking(st, df: pd.DataFrame):
     text_cols = [c for c in df.columns
                  if str(df[c].dtype) in ("object", "str")]
     if not text_cols:
-        st.info("No text columns to mask in this file.")
+        st.info("No text columns in this file, so there is nothing to "
+                "mask.")
         return None, []
     suggested = [c for c in text_cols
                  if _detect_mask_kind(c, df[c]) in ("phone", "email")]
@@ -1189,7 +1198,8 @@ def render_masking(st, df: pd.DataFrame):
                             help="Phone and email columns are pre-ticked; "
                                  "add any other column you want hidden.")
     if not picked:
-        st.info("Tick at least one column to mask.")
+        st.info("Tick at least one column to mask — phone and email "
+                "columns are pre-ticked when found.")
         return None, []
     masked_df, actions = mask_columns(df, picked)
     st.write(f"Masked: {actions[0][1]}.")
@@ -1228,7 +1238,8 @@ def render_versioned_download(st, df: pd.DataFrame, base: str = "cleaned.csv"):
     if st.button("Reserve this version", key="n_version_reserve"):
         name = next_versioned_name(base)
         st.session_state["n_version_name_data"] = name
-        st.success(f"Reserved {name} — download it below.")
+        st.success(f"Reserved {name} — the download button below saves "
+                   "the cleaned file under that name.")
     reserved = st.session_state.get("n_version_name_data")
     if reserved:
         st.download_button(f"Download {reserved}",
