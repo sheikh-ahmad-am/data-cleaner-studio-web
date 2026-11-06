@@ -1,8 +1,8 @@
-"""UI polish tests for Data Cleaner Studio (Classic theme pass).
+"""UI polish tests for Data Cleaner Studio (Supabase theme pass).
 
 Pins the professional UI upgrade:
-  (a) .streamlit/config.toml [theme] equals the Classic palette
-  (b) theme_css("Classic") carries the palette and no retired dark colours
+  (a) .streamlit/config.toml [theme] equals the Supabase palette
+  (b) theme_css("Supabase") carries the palette and no retired colours
   (c) no destructive-labelled button (delete/clear/reset/remove) is primary
   (d) set_page_config carries the page title and a page_icon
   (e) assets/logo.svg + assets/favicon.png exist, PNG is a valid image
@@ -26,12 +26,13 @@ import feat_enrich as fe  # noqa: E402
 ROOT = Path(__file__).resolve().parent.parent
 
 PALETTE = {
-    "backgroundColor": "#FAF7F2",
-    "secondaryBackgroundColor": "#F3EFE8",
-    "textColor": "#23272E",
-    "primaryColor": "#2F5D5A",
+    "backgroundColor": "#fdfdfd",
+    "secondaryBackgroundColor": "#fdfdfd",
+    "textColor": "#030303",
+    "primaryColor": "#117f50",
 }
-BANNED_COLOURS = ("#121212", "#0d1b2a", "#4da6ff", "#1a7f37")
+BANNED_COLOURS = ("#2F5D5A", "#FAF7F2", "#121212", "#0d1b2a", "#4da6ff",
+                  "#1a7f37")
 DESTRUCTIVE_WORDS = ("delete", "clear", "reset", "remove")
 
 
@@ -50,17 +51,18 @@ def test_config_theme_palette():
     print("config theme palette OK")
 
 
-def test_theme_css_classic():
-    """(b) theme_css('Classic') has the palette, none of the old colours."""
-    css = fe.theme_css("Classic")
-    assert set(fe.THEMES) == {"Classic"}
-    for colour in ("#FAF7F2", "#23272E", "#2F5D5A", "#F3EFE8", "#FFFFFF"):
-        assert colour in css, f"{colour} missing from theme_css('Classic')"
+def test_theme_css_supabase():
+    """(b) theme_css('Supabase') has the palette, none of the old colours."""
+    css = fe.theme_css("Supabase")
+    assert set(fe.THEMES) == {"Supabase"}
+    for colour in ("#fdfdfd", "#030303", "#117f50", "#FFFFFF"):
+        assert colour in css, f"{colour} missing from theme_css('Supabase')"
     for banned in BANNED_COLOURS:
-        assert banned not in css, f"{banned} must not be in Classic CSS"
-    assert fe.theme_css("Nope") == fe.theme_css("Classic")
+        assert banned not in css, f"{banned} must not be in Supabase CSS"
+    assert fe.theme_css("Nope") == fe.theme_css("Supabase")
+    assert fe.theme_css("Classic") == fe.theme_css("Supabase")
     assert fe.apply_theme.__doc__ is not None  # signature kept
-    print("theme_css Classic OK")
+    print("theme_css Supabase OK")
 
 
 def _button_calls(source):
@@ -153,7 +155,7 @@ def test_stylesheet_before_login():
 
 if __name__ == "__main__":
     test_config_theme_palette()
-    test_theme_css_classic()
+    test_theme_css_supabase()
     test_no_destructive_primary_button()
     test_page_config_title_and_icon()
     test_logo_and_favicon_assets()

@@ -59,6 +59,7 @@ Web differences (all deliberate):
 from __future__ import annotations
 
 import hashlib
+import html
 import json
 import os
 import re
@@ -87,6 +88,7 @@ import feat_tutorial
 import scheduler
 import storage
 import turnstile_component
+import ui_design
 
 try:
     from auth import AuthServiceError
@@ -96,96 +98,186 @@ except ImportError:  # Cloud rework: fall back to a local stand-in
 
 _APP_DIR = Path(__file__).resolve().parent
 
-# ------------------------------------------------- design system (Classic) --
-# The app's ONE consolidated stylesheet: warm off-white background, white
-# cards, ink text, one deep-teal accent. Injected at the top of the app
-# (right after set_page_config, below) so the login / signup screen gets
-# it too — the teal primary-button rules here are the fallback if the
-# [theme] section of .streamlit/config.toml is ever missing. This folds
-# in the old fix-batch CSS block (KPI metrics, file-uploader chips,
-# alerts, tab-bar radio) that used to live further down the file, so
-# there is exactly one stylesheet to maintain.
+# -------------------------------------------- design system (Supabase) --
+# The app's ONE consolidated stylesheet: near-white background, white
+# cards, near-black ink, one deep-green accent. Injected at the top of
+# the app (right after set_page_config, below) so the login / signup
+# screen gets it too — the deep-green primary-button rules here are the
+# fallback if the [theme] section of .streamlit/config.toml is ever
+# missing. This is Worker A's DESIGN_SYSTEM_CSS from ui_design.py,
+# pasted verbatim: the Supabase tokens measured off the live dashboard
+# (see supabase-design-study.md and the authoritative vibe brief in
+# supabase-ui-ux-design-analysis.md). There is exactly one stylesheet
+# to maintain; do not retype or re-derive it.
 DESIGN_SYSTEM_CSS = """<style>
-/* ---- page ---- */
-.stApp { background-color: #FAF7F2; color: #23272E; }
-.stApp p, .stApp li, .stApp span { color: #23272E; }
-/* ---- typography ---- */
-.stApp h1 { font-size: 1.9rem; font-weight: 700; color: #23272E;
+/* ---- page: near-white everywhere, no separate grey canvas ---- */
+.stApp { background-color: #fdfdfd; color: #030303; }
+.stApp p, .stApp li, .stApp span { color: #030303; }
+.stApp { font-size: 14px; }
+/* ---- typography: H1 28px medium, sections 16-18px, body 13-14px ---- */
+.stApp h1 { font-size: 28px; font-weight: 500; color: #030303;
   line-height: 1.2; margin-bottom: 0.25rem; }
-.stApp h2 { font-size: 1.4rem; font-weight: 700; color: #23272E;
+.stApp h2 { font-size: 18px; font-weight: 500; color: #030303;
   margin-top: 1.25rem; margin-bottom: 0.5rem; }
-.stApp h3 { font-size: 1.15rem; font-weight: 600; color: #23272E;
+.stApp h3 { font-size: 16px; font-weight: 600; color: #030303;
   margin-top: 1rem; margin-bottom: 0.4rem; }
 .stApp [data-testid="stCaptionContainer"], .stApp small {
-  color: #6E6A61; }
-/* ---- cards ---- */
-.dcs-card { background-color: #FFFFFF; border: 1px solid #E5E0D8;
-  border-radius: 12px; padding: 1rem 1.25rem;
-  box-shadow: 0 1px 3px rgba(35, 39, 46, 0.06); margin-bottom: 1rem; }
-div[data-testid="stExpander"] { background-color: #FFFFFF;
-  border: 1px solid #E5E0D8; border-radius: 12px; }
+  color: #696969; }
+/* ---- tiny uppercase section labels: 10-11px, letterspaced, muted ---- */
+.dcs-micro-label, .dcs-section-label {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.08em;
+  text-transform: uppercase; color: #696969; }
+/* ---- cards: white, 1px hairline border, 10-12px radius, flat ---- */
+.dcs-card { background-color: #ffffff; border: 1px solid #e8e8e8;
+  border-radius: 12px; padding: 1rem 1.25rem; margin-bottom: 1rem; }
+div[data-testid="stExpander"] { background-color: #ffffff;
+  border: 1px solid #e8e8e8; border-radius: 12px; }
 /* ---- spacing: consistent gaps between sections ---- */
 div[data-testid="stVerticalBlock"] > div { gap: 0.75rem; }
-/* ---- buttons ---- */
+/* ---- buttons: primary deep green, subtle vertical gradient ---- */
 .stApp .stButton > button[kind="primary"],
 div[data-testid="stButton"] > button[kind="primary"] {
-  background-color: #2F5D5A; color: #FFFFFF; border-color: #2F5D5A; }
+  background-color: #117f50;
+  background: linear-gradient(180deg, #118050 0%, #0e7d4e 100%);
+  color: #ffffff; border: 1px solid #117f50; border-radius: 6px;
+  font-weight: 500; }
 .stApp .stButton > button[kind="primary"]:hover,
 div[data-testid="stButton"] > button[kind="primary"]:hover {
-  background-color: #264845; border-color: #264845; color: #FFFFFF; }
+  background-color: #117f50;
+  background: linear-gradient(180deg, #118050 0%, #0e7d4e 100%);
+  border-color: #117f50; color: #ffffff; }
+/* ---- secondary buttons: white, 1px light border, black text ---- */
 .stApp .stButton > button[kind="secondary"],
 div[data-testid="stButton"] > button[kind="secondary"] {
-  background-color: #EFEDE8; color: #23272E; border-color: #D9D4C9; }
+  background-color: #ffffff; color: #030303; border: 1px solid #e5e5e5;
+  border-radius: 6px; font-weight: 500; }
 .stApp .stButton > button[kind="secondary"]:hover,
 div[data-testid="stButton"] > button[kind="secondary"]:hover {
-  background-color: #E5E0D8; color: #23272E; border-color: #D9D4C9; }
+  background-color: #f8f8f8; color: #030303; border-color: #e5e5e5; }
 /* Danger buttons (delete / clear / reset / remove) are secondary buttons
    (type="secondary", never primary). Streamlit buttons cannot carry a
    custom class, so the danger colour lives on this .dcs-danger hook for
    any future wrapper that can target it — the buttons themselves rely
    on the secondary treatment above. */
-.dcs-danger button[kind="secondary"] { color: #9A4A38 !important;
-  border-color: #9A4A38 !important; }
+.dcs-danger button[kind="secondary"] { color: #b91c1c !important;
+  border-color: #b91c1c !important; }
 div[data-testid="stDownloadButton"] > button {
-  background-color: #EFEDE8; color: #23272E; border-color: #D9D4C9; }
-/* ---- inputs ---- */
+  background-color: #ffffff; color: #030303; border: 1px solid #e5e5e5;
+  border-radius: 6px; }
+/* ---- inputs: white, 6px radius, hairline border ---- */
 .stApp input, .stApp textarea, .stApp select {
-  background-color: #FFFFFF; color: #23272E;
-  border-color: #E5E0D8; border-radius: 8px; }
-.stApp label { color: #23272E; }
-/* ---- sidebar ---- */
-section[data-testid="stSidebar"] { background-color: #F3EFE8; }
-section[data-testid="stSidebar"] * { color: #23272E; }
-section[data-testid="stSidebar"] a { color: #2F5D5A; }
-/* ---- links ---- */
-.stApp a { color: #2F5D5A; }
+  background-color: #ffffff; color: #030303;
+  border-color: #e8e8e8; border-radius: 6px; }
+.stApp label { color: #030303; }
+/* ---- sidebar: near-white, hairline edge, nav rows as pills ---- */
+section[data-testid="stSidebar"] { background-color: #fdfdfd;
+  border-right: 1px solid #e8e8e8; }
+section[data-testid="stSidebar"] * { color: #030303; }
+section[data-testid="stSidebar"] a { color: #117f50; }
+.dcs-nav-row { display: block; padding: 0.35rem 0.75rem;
+  border-radius: 6px; font-size: 13px; color: #030303;
+  border-left: 2px solid transparent; margin-bottom: 2px; }
+.dcs-nav-row:hover { background-color: #f8f8f8; }
+.dcs-nav-row.dcs-nav-active { background-color: #f3f3f3;
+  font-weight: 600; color: #030303; border-left: 2px solid #030303; }
+/* ---- links: deep green, sparingly ---- */
+.stApp a { color: #117f50; }
+/* ---- top bar: 48px, near-white, hairline bottom border ---- */
+.dcs-topbar { height: 48px; display: flex; align-items: center;
+  gap: 0.75rem; background-color: #fdfdfd;
+  border-bottom: 1px solid #e8e8e8; margin-bottom: 1rem; }
+.dcs-topbar .dcs-topbar-title { font-size: 17px; font-weight: 500;
+  color: #030303; }
+.dcs-topbar .dcs-topbar-crumb { font-size: 13px; color: #696969; }
 /* ---- KPI metric values + labels: ink, never faint grey ---- */
 div[data-testid="stMetricValue"], div[data-testid="stMetricValue"] * {
-  color: #23272E !important; }
+  color: #030303 !important; }
 div[data-testid="stMetricLabel"], div[data-testid="stMetricLabel"] * {
-  color: #6E6A61 !important; }
+  color: #696969 !important; }
+/* ---- KPI tiles: white icon box + micro-label + value ---- */
+.dcs-kpi { background-color: #ffffff; border: 1px solid #e8e8e8;
+  border-radius: 12px; padding: 0.9rem 1rem; }
+.dcs-kpi .dcs-kpi-label { font-size: 11px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase; color: #696969; }
+.dcs-kpi .dcs-kpi-value { font-size: 20px; font-weight: 500;
+  color: #030303; font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+.dcs-kpi .dcs-kpi-sub { font-size: 13px; color: #696969; }
 /* ---- file-uploader dropzone + uploaded-file chips: ink on white ---- */
 div[data-testid="stFileUploader"], div[data-testid="stFileUploader"] * {
-  color: #23272E !important; }
+  color: #030303 !important; }
 /* ---- info / success / warning / error boxes: nested elements ink ---- */
 div[data-testid="stAlert"], div[data-testid="stAlert"] * {
-  color: #23272E !important; }
-div[data-testid="stAlert"] a { color: #2F5D5A !important; }
+  color: #030303 !important; }
+div[data-testid="stAlert"] a { color: #117f50 !important; }
+/* ---- pills: fully rounded, uppercase ~10px, letterspaced ---- */
+.dcs-pill { display: inline-block; font-size: 10px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  border-radius: 999px; padding: 0.15rem 0.6rem; line-height: 1.6; }
+.dcs-pill-mint { background-color: #e9f8f1; color: #117f50; }
+.dcs-pill-amber { background-color: #f4ece3; color: #e69344;
+  border: 1px solid #f3ba63; }
+.dcs-pill-green { background-color: #117f50; color: #ffffff; }
+.dcs-pill-grey { background-color: #f3f3f3; color: #696969; }
+.dcs-pill-danger { background-color: #ffffff; color: #b91c1c;
+  border: 1px solid #b91c1c; }
+/* ---- code: white panels with hairline border, never dark blocks ---- */
+.stApp code, .stApp pre { background-color: #f8f8f8; color: #030303;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+div[data-testid="stCodeBlock"] { background-color: #ffffff;
+  border: 1px solid #e8e8e8; border-radius: 12px; }
+div[data-testid="stCodeBlock"] pre { background-color: #ffffff; }
+/* ---- numbers and code: monospace ---- */
+.dcs-mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+/* ---- column headers show their type (name text, price numeric) ---- */
+.dcs-coltype { font-size: 13px; color: #030303; }
+.dcs-coltype .dcs-coltype-kind { font-size: 12px; color: #696969;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+/* ---- storage usage: one thin hairline, green fill, muted label ---- */
+.dcs-storage { height: 4px; background-color: #e8e8e8;
+  border-radius: 999px; overflow: hidden; }
+.dcs-storage > div { height: 100%; background-color: #117f50;
+  border-radius: 999px; }
+/* ---- spinner: green ---- */
+div[data-testid="stSpinner"] { color: #117f50; }
+div[data-testid="stSpinner"] > div { border-top-color: #117f50 !important; }
 /* ---- section switcher (radio styled as a tab bar) ---- */
 div[data-testid="stRadio"] div[role="radiogroup"] {
   gap: 0.35rem !important; }
 div[data-testid="stRadio"] div[role="radiogroup"] label {
-  background-color: #EFEDE8 !important;
-  border: 1px solid #D9D4C9 !important;
-  border-radius: 8px !important;
+  background-color: #ffffff !important;
+  border: 1px solid #e8e8e8 !important;
+  border-radius: 6px !important;
   padding: 0.35rem 0.9rem !important;
-  color: #23272E !important; }
+  color: #030303 !important; }
+div[data-testid="stRadio"] div[role="radiogroup"] label:hover {
+  background-color: #f8f8f8 !important; }
 div[data-testid="stRadio"] div[role="radiogroup"] label:has(input:checked) {
-  background-color: #2F5D5A !important;
-  border-color: #2F5D5A !important;
-  color: #FFFFFF !important; }
+  background-color: #f3f3f3 !important;
+  border-color: #e8e8e8 !important;
+  color: #030303 !important; font-weight: 600 !important; }
+/* ---- dense spreadsheet-like tables: white, hairline gridlines ---- */
+div[data-testid="stDataFrame"], div[data-testid="stTable"] {
+  background-color: #ffffff; border: 1px solid #e8e8e8;
+  border-radius: 12px; }
+div[data-testid="stDataFrame"] table, div[data-testid="stTable"] table {
+  background-color: #ffffff; }
+div[data-testid="stDataFrame"] th, div[data-testid="stTable"] th {
+  background-color: #ffffff; color: #030303; font-weight: 600;
+  border-bottom: 1px solid #e8e8e8; font-size: 13px; }
+div[data-testid="stDataFrame"] td, div[data-testid="stTable"] td {
+  background-color: #ffffff; color: #030303;
+  border-bottom: 1px solid #e8e8e8; font-size: 13px; }
+/* ---- subtle, instant hovers (no long transitions) ---- */
+.stApp .stButton > button, .stApp a, .dcs-nav-row {
+  transition: background-color 0.1s ease, color 0.1s ease; }
+/* ---- empty state: centred, calm, guided ---- */
+.dcs-empty { text-align: center; padding: 2.5rem 1rem;
+  background-color: #ffffff; border: 1px solid #e8e8e8;
+  border-radius: 12px; }
+.dcs-empty h3 { font-size: 17px; font-weight: 500; color: #030303; }
+.dcs-empty p { font-size: 14px; color: #696969; }
 /* ---- footer ---- */
-.dcs-footer { color: #6E6A61; font-size: 0.85rem; text-align: center;
+.dcs-footer { color: #696969; font-size: 0.85rem; text-align: center;
   padding: 1.5rem 0 0.5rem; }
 </style>"""
 
@@ -270,7 +362,7 @@ def _render_shared_dashboard(snapshot: dict) -> None:
                                    str(k.get("value", "")))
     rows = snapshot.get("rows") or []
     if rows:
-        st.subheader("The numbers behind the chart")
+        ui_design.section_heading("The numbers behind the chart")
         try:
             st.dataframe(pd.DataFrame(rows), width="stretch")
         except Exception:  # noqa: BLE001 - a bad snapshot must still render
@@ -595,7 +687,7 @@ if _current_user is None:
         # ---- login / signup screen ONLY. No data, no sidebar, no tabs. ----
         # Brand header: logo mark + name + the tagline, in the centred
         # narrow column. The Log in / Create account buttons below are
-        # teal via the [theme] primary colour (plus the design-system
+        # deep green via the [theme] primary colour (plus the design-system
         # stylesheet injected at the top of this file as a fallback).
         _login_logo = _APP_DIR / "assets" / "logo.svg"
         if _login_logo.is_file():
@@ -846,16 +938,42 @@ def _t(key):
 
 _title = (_brand.get("name") if _brand.get("name")
           and _brand["name"] != "Data Cleaner Studio" else _t("app_title"))
-# App header (same on every tab — it sits above the section switcher):
-# logo mark + title + the flow caption.
-_hc_logo, _hc_title = st.columns([0.6, 12])
-with _hc_logo:
-    _header_logo = _APP_DIR / "assets" / "logo.svg"
-    if _header_logo.is_file():
-        st.image(str(_header_logo), width=44)
-with _hc_title:
-    st.title(_title)
-    st.write("Put in messy data. Get clean data, KPIs, charts and a report.")
+# Section labels, one mapping shared by the top bar, the sidebar nav
+# and the section radio below, so the three stay in agreement.
+# (Settings / Profile are plain labels, not translated keys.)
+_nav_labels = {"preview": _t("preview"), "join": _t("join"),
+               "clean": _t("clean"), "kpis": _t("kpis"),
+               "dashboard": _t("dashboard"), "compare": _t("compare"),
+               "report": _t("report"), "tools": _t("tools"),
+               "tutorial": _t("tutorial"), "settings": "Settings",
+               "profile": "Profile"}
+# Sidebar nav groups (Supabase shell: tiny uppercase labels over plain
+# rows). Only the tabs the current mode offers are shown — client mode
+# hides the advanced ones; the radio below is the authority on that.
+_nav_groups = [("Data", ["preview", "clean", "join"]),
+               ("Analyse", ["kpis", "dashboard", "compare"]),
+               ("Output", ["report"]),
+               ("Workspace", ["tools", "tutorial", "settings", "profile"])]
+# A "Go to the Clean tab" empty-state button (or any other code) asks
+# for a section switch by setting pending_tab, then rerunning: apply it
+# here, BEFORE the top bar and the sidebar nav render — writing the
+# radio's session key after it exists raises
+# StreamlitWidgetAlreadyInstantiatedError. The radio below only
+# re-checks the value is still a valid option.
+_pending_early = st.session_state.pop("pending_tab", None)
+if _pending_early in _nav_labels:
+    st.session_state["active_tab"] = _nav_labels[_pending_early]
+_top_active = st.session_state.get("active_tab")
+if _top_active not in _nav_labels.values():
+    _top_active = _nav_labels["preview"]
+# Top bar (Supabase shell, 48px): breadcrumb-style title of the current
+# screen + the file name when one is loaded. The section radio below is
+# the selection control; the sidebar nav mirrors it.
+_top_crumb = _title
+if st.session_state.get("source_name"):
+    _top_crumb = f"{_title} / {st.session_state['source_name']}"
+ui_design.topbar(_top_active, breadcrumb=_top_crumb)
+st.caption("Put in messy data. Get clean data, KPIs, charts and a report.")
 # The main flow, at a glance: upload -> clean -> KPIs -> export.
 # One step is "you are here"; finished steps get a tick.
 _flow_current = 2 if st.session_state.clean is None else 3
@@ -1005,6 +1123,10 @@ def _restore_cleaned_state(source_name):
 
 
 # ------------------------------------------------------------------ load ---
+# Sidebar profile card (Supabase shell: white card, hairline border,
+# name in ink, email muted) + grouped nav below it. The nav is
+# display-only — the section radio further down is the selection
+# control; this mirrors it via the shared _nav_labels mapping.
 _logo = feat_brand.brand_for_exports(base_dir=_user_root).get("logo")
 if _logo:
     try:
@@ -1013,20 +1135,42 @@ if _logo:
         pass
 _profile_name = (_user.get("display_name") or _user.get("username")
                  or _user.get("email") or "?")
-st.sidebar.write(f"**{_profile_name}**")
-if _user.get("email"):
-    st.sidebar.caption(_user.get("email"))
+_profile_email = str(_user.get("email") or "")
+_profile_card = (
+    '<div class="dcs-card" style="margin-bottom: 0.75rem;">'
+    '<div style="font-size: 14px; font-weight: 600; color: #030303;">'
+    f"{html.escape(_profile_name)}</div>"
+    + (f'<div style="font-size: 13px; color: #696969;">'
+       f"{html.escape(_profile_email)}</div>" if _profile_email else "")
+    + "</div>")
+st.sidebar.markdown(_profile_card, unsafe_allow_html=True)
 _pc1, _pc2 = st.sidebar.columns(2)
 if _pc1.button("Profile", key="profile_btn"):
     st.session_state["pending_tab"] = "profile"
     st.rerun()
 if _pc2.button("Log out", key="logout_btn"):
     _do_logout()
+_nav_client = bool(st.session_state.get("client_mode", False))
+_nav_keys = (["preview", "clean", "kpis", "dashboard", "report",
+              "tutorial", "profile"] if _nav_client else
+             ["preview", "clean", "join", "kpis", "dashboard", "compare",
+              "report", "tools", "tutorial", "settings", "profile"])
+_nav_sections = [
+    (label, [(k, _nav_labels[k]) for k in keys if k in _nav_keys])
+    for label, keys in _nav_groups]
+_nav_sections = [(label, items) for label, items in _nav_sections if items]
+_nav_active = next(
+    (k for k, v in _nav_labels.items() if v == _top_active), "preview")
+with st.sidebar:
+    ui_design.sidebar_nav(_nav_sections, active=_nav_active)
 _banner = auth.get_local_mode_banner()
 if _banner:
     st.sidebar.info(_banner)
 
-st.sidebar.header(_t("load") + " your data")
+st.sidebar.markdown(
+    f'<div class="dcs-micro-label">{html.escape(_t("load") + " your data")}'
+    "</div>",
+    unsafe_allow_html=True)
 
 uploaded = st.sidebar.file_uploader(
     "Upload a file", type=["csv", "xlsx", "xls", "json", "parquet"],
@@ -1183,7 +1327,7 @@ feat_analyse.render_client_mode_toggle(st)
 with st.sidebar.expander("Settings (API key)"):
     ai_settings.render_settings(st)
 
-# No theme picker any more: the app has one Classic theme (set in
+# No theme picker any more: the app has one Supabase theme (set in
 # .streamlit/config.toml and in the design-system stylesheet at the top
 # of this file). The old per-theme CSS block that lived here is folded
 # into that stylesheet — there is exactly one stylesheet now.
@@ -1243,14 +1387,14 @@ if raw is None:
     # Guided empty state: what to do first, plus a one-click way to try
     # the sample — the same loader the sidebar "Try the messy sample"
     # button uses, not a second mechanism.
-    st.subheader("Nothing loaded yet")
-    st.info("Start in the sidebar on the left: upload a file, load a "
-            "Google Sheet, or open a database table. Or skip the setup "
-            "and explore with the sample file — it loads the messy sales "
+    if ui_design.empty_state(
+            "Nothing loaded yet",
+            "Upload a file from the sidebar on the left, load a Google "
+            "Sheet, or open a database table — or skip the setup and "
+            "explore with the sample file: it loads the messy sales "
             "data (80 rows) so you can see cleaning, KPIs and the report "
-            "right away.")
-    if st.button("Try the sample data", key="empty_try_sample",
-                 type="primary"):
+            "right away.",
+            cta_label="Try the sample data"):
         _sample_path = _APP_DIR / "sample_data" / "messy_sales.csv"
         with st.spinner("Loading the sample file…"):
             _set_raw(engine.load_file("messy_sales.csv",
@@ -1318,7 +1462,9 @@ if _pending_view:
     _apply_pending_view(_pending_view)
 
 # --------------------------------------------------------------- slicers ---
-st.sidebar.header("Filters (slicers)")
+st.sidebar.markdown(
+    '<div class="dcs-micro-label">Filters (slicers)</div>',
+    unsafe_allow_html=True)
 filtered = clean
 if clean is not None:
     num_cols = engine.numeric_cols(clean)
@@ -1347,18 +1493,13 @@ if clean is not None:
 _client = bool(st.session_state.get("client_mode", False))
 # Main flow first (upload -> clean -> KPIs -> export), then the
 # secondary views. Nothing removed — just ordered by how often it
-# is used.
+# is used. Labels come from the shared _nav_labels mapping above.
 _tab_keys = ["preview", "clean", "kpis", "dashboard", "report",
              "join", "compare", "tools", "tutorial", "settings", "profile"]
 if _client:
     _tab_keys = ["preview", "clean", "kpis", "dashboard", "report", "tutorial",
                  "profile"]
-_tab_labels = {"preview": _t("preview"), "join": _t("join"),
-               "clean": _t("clean"), "kpis": _t("kpis"),
-               "dashboard": _t("dashboard"), "compare": _t("compare"),
-               "report": _t("report"), "tools": _t("tools"),
-               "tutorial": _t("tutorial"), "settings": "Settings",
-               "profile": "Profile"}
+_tab_labels = {k: _nav_labels[k] for k in _tab_keys}
 # Section switcher: a horizontal radio, NOT st.tabs.
 # Streamlit's tab selection is not sticky — it resets to the first
 # tab after some actions (downloads, saves), yanking the user away
@@ -1371,14 +1512,11 @@ _tab_labels = {"preview": _t("preview"), "join": _t("join"),
 # fully working. `tab` stays a set of the available keys so the
 # `if "join" in tab:` guards below keep working.
 _tab_options = [_tab_labels[k] for k in _tab_keys]
-# A "Go to the Clean tab" empty-state button (or any other code) asks
-# for a section switch by setting pending_tab, then rerunning: it is
-# applied here, BEFORE the Section radio is created — writing the
-# radio's session key after it exists raises
-# StreamlitWidgetAlreadyInstantiatedError. Same idea as an_pending_view.
-_pending_tab = st.session_state.pop("pending_tab", None)
-if _pending_tab in _tab_labels:
-    st.session_state["active_tab"] = _tab_labels[_pending_tab]
+# pending_tab was already applied up at the top bar, before the radio
+# existed (writing the radio's session key after it exists raises
+# StreamlitWidgetAlreadyInstantiatedError). Same idea as an_pending_view.
+# Only re-check the value is still a valid option (e.g. the language
+# changed since the label was stored).
 if st.session_state.get("active_tab") not in _tab_options:
     st.session_state["active_tab"] = _tab_options[0]
 _active_label = st.radio("Section", _tab_options, key="active_tab",
@@ -1393,8 +1531,17 @@ if _active_tab == "preview":
         st.info(feat_analyse.client_summary(clean, st.session_state.kpis))
     if st.session_state.source_kind == "workspace":
         st.caption("Restored from your last auto-saved workspace.")
-    st.subheader(f"Loaded: {st.session_state.source_name}")
-    st.write(f"{len(raw):,} rows, {len(raw.columns)} columns")
+    ui_design.section_heading(
+        f"Loaded: {st.session_state.source_name}",
+        sub=f"{len(raw):,} rows, {len(raw.columns)} columns")
+    # Column types, the way Supabase shows them (name text,
+    # price numeric) — the type is part of the table's honesty.
+    _col_types = "  ·  ".join(
+        ui_design.column_type_label(c, str(raw[c].dtype))
+        for c in list(raw.columns)[:12])
+    if len(raw.columns) > 12:
+        _col_types += f"  ·  +{len(raw.columns) - 12} more"
+    st.markdown(_col_types, unsafe_allow_html=True)
     pasted = feat_enrich.render_paste(st)
     if pasted is not None:
         _set_raw(pasted, "Pasted table", kind="paste")
@@ -1416,7 +1563,7 @@ if _active_tab == "preview":
             filtered = None
     with st.expander("Health check & data dictionary"):
         profile = engine.profile(raw)
-        st.subheader("Health check")
+        ui_design.section_heading("Health check")
         st.write(f"Missing cells: {int(raw.isna().sum().sum()):,}  |  "
                  f"Duplicate rows: {int(raw.duplicated().sum())}")
         st.table(pd.DataFrame(profile))
@@ -1427,7 +1574,7 @@ if _active_tab == "preview":
         # markdown, once as a dataframe — so the pieces are rendered
         # here directly from data_dictionary().)
         _dict_md, _dict_table = feat_quality.data_dictionary(raw)
-        st.subheader("Data dictionary")
+        ui_design.section_heading("Data dictionary")
         st.dataframe(_dict_table, width="stretch")
         st.download_button("Download data dictionary (.md)",
                            _dict_md.encode("utf-8"),
@@ -1438,10 +1585,11 @@ if _active_tab == "preview":
 # ------------------------------------------------------------------ join ---
 if "join" in tab:
     if _active_tab == "join":
-        st.subheader("Join two files")
-        st.write("Combine this file with a second one on a shared column — "
-                 "like a customer ID or order ID. Nothing changes until you "
-                 "press 'Use joined data'.")
+        ui_design.section_heading(
+            "Join two files",
+            sub="Combine this file with a second one on a shared column — "
+                "like a customer ID or order ID. Nothing changes until you "
+                "press 'Use joined data'.")
         joined_file = st.file_uploader(
             "Second file (CSV, Excel or JSON)", type=["csv", "xlsx", "xls", "json"],
             key="join_upload")
@@ -1502,9 +1650,10 @@ if _active_tab == "clean":
         raw = restored
         clean = None
         filtered = None
-    st.subheader("Clean my data")
-    st.write("Tick what to fix, then press the button. Every fix is listed "
-             "in the log below, so you can check the work.")
+    ui_design.section_heading(
+        "Clean my data",
+        sub="Tick what to fix, then press the button. Every fix is listed "
+            "in the log below, so you can check the work.")
     opts = {
         "tidy_names": st.checkbox("Tidy column names", value=True),
         "strip": st.checkbox("Strip extra spaces from text", value=True),
@@ -1551,15 +1700,16 @@ if _active_tab == "clean":
     if clean is not None:
         st.success(f"Done: {len(raw):,} rows -> {len(clean):,} rows, "
                    f"{len(raw.columns)} -> {len(clean.columns)} columns.")
-        st.subheader("What was fixed")
+        ui_design.section_heading("What was fixed")
         for step, detail in st.session_state.actions:
             st.write(f"- **{step}:** {detail}")
         st.dataframe(clean.head(100), width="stretch")
 
-        st.subheader("Fix similar names (fuzzy matching)")
-        st.write("Finds misspellings like Aarav / Arav and Delhi / Dehli "
-                 "and merges them into one spelling. You review the groups "
-                 "first — nothing merges without your word.")
+        ui_design.section_heading(
+            "Fix similar names (fuzzy matching)",
+            sub="Finds misspellings like Aarav / Arav and Delhi / Dehli "
+                "and merges them into one spelling. You review the groups "
+                "first — nothing merges without your word.")
         text_cols = [c for c in clean.columns
                      if str(clean[c].dtype) in ("object", "str")
                      and 1 < clean[c].nunique() <= 500]
@@ -1691,23 +1841,24 @@ if _active_tab == "clean":
 # ------------------------------------------------------------------ KPIs ---
 if _active_tab == "kpis":
     if clean is None:
-        st.subheader("No KPIs yet")
-        st.info("Your file is loaded — now clean it and the KPIs will "
+        if ui_design.empty_state(
+                "No KPIs yet",
+                "Your file is loaded — now clean it and the KPIs will "
                 "appear here. Go to the Clean tab, tick what to fix, and "
-                "press the clean button.")
-        if st.button("Go to the Clean tab", key="kpi_goto_clean",
-                     type="primary"):
+                "press the clean button.",
+                cta_label="Go to the Clean tab"):
             # Via pending_tab, not a direct active_tab write: the Section
             # radio is already instantiated by the time this button runs.
             st.session_state["pending_tab"] = "clean"
             st.rerun()
     else:
-        st.subheader("KPIs")
+        ui_design.section_heading("KPIs")
         kpis = engine.auto_kpis(filtered)
         cols = st.columns(3)
         for i, k in enumerate(kpis):
-            cols[i % 3].metric(k["label"], k["value"])
-        st.subheader("Build your own KPI")
+            with cols[i % 3]:
+                ui_design.kpi_tile(k["label"], str(k["value"]))
+        ui_design.section_heading("Build your own KPI")
         num_cols = engine.numeric_cols(clean)
         if num_cols:
             c1, c2, c3 = st.columns(3)
@@ -1732,12 +1883,12 @@ if _active_tab == "kpis":
 # -------------------------------------------------------------- dashboard ---
 if _active_tab == "dashboard":
     if clean is None:
-        st.subheader("No charts yet")
-        st.info("Your file is loaded — now clean it and the charts will "
+        if ui_design.empty_state(
+                "No charts yet",
+                "Your file is loaded — now clean it and the charts will "
                 "appear here. Go to the Clean tab, tick what to fix, and "
-                "press the clean button.")
-        if st.button("Go to the Clean tab", key="dash_goto_clean",
-                     type="primary"):
+                "press the clean button.",
+                cta_label="Go to the Clean tab"):
             # Via pending_tab, not a direct active_tab write: the Section
             # radio is already instantiated by the time this button runs.
             st.session_state["pending_tab"] = "clean"
@@ -1745,8 +1896,9 @@ if _active_tab == "dashboard":
     else:
         import altair as alt
 
-        st.subheader("Dashboard")
-        st.write("The slicers on the left filter every chart and KPI here.")
+        ui_design.section_heading(
+            "Dashboard",
+            sub="The slicers on the left filter every chart and KPI here.")
         df = filtered
         num_cols = engine.numeric_cols(clean)
         cat_cols = [c for c in clean.columns
@@ -1854,7 +2006,7 @@ if _active_tab == "dashboard":
                     theta=y_col, color=x_col,
                     tooltip=[x_col, y_col]).properties(height=380)
             st.altair_chart(chart, width="stretch")
-            st.subheader("The numbers behind the chart")
+            ui_design.section_heading("The numbers behind the chart")
             _grouped_display = grouped.copy()
             _grouped_display[y_col] = _grouped_display[y_col].map(
                 lambda v: (f"{v:,.2f}" if float(v) % 1 else f"{v:,.0f}")
@@ -1926,9 +2078,10 @@ if _active_tab == "dashboard":
 # --------------------------------------------------------------- compare ---
 if "compare" in tab:
     if _active_tab == "compare":
-        st.subheader("Compare & combine")
-        st.write("See what changed between two files, stack files together, "
-                 "or check whether this month's numbers jumped.")
+        ui_design.section_heading(
+            "Compare & combine",
+            sub="See what changed between two files, stack files together, "
+                "or check whether this month's numbers jumped.")
         feat_combine.render_compare(st)
         with st.expander("Combine & check (stack files, anomalies, multi-KPI)"):
             feat_combine.render_append(st)
@@ -1939,19 +2092,19 @@ if "compare" in tab:
 # ---------------------------------------------------------------- report ---
 if _active_tab == "report":
     if clean is None:
-        st.subheader("No report yet")
-        st.info("Your file is loaded — now clean it and the report will "
+        if ui_design.empty_state(
+                "No report yet",
+                "Your file is loaded — now clean it and the report will "
                 "appear here, with the cleaned file to download. Go to "
                 "the Clean tab, tick what to fix, and press the clean "
-                "button.")
-        if st.button("Go to the Clean tab", key="report_goto_clean",
-                     type="primary"):
+                "button.",
+                cta_label="Go to the Clean tab"):
             # Via pending_tab, not a direct active_tab write: the Section
             # radio is already instantiated by the time this button runs.
             st.session_state["pending_tab"] = "clean"
             st.rerun()
     else:
-        st.subheader("Report")
+        ui_design.section_heading("Report")
         report = engine.build_report(raw, clean, st.session_state.actions,
                                      st.session_state.kpis)
         st.markdown(report)
@@ -2033,11 +2186,12 @@ if _active_tab == "report":
 # ----------------------------------------------------------------- tools ---
 if "tools" in tab:
     if _active_tab == "tools":
-        st.subheader("Watch folder (automatic cleaning)")
-        st.write("The app cleans files while it is open. For hands-free "
-                 "cleaning, run this small script: drop a messy file into a "
-                 "folder and the cleaned version appears in the output folder "
-                 "by itself.")
+        ui_design.section_heading(
+            "Watch folder (automatic cleaning)",
+            sub="The app cleans files while it is open. For hands-free "
+                "cleaning, run this small script: drop a messy file into a "
+                "folder and the cleaned version appears in the output folder "
+                "by itself.")
         watch_path = _APP_DIR / "watch_folder.py"
         if watch_path.exists():
             st.download_button("Download watch_folder.py",
@@ -2059,7 +2213,7 @@ if "tools" in tab:
             if _restored_tools is not None:
                 _set_raw(_restored_tools,
                          st.session_state.source_name + " (restored from backup)")
-            st.subheader("Live database connections")
+            ui_design.section_heading("Live database connections")
             _db_df, _db_name = feat_export.render_db_connect(st)
             if _db_df is not None:
                 _set_raw(_db_df, _db_name, kind="database")
@@ -2074,9 +2228,9 @@ if "tutorial" in tab:
 # -------------------------------------------------------------- settings ---
 if "settings" in tab:
     if _active_tab == "settings":
-        st.subheader("Settings")
+        ui_design.section_heading("Settings")
 
-        st.subheader("Account")
+        ui_design.section_heading("Account")
         # Supabase connection status (Phase 2, wired in): backend from
         # auth.get_auth_backend(), problem text from
         # auth.get_backend_warning() — shown verbatim, so a paused
@@ -2119,7 +2273,7 @@ if "settings" in tab:
                        "local-mode account (if you had one) is a "
                        "different user — it does not carry over.")
 
-        st.subheader("AI keys (yours, stored per user)")
+        ui_design.section_heading("AI keys (yours, stored per user)")
         st.write("AI insights and natural-language questions use your own "
                  "key. It is saved in your folder only, and is never baked "
                  "into the code or the repo. Leave a field empty to turn "
