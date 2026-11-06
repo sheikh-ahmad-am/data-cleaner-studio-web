@@ -58,6 +58,10 @@ def main():
     tmp = tempfile.mkdtemp(prefix="dcs-web-test-")
     tmp_path = Path(tmp)
     # Point all server-side state at the temp dir (never the real data/).
+    # The checkout's supabase_config.json holds real values, so local
+    # mode also needs the config path pointed at a nonexistent file in
+    # the temp dir — same redirection pattern test_profile.py uses.
+    auth.SUPABASE_CONFIG_PATH = tmp_path / "supabase_config.json"
     auth.DB_PATH = tmp_path / "users.db"
     auth._reset_backend_cache()
     storage.BASE_DIR = tmp_path / "users"

@@ -293,7 +293,9 @@ def test_profile_reachable_without_data(_tmp_env):
     # No file loaded: the app shows the empty state and stops before
     # the section switcher — the sidebar Profile button must still
     # open the Profile view (no data needed for an account page).
-    assert any(s.value == "Nothing loaded yet" for s in at.subheader), \
+    # The empty state is rendered by ui_design.empty_state as
+    # markdown (<h3>), not st.subheader, since the Supabase rebuild.
+    assert any("Nothing loaded yet" in m.value for m in at.markdown), \
         "fresh login with no data should show the empty state"
     find_button(at, "Profile", key="profile_btn").click().run()
     assert not at.exception, f"exception opening Profile empty: {at.exception}"
@@ -301,7 +303,7 @@ def test_profile_reachable_without_data(_tmp_env):
     # Back returns to the empty state.
     find_button(at, "← Back to data").click().run()
     assert not at.exception, f"exception going back: {at.exception}"
-    assert any(s.value == "Nothing loaded yet" for s in at.subheader), \
+    assert any("Nothing loaded yet" in m.value for m in at.markdown), \
         "Back should return to the empty state"
     assert not any(s.value == "Account info" for s in at.subheader), \
         "profile view should be gone after Back"
