@@ -1,12 +1,13 @@
 """Profile section tests (AppTest — no browser needed).
 
-Flow: sign up -> sidebar shows the profile card (name + Profile
-button) -> clicking Profile opens the Profile view (account info,
-storage usage, download button, danger zone) -> delete gating: the
-final delete button without "DELETE" typed does nothing -> typing
-DELETE + confirming deletes the account (user row gone, files gone)
-and returns to the login screen -> the Profile view's own Log out
-button logs out too.
+Flow: sign up -> sidebar shows the avatar (green circle, initial)
+-> the avatar menu holds the email, Profile, and Log out -> clicking
+Profile opens the Profile view (account info, storage usage,
+download button, danger zone) -> delete gating: the final delete
+button without "DELETE" typed does nothing -> typing DELETE +
+confirming deletes the account (user row gone, files gone) and
+returns to the login screen -> the Profile view's own Log out button
+logs out too.
 
 Self-contained: auth.DB_PATH, storage.BASE_DIR and the scheduler jobs
 file are pointed at a temp dir, so the real data/ folder is untouched.
@@ -84,8 +85,8 @@ def signup(at, username, password="password123"):
 
 
 def goto_profile(at):
-    """Open the Profile section from the sidebar Profile button."""
-    find_button(at, "Profile", key="profile_btn").click().run()
+    """Open the Profile section from the avatar menu's Profile action."""
+    find_button(at, "Profile", key="avatar_profile_btn").click().run()
     assert not at.exception, f"exception opening Profile: {at.exception}"
     radio = next(r for r in at.radio if r.label == "Section")
     assert radio.value == "Profile", \
@@ -119,22 +120,33 @@ def upload_sample(at, username):
 
 
 # ---------------------------------------------------------------------------
-# 1. Sidebar profile card + opening the Profile view
+# 1. Sidebar avatar + opening the Profile view
 # ---------------------------------------------------------------------------
 
-def test_sidebar_profile_card_and_open_profile(_tmp_env):
+def test_sidebar_avatar_and_open_profile(_tmp_env):
     at = AppTest.from_file(APP)
     at.run()
     assert not at.exception, f"startup exception: {at.exception}"
     signup(at, "alice1")
 
-    # Sidebar profile card: the name in bold + a Profile button, and
-    # the old "Signed in as ..." line is gone.
-    assert any("alice1" in v for v in vals(at.markdown)), \
-        "sidebar profile card should show the username"
+    # Sidebar avatar: no card, no standalone buttons — the username
+    # and email must not appear as sidebar markdown, and the old
+    # Profile / Log out buttons are gone. The avatar menu (popover)
+    # holds the Profile + Log out actions instead (local users have
+    # no email, so no email caption shows here — the email case is
+    # covered in test_sidebar_avatar.py).
+    assert not any("alice1" in v for v in vals(at.sidebar.markdown)), \
+        "sidebar must not show the username as markdown (card gone)"
+    assert not any("@" in v for v in vals(at.sidebar.markdown)), \
+        "sidebar must not show the email as markdown (card gone)"
     assert not any("Signed in as" in v for v in vals(at.markdown)), \
         "old 'Signed in as' sidebar line should be gone"
-    find_button(at, "Profile", key="profile_btn")
+    assert not any(b.key == "profile_btn" for b in at.sidebar.button), \
+        "old standalone sidebar Profile button should be gone"
+    assert not any(b.key == "logout_btn" for b in at.sidebar.button), \
+        "old standalone sidebar Log out button should be gone"
+    find_button(at, "Profile", key="avatar_profile_btn")
+    find_button(at, "Log out", key="avatar_logout_btn")
 
     # The section switcher only renders once data is loaded (the app
     # stops at "Nothing loaded yet" before that), so load the sample
@@ -145,7 +157,7 @@ def test_sidebar_profile_card_and_open_profile(_tmp_env):
 
     # Local mode: the user dict now carries a display_name key (None
     # until set), so the editor is enabled — saving a name works
-    # end to end and the sidebar card picks it up.
+    # end to end and the avatar picks the new initial up.
     name_input = find_text_input(at, "Display name")
     assert not name_input.disabled, \
         "display-name editor should be enabled once the DB setup exists"
@@ -291,13 +303,13 @@ def test_profile_reachable_without_data(_tmp_env):
     at.run()
     signup(at, "alice1")
     # No file loaded: the app shows the empty state and stops before
-    # the section switcher — the sidebar Profile button must still
-    # open the Profile view (no data needed for an account page).
+    # the section switcher — the avatar menu's Profile action must
+    # still open the Profile view (no data needed for an account page).
     # The empty state is rendered by ui_design.empty_state as
     # markdown (<h3>), not st.subheader, since the Supabase rebuild.
     assert any("Nothing loaded yet" in m.value for m in at.markdown), \
         "fresh login with no data should show the empty state"
-    find_button(at, "Profile", key="profile_btn").click().run()
+    find_button(at, "Profile", key="avatar_profile_btn").click().run()
     assert not at.exception, f"exception opening Profile empty: {at.exception}"
     assert_profile_view(at)
     # Back returns to the empty state.

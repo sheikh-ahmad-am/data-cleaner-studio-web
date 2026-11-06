@@ -270,6 +270,24 @@ section[data-testid="stSidebar"] a { color: #117f50; }
 .dcs-nav-row:hover { background-color: #f8f8f8; color: #0e7e4e; }
 .dcs-nav-row.dcs-nav-active { background-color: #f3f3f3;
   font-weight: 600; color: #030303; border-left: 2px solid #030303; }
+/* ---- sidebar avatar: green circle, initial only ---- */
+div[data-testid="stPopover"] { margin-bottom: 0.75rem; }
+div[data-testid="stPopover"] button[data-testid="stPopoverButton"] {
+  width: 44px !important; height: 44px !important;
+  min-width: 44px !important; max-width: 44px !important;
+  border-radius: 50% !important;
+  background-color: #117f50 !important; background: #117f50 !important;
+  color: #ffffff !important; border: 1px solid #117f50 !important;
+  font-size: 18px !important; font-weight: 600 !important;
+  padding: 0 !important; justify-content: center !important;
+  align-items: center !important; }
+div[data-testid="stPopover"] button[data-testid="stPopoverButton"]:hover {
+  background-color: #0e7d4e !important; background: #0e7d4e !important; }
+div[data-testid="stPopover"] button[data-testid="stPopoverButton"] svg {
+  display: none !important; }
+/* ---- avatar menu (popover body): white card, hairline border ---- */
+div[data-testid="stPopoverBody"] { background-color: #ffffff;
+  border: 1px solid #e8e8e8; border-radius: 12px; }
 /* ---- links: deep green, sparingly ---- */
 .stApp a { color: #117f50; }
 .stApp a:hover { color: #0e7e4e; }
@@ -477,19 +495,35 @@ section[data-testid="stSidebar"] { background-color: #1b1d1c;
   border-right: 1px solid #2e2e2e; }
 section[data-testid="stSidebar"] * { color: #edefee; }
 section[data-testid="stSidebar"] a { color: #4acd8b; }
-/* The sidebar profile card carries inline light-theme colours from
-   app.py; the dark rules below win over them so the name/email stay
-   readable on the dark card. */
-section[data-testid="stSidebar"] .dcs-card > div {
-  color: #edefee !important; }
-section[data-testid="stSidebar"] .dcs-card > div + div {
-  color: #bcbdbc !important; }
 .dcs-nav-row { display: block; padding: 0.35rem 0.75rem;
   border-radius: 6px; font-size: 13px; color: #edefee;
   border-left: 2px solid transparent; margin-bottom: 2px; }
 .dcs-nav-row:hover { background-color: #262928; color: #4acd8b; }
 .dcs-nav-row.dcs-nav-active { background-color: #2a2d2c;
   font-weight: 600; color: #edefee; border-left: 2px solid #edefee; }
+/* ---- sidebar avatar: same green circle in dark mode ---- */
+div[data-testid="stPopover"] { margin-bottom: 0.75rem; }
+div[data-testid="stPopover"] button[data-testid="stPopoverButton"] {
+  width: 44px !important; height: 44px !important;
+  min-width: 44px !important; max-width: 44px !important;
+  border-radius: 50% !important;
+  background-color: #117f50 !important; background: #117f50 !important;
+  color: #ffffff !important; border: 1px solid #117f50 !important;
+  font-size: 18px !important; font-weight: 600 !important;
+  padding: 0 !important; justify-content: center !important;
+  align-items: center !important; }
+div[data-testid="stPopover"] button[data-testid="stPopoverButton"]:hover {
+  background-color: #0e7d4e !important; background: #0e7d4e !important; }
+div[data-testid="stPopover"] button[data-testid="stPopoverButton"] svg {
+  display: none !important; }
+/* ---- avatar menu (popover body): dark card, hairline border ---- */
+div[data-testid="stPopoverBody"] { background-color: #232625;
+  border: 1px solid #2e2e2e; border-radius: 12px; }
+/* The email caption inside the menu is secondary body text: the
+   #bcbdbc body token (not the fainter #989a99 micro-label grey), so
+   the address stays readable on the dark card. */
+div[data-testid="stPopoverBody"] [data-testid="stCaptionContainer"] {
+  color: #bcbdbc; }
 /* ---- links: brightened green, sparingly ---- */
 .stApp a { color: #4acd8b; }
 .stApp a:hover { color: #3ecf8e; }
@@ -719,6 +753,43 @@ def sidebar_nav(sections, active: str | None = None) -> None:
             parts.append(
                 f'<div class="{cls}">{html.escape(str(label))}</div>')
     st.markdown("\n".join(parts), unsafe_allow_html=True)
+
+
+def avatar_initial(user) -> str:
+    """First letter of the display name (or username, or email) for the
+    sidebar avatar circle; ``"?"`` when nothing is set. Upper-cased,
+    so "md ahmad" and "Md Ahmad" both give ``"M"``."""
+    name = ((user or {}).get("display_name")
+            or (user or {}).get("username")
+            or (user or {}).get("email") or "?")
+    return (str(name).strip()[:1].upper() or "?")
+
+
+def render_sidebar_avatar(st_module=None, user=None):
+    """Render the sidebar avatar: a single green circle with the
+    user's initial (see ``avatar_initial``), the only profile element
+    in the sidebar. Clicking it opens a menu with the email (shown
+    here, and only here, in the sidebar), a Profile action, and
+    Log out. Returns ``"profile"`` when Profile was clicked,
+    ``"logout"`` when Log out was clicked, else ``None`` — the caller
+    acts on it (open the Profile tab / log out). The circle itself is
+    styled by the design system CSS (``stPopoverButton`` rules); the
+    popover is the honest Streamlit menu — no overlay palette exists
+    in Streamlit, and the trigger button is the avatar."""
+    st_mod = st_module or st
+    email = str((user or {}).get("email") or "")
+    # Both buttons are always created, every run: returning early on the
+    # Profile click would skip the Log out button for that run, leaving
+    # the menu half-built. Collect the action, return after the menu.
+    action = None
+    with st_mod.sidebar.popover(avatar_initial(user), key="avatar_menu"):
+        if email:
+            st_mod.caption(email)
+        if st_mod.button("Profile", key="avatar_profile_btn"):
+            action = "profile"
+        if st_mod.button("Log out", key="avatar_logout_btn"):
+            action = "logout"
+    return action
 
 
 def section_heading(text: str, sub: str | None = None) -> None:
