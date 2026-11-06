@@ -1180,7 +1180,8 @@ def render_suggestions(st, df: pd.DataFrame):
         st.write(sugg["detail"])
         if st.button("Apply this fix", key=f"s_sugg_apply_{i}"):
             new_df, action = apply_suggestion(df, sugg["action"])
-            st.success(f"Done — {action[0]}: {action[1]}.")
+            st.success(f"Done — {action[0]}: {action[1]}. The raw file "
+                       "is untouched.")
             return new_df, [action]
     return None, []
 
@@ -1212,7 +1213,7 @@ def render_standardize_phones(st, df: pd.DataFrame):
     counted. Returns (new_df, new_actions) on Apply, else (None, [])."""
     text_cols = [c for c in df.columns if str(df[c].dtype) in ("object", "str")]
     if not text_cols:
-        st.info("No text column to format phone numbers in.")
+        st.info("No text column in this file to format phone numbers in.")
         return None, []
     st.subheader("Standardize phone numbers")
     st.write("Formats numbers as +91 98765 43210 — handles 10-digit, "
@@ -1225,7 +1226,8 @@ def render_standardize_phones(st, df: pd.DataFrame):
         new_df[col] = new_s
         action = (f"Standardize phones: {col}",
                   f"{changed} formatted, {skipped} left unchanged")
-        st.success(f"Done — {changed} formatted, {skipped} left unchanged.")
+        st.success(f"Done — {changed} number(s) formatted as +91 …, "
+                   f"{skipped} left unchanged in '{col}'.")
         return new_df, [action]
     return None, []
 
@@ -1236,7 +1238,7 @@ def render_strip_specials(st, df: pd.DataFrame):
     (new_df, new_actions) on Apply, else (None, [])."""
     text_cols = [c for c in df.columns if str(df[c].dtype) in ("object", "str")]
     if not text_cols:
-        st.info("No text column to strip symbols from.")
+        st.info("No text column in this file to strip symbols from.")
         return None, []
     st.subheader("Strip special characters")
     st.write("Removes emojis and symbols from a text column. Letters, "
@@ -1247,7 +1249,8 @@ def render_strip_specials(st, df: pd.DataFrame):
         new_df[col] = strip_specials(df[col])
         action = (f"Strip special characters: {col}",
                   "Symbols and emojis removed")
-        st.success("Done — symbols and emojis removed.")
+        st.success(f"Done — symbols and emojis removed from '{col}'; "
+                   "letters, digits, spaces and ., - & are kept.")
         return new_df, [action]
     return None, []
 
@@ -1259,7 +1262,8 @@ def render_goal(st, df: pd.DataFrame):
     numeric column."""
     num_cols = engine.numeric_cols(df)
     if not num_cols:
-        st.info("No number columns, so there is no KPI to track.")
+        st.info("No number columns in this file, so there is no KPI to "
+                "track.")
         return None
     st.subheader("Goal tracking")
     st.write("Pick a number to track and a target — the bar shows how "
@@ -1277,7 +1281,8 @@ def render_goal(st, df: pd.DataFrame):
     st.write(f"{_fmt_num(value)} of {_fmt_num(target)} ({pct:.1f}%)")
     st.progress(min(max(pct, 0.0), 100.0) / 100.0)
     if pct >= 100:
-        st.success("Goal reached — well done.")
+        st.success(f"Goal reached — {_fmt_num(value)} of "
+                   f"{_fmt_num(target)} ({pct:.1f}%).")
     elif pct >= 50:
         st.write("Over halfway there.")
     else:
@@ -1299,7 +1304,8 @@ def render_search(st, df: pd.DataFrame):
     st.write(f"{len(matches):,} of {len(df):,} rows match "
              f"'{str(query).strip()}'.")
     if len(matches) == 0:
-        st.info("Nothing matches — try a shorter word.")
+        st.info(f"Nothing matches '{str(query).strip()}' in {len(df):,} "
+                "rows — try a shorter word.")
     else:
         st.dataframe(matches.head(100), width="stretch")
     return matches
@@ -1375,7 +1381,8 @@ def render_recent(st, df=None, source_name="", raw_bytes=None, base_dir=None,
                 add_recent(source_name, raw_bytes, base_dir)
                 saved = saved + [source_name]
                 st.session_state["s_recent_saved"] = saved
-                st.success(f"Saved {source_name} for quick reopen.")
+                st.success(f"Saved {source_name} for quick reopen — it "
+                           "will appear in Recent files below.")
     entries = list_recent(base_dir)
     if not entries:
         st.info("No recent files yet. Tick 'Keep a copy for quick reopen' "
@@ -1425,7 +1432,9 @@ def render_backups(st, df=None, source_name="", base_dir=None,
         if st.button("Back up the raw data now", key=f"{key_prefix}_now"):
             path = backup_raw(df, source_name or "data", base_dir,
                               storage_key=storage_key)
-            st.success(f"Backed up {Path(str(path)).name}.")
+            st.success(f"Backed up {Path(str(path)).name} "
+                       f"({len(df):,} rows) — restore it any time from the "
+                       "list below.")
     entries = list_backups(base_dir, storage_key=storage_key)
     if not entries:
         st.info("No backups yet — back up the raw data before cleaning.")
@@ -1471,7 +1480,8 @@ def render_one_click(st, raw, opts, base_dir=None, storage_key=None):
              "cleans it, rebuilds the KPIs and the report, and prepares "
              "the email with the PDF attached.")
     if raw is None:
-        st.info("Load and clean data first — there is nothing to run yet.")
+        st.info("Load and clean data first — the one-click run needs a "
+                "file to back up, clean and report on.")
         return {"status": "not_ready", "error": "No data loaded yet."}
     if not st.button("Run everything", type="primary", key="s_oneclick_run"):
         return {"status": "waiting"}
@@ -1494,8 +1504,10 @@ def render_one_click(st, raw, opts, base_dir=None, storage_key=None):
                    f"Columns: {len(raw.columns)} -> {len(cleaned.columns)}.")
         pdf_bytes = engine.to_pdf_bytes("Data Cleaner Studio — Report",
                                         kpis, actions, summary)
-    st.success(f"Done: {len(raw):,} rows -> {len(cleaned):,} rows. "
-               f"Backup saved as {Path(str(backup_path)).name}.")
+    st.success(f"Done: {len(raw):,} rows -> {len(cleaned):,} rows, "
+               f"{len(actions)} fix(es) applied. "
+               f"Backup saved as {Path(str(backup_path)).name} — the raw "
+               "file is untouched.")
     email_status = "pending"
     try:
         import feat_export
@@ -1543,7 +1555,8 @@ def render_portfolio_download(st, cleaned, kpis, actions,
     auto-written README.md, and a chart PNG when the data can be
     charted)."""
     if cleaned is None:
-        st.info("Clean the data first — the case study will appear here.")
+        st.info("Clean the data first — the case study is built from the "
+                "cleaned file.")
         return
     st.subheader("Publish to portfolio")
     st.write("A ZIP with the cleaned data, a plain-words write-up of "
@@ -1562,7 +1575,8 @@ def render_chart_png(st, grouped_df, x_col, y_col,
     coordinator show this section twice in one run (Dashboard + Report)
     without duplicate widget keys."""
     if grouped_df is None or len(grouped_df) == 0:
-        st.info("No chart data yet — clean the data and build a chart first.")
+        st.info("No chart data yet — clean the data and build a chart "
+                "first; the portfolio page needs both.")
         return
     st.subheader("Chart as image")
     st.write("Download the chart as a PNG picture — handy for slides, "
@@ -1581,7 +1595,8 @@ def render_styled_excel_download(st, cleaned, kpis, actions):
     colours — missing values and numeric outliers highlighted light
     red, header row light green, everything else plain."""
     if cleaned is None:
-        st.info("Clean the data first — the styled workbook will appear here.")
+        st.info("Clean the data first — the styled workbook is built from "
+                "the cleaned file.")
         return
     st.subheader("Styled Excel export")
     st.write("Missing values and outliers are highlighted light red, so "

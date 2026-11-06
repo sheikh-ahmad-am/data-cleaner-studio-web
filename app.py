@@ -82,13 +82,16 @@ import feat_export
 import feat_mobile
 import feat_profile
 import feat_quality
+import feat_quickjump
 import feat_schedule
 import feat_share
+import feat_status
 import feat_tutorial
 import scheduler
 import storage
 import turnstile_component
 import ui_design
+import ui_loading
 
 try:
     from auth import AuthServiceError
@@ -99,16 +102,20 @@ except ImportError:  # Cloud rework: fall back to a local stand-in
 _APP_DIR = Path(__file__).resolve().parent
 
 # -------------------------------------------- design system (Supabase) --
-# The app's ONE consolidated stylesheet: near-white background, white
-# cards, near-black ink, one deep-green accent. Injected at the top of
-# the app (right after set_page_config, below) so the login / signup
-# screen gets it too — the deep-green primary-button rules here are the
+# The app's consolidated stylesheets, one per theme: light below
+# (near-white background, white cards, near-black ink, one deep-green
+# accent) and dark in ui_design.DARK_CSS (near-black green-grey
+# surfaces, brightened green accents). Injected at the top of the app
+# (right after set_page_config, below) so the login / signup screen
+# gets them too — the deep-green primary-button rules here are the
 # fallback if the [theme] section of .streamlit/config.toml is ever
-# missing. This is Worker A's DESIGN_SYSTEM_CSS from ui_design.py,
+# missing. The light literal below is ui_design.DESIGN_SYSTEM_CSS
 # pasted verbatim: the Supabase tokens measured off the live dashboard
 # (see supabase-design-study.md and the authoritative vibe brief in
-# supabase-ui-ux-design-analysis.md). There is exactly one stylesheet
-# to maintain; do not retype or re-derive it.
+# supabase-ui-ux-design-analysis.md). There are exactly two stylesheets
+# to maintain, both owned by ui_design.py; do not retype or re-derive
+# either. Which one is injected is decided just before the inject call
+# from st.session_state["dcs_theme"] ("light" by default).
 DESIGN_SYSTEM_CSS = """<style>
 /* ---- page: near-white everywhere, no separate grey canvas ---- */
 .stApp { background-color: #fdfdfd; color: #030303; }
@@ -143,9 +150,9 @@ div[data-testid="stButton"] > button[kind="primary"] {
   font-weight: 500; }
 .stApp .stButton > button[kind="primary"]:hover,
 div[data-testid="stButton"] > button[kind="primary"]:hover {
-  background-color: #117f50;
-  background: linear-gradient(180deg, #118050 0%, #0e7d4e 100%);
-  border-color: #117f50; color: #ffffff; }
+  background-color: #007243;
+  background: linear-gradient(180deg, #0e7d4e 0%, #007243 100%);
+  border-color: #007243; color: #ffffff; }
 /* ---- secondary buttons: white, 1px light border, black text ---- */
 .stApp .stButton > button[kind="secondary"],
 div[data-testid="stButton"] > button[kind="secondary"] {
@@ -153,7 +160,7 @@ div[data-testid="stButton"] > button[kind="secondary"] {
   border-radius: 6px; font-weight: 500; }
 .stApp .stButton > button[kind="secondary"]:hover,
 div[data-testid="stButton"] > button[kind="secondary"]:hover {
-  background-color: #f8f8f8; color: #030303; border-color: #e5e5e5; }
+  background-color: #03030307; color: #030303; border-color: #e5e5e5; }
 /* Danger buttons (delete / clear / reset / remove) are secondary buttons
    (type="secondary", never primary). Streamlit buttons cannot carry a
    custom class, so the danger colour lives on this .dcs-danger hook for
@@ -169,6 +176,10 @@ div[data-testid="stDownloadButton"] > button {
   background-color: #ffffff; color: #030303;
   border-color: #e8e8e8; border-radius: 6px; }
 .stApp label { color: #030303; }
+/* ---- checkboxes: hairline box border, green check ---- */
+.stApp input[type="checkbox"] { accent-color: #117f50; }
+div[data-testid="stCheckbox"] div[data-baseweb="checkbox"] span {
+  border-color: #d0d0d0; }
 /* ---- sidebar: near-white, hairline edge, nav rows as pills ---- */
 section[data-testid="stSidebar"] { background-color: #fdfdfd;
   border-right: 1px solid #e8e8e8; }
@@ -177,11 +188,12 @@ section[data-testid="stSidebar"] a { color: #117f50; }
 .dcs-nav-row { display: block; padding: 0.35rem 0.75rem;
   border-radius: 6px; font-size: 13px; color: #030303;
   border-left: 2px solid transparent; margin-bottom: 2px; }
-.dcs-nav-row:hover { background-color: #f8f8f8; }
+.dcs-nav-row:hover { background-color: #f8f8f8; color: #0e7e4e; }
 .dcs-nav-row.dcs-nav-active { background-color: #f3f3f3;
   font-weight: 600; color: #030303; border-left: 2px solid #030303; }
 /* ---- links: deep green, sparingly ---- */
 .stApp a { color: #117f50; }
+.stApp a:hover { color: #0e7e4e; }
 /* ---- top bar: 48px, near-white, hairline bottom border ---- */
 .dcs-topbar { height: 48px; display: flex; align-items: center;
   gap: 0.75rem; background-color: #fdfdfd;
@@ -267,9 +279,26 @@ div[data-testid="stDataFrame"] th, div[data-testid="stTable"] th {
 div[data-testid="stDataFrame"] td, div[data-testid="stTable"] td {
   background-color: #ffffff; color: #030303;
   border-bottom: 1px solid #e8e8e8; font-size: 13px; }
-/* ---- subtle, instant hovers (no long transitions) ---- */
-.stApp .stButton > button, .stApp a, .dcs-nav-row {
-  transition: background-color 0.1s ease, color 0.1s ease; }
+/* ---- motion, honestly measured: colour-only 0.2s ease-out ---- */
+.stApp .stButton > button, .stApp a, .dcs-nav-row,
+div[data-testid="stRadio"] div[role="radiogroup"] label,
+.stApp input, .stApp textarea, .stApp select {
+  transition: background-color 0.2s cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 0.2s cubic-bezier(0.22, 1, 0.36, 1),
+    color 0.2s cubic-bezier(0.22, 1, 0.36, 1); }
+/* ---- focus: one shared ring — 2px gap + 4px translucent green halo ---- */
+.stApp .stButton > button:focus-visible,
+div[data-testid="stDownloadButton"] > button:focus-visible,
+.stApp a:focus-visible,
+div[data-testid="stRadio"] div[role="radiogroup"] label:focus-within {
+  outline: none;
+  box-shadow: 0 0 0 2px #fdfdfd, 0 0 0 6px #30ba798c; }
+.stApp input:focus, .stApp textarea:focus, .stApp select:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px #fdfdfd, 0 0 0 6px #30ba798c; }
+/* ---- Turnstile container area: etched like any other panel ---- */
+div[data-testid="stCustomComponentV1"] { background-color: #ffffff;
+  border: 1px solid #e8e8e8; border-radius: 12px; }
 /* ---- empty state: centred, calm, guided ---- */
 .dcs-empty { text-align: center; padding: 2.5rem 1rem;
   background-color: #ffffff; border: 1px solid #e8e8e8;
@@ -286,7 +315,19 @@ st.set_page_config(page_title="Data Cleaner Studio", layout="wide",
 
 # Injected before the login view renders (and before the share-link
 # handling below), so the auth screen gets the design system too.
+# Which stylesheet: st.session_state["dcs_theme"] ("light" by default,
+# flipped by the sidebar toggle and the login-screen switch — both in
+# ui_design). The theme tests read the light literal above from source,
+# so this rebinding keeps the name DESIGN_SYSTEM_CSS on the injected
+# value; the .streamlit/config.toml [theme] base="light" stays as the
+# first-paint base only, since Streamlit's native theme is static.
+st.session_state.setdefault("dcs_theme", "light")
+DESIGN_SYSTEM_CSS = ui_design.theme_css(
+    st.session_state.get("dcs_theme") or "light")
 st.markdown(DESIGN_SYSTEM_CSS, unsafe_allow_html=True)
+# Rhythm (ui_loading): 1280px container cap + section-gap helpers,
+# injected once per run right after the design system.
+ui_loading.inject_rhythm()
 _SHARES_FILENAME = "shares.json"
 _STORAGE_KEY_RE = re.compile(r"^[a-zA-Z0-9_]{3,30}$")
 
@@ -693,7 +734,12 @@ if _current_user is None:
         if _login_logo.is_file():
             st.image(str(_login_logo), width=72)
         st.title("Data Cleaner Studio")
-        st.write("Put in messy data. Get clean data, KPIs, charts and a report.")
+        st.write("Put in a messy file. Get the cleaned file back, with "
+                 "its KPIs, charts and a one-page report.")
+        # Theme switch for the login screen (no sidebar here): flips the
+        # same st.session_state["dcs_theme"] the sidebar toggle writes,
+        # so the login screen itself restyles on the rerun.
+        ui_design.render_login_theme_toggle()
         banner = auth.get_local_mode_banner()
         if banner:
             st.info(banner)
@@ -805,8 +851,9 @@ if _current_user is None:
                         # yet ("Confirm email" is on): no auto-login and no
                         # session cookie — the user must click the link in
                         # their inbox first.
-                        st.success("Account created — check your inbox and click "
-                                   "the verification link first, then log in here.")
+                        st.success(f"Account created for {ident} — check "
+                                   "your inbox and click the verification "
+                                   "link first, then log in here.")
                     else:
                         # Confirmed account (or local mode, which has no
                         # confirmation step): log the new user straight in,
@@ -839,14 +886,15 @@ if _current_user is None:
                             st.session_state["just_signed_up"] = True
                             st.rerun()
                         elif _unconfirmed:
-                            st.success("Account created — check your inbox and click "
-                                       "the verification link first, then log in here.")
+                            st.success(f"Account created for {ident} — check "
+                                       "your inbox and click the verification "
+                                       "link first, then log in here.")
                         elif _captcha_spent:
-                            st.success("Account created — log in with your new "
-                                       "account.")
+                            st.success(f"Account created — log in with your "
+                                       f"new account. ({ident})")
                         else:
-                            st.success("Account created — switch to 'Log in' "
-                                       "above and log in with it.")
+                            st.success(f"Account created — switch to 'Log in' "
+                                       f"above and log in as {ident}.")
         google_url = None
         _google_entry = (getattr(auth, "get_google_sign_in_url", None)
                          or getattr(auth, "google_sign_in_url", None))
@@ -888,7 +936,12 @@ except Exception:  # noqa: BLE001 - a broken brand file must not stop the app
     _brand = {"name": "Data Cleaner Studio",
               "accent": feat_brand.DEFAULT_ACCENT, "logo": None}
 try:
-    st.markdown(feat_mobile.mobile_css(), unsafe_allow_html=True)
+    # Mobile stylesheet follows the theme toggle too — its base theme
+    # applies on every screen, so a light-only mobile_css() would
+    # fight the dark theme with !important rules.
+    st.markdown(feat_mobile.mobile_css(
+        theme=st.session_state.get("dcs_theme") or "light"),
+        unsafe_allow_html=True)
 except Exception:  # noqa: BLE001 - theme CSS must never stop the app
     pass
 try:
@@ -923,9 +976,22 @@ if not st.session_state.get("a_recipes"):
         st.session_state["a_recipes"] = _saved_recipes
 
 # ------------------------------------------------------- language + title ---
+# The language picker widget (key "n_lang_pick", in
+# feat_enrich.render_language_picker) only runs later in this script,
+# after the top bar — but its value is already in session state at
+# the top of the run. Read it HERE, before the top bar renders:
+# otherwise the top bar (and every label built from _lang) shows the
+# previous language for one run after a switch. The label->code map
+# below mirrors the picker's options dict — if the picker ever
+# changes its labels, this map must change with it.
+_LANG_PICK_LABELS = {"English": "en", "हिन्दी": "hi", "اردو": "ur"}
 try:
-    _lang = (st.session_state.get("n_lang_data")
-             or ai_settings.load_settings().get("language", "en"))
+    _lang_pick = st.session_state.get("n_lang_pick")
+    if _lang_pick in _LANG_PICK_LABELS:
+        _lang = _LANG_PICK_LABELS[_lang_pick]
+    else:
+        _lang = (st.session_state.get("n_lang_data")
+                 or ai_settings.load_settings().get("language", "en"))
 except Exception:  # noqa: BLE001 - a broken settings file must not stop the app
     _lang = "en"
 if _lang not in ("en", "hi", "ur"):
@@ -940,20 +1006,21 @@ _title = (_brand.get("name") if _brand.get("name")
           and _brand["name"] != "Data Cleaner Studio" else _t("app_title"))
 # Section labels, one mapping shared by the top bar, the sidebar nav
 # and the section radio below, so the three stay in agreement.
-# (Settings / Profile are plain labels, not translated keys.)
+# (Settings / Profile / Status are plain labels, not translated keys.)
 _nav_labels = {"preview": _t("preview"), "join": _t("join"),
                "clean": _t("clean"), "kpis": _t("kpis"),
                "dashboard": _t("dashboard"), "compare": _t("compare"),
                "report": _t("report"), "tools": _t("tools"),
                "tutorial": _t("tutorial"), "settings": "Settings",
-               "profile": "Profile"}
+               "profile": "Profile", "status": "Status"}
 # Sidebar nav groups (Supabase shell: tiny uppercase labels over plain
 # rows). Only the tabs the current mode offers are shown — client mode
 # hides the advanced ones; the radio below is the authority on that.
 _nav_groups = [("Data", ["preview", "clean", "join"]),
                ("Analyse", ["kpis", "dashboard", "compare"]),
                ("Output", ["report"]),
-               ("Workspace", ["tools", "tutorial", "settings", "profile"])]
+               ("Workspace", ["tools", "tutorial", "settings", "profile",
+                              "status"])]
 # A "Go to the Clean tab" empty-state button (or any other code) asks
 # for a section switch by setting pending_tab, then rerunning: apply it
 # here, BEFORE the top bar and the sidebar nav render — writing the
@@ -987,7 +1054,8 @@ for _i, _label in enumerate(["Upload", "Clean", "KPIs", "Export"], start=1):
         _flow_parts.append(_label)
 st.caption("Your flow: " + " → ".join(_flow_parts))
 if st.session_state.pop("just_signed_up", False):
-    st.success("Account created — you're logged in. Welcome!")
+    st.success("Account created — you're logged in. Start with a file "
+               "from the sidebar, or try the sample data.")
 feat_tutorial.render_first_run_banner(st, settings_path=_settings_path)
 feat_analyse.render_whats_new(st, user_key=_skey)
 
@@ -1150,11 +1218,28 @@ if _pc1.button("Profile", key="profile_btn"):
     st.rerun()
 if _pc2.button("Log out", key="logout_btn"):
     _do_logout()
+# Theme toggle (sidebar): Light/Dark switch writing
+# st.session_state["dcs_theme"]; the stylesheet injected at the top of
+# this file follows it on the next rerun.
+ui_design.render_theme_toggle()
+# Sync client_mode from the toggle widget BEFORE the sidebar nav
+# renders: the toggle itself (feat_analyse.render_client_mode_toggle)
+# only runs later in this script, after the upload block, and it is
+# the only place that copies the widget value into the "client_mode"
+# data key — so reading client_mode here would lag one run behind
+# the flip, and the nav would show the previous mode's tabs until
+# the next rerun. The widget value ("an_client_mode_toggle") is
+# already in session state at the top of the run, so read it
+# directly; the toggle's own copy later in the run then agrees.
+if "an_client_mode_toggle" in st.session_state:
+    st.session_state["client_mode"] = bool(
+        st.session_state["an_client_mode_toggle"])
 _nav_client = bool(st.session_state.get("client_mode", False))
 _nav_keys = (["preview", "clean", "kpis", "dashboard", "report",
-              "tutorial", "profile"] if _nav_client else
+              "tutorial", "profile", "status"] if _nav_client else
              ["preview", "clean", "join", "kpis", "dashboard", "compare",
-              "report", "tools", "tutorial", "settings", "profile"])
+              "report", "tools", "tutorial", "settings", "profile",
+              "status"])
 _nav_sections = [
     (label, [(k, _nav_labels[k]) for k in keys if k in _nav_keys])
     for label, keys in _nav_groups]
@@ -1163,6 +1248,15 @@ _nav_active = next(
     (k for k, v in _nav_labels.items() if v == _top_active), "preview")
 with st.sidebar:
     ui_design.sidebar_nav(_nav_sections, active=_nav_active)
+    # Quick jump (feat_quickjump): searchable jump to any section or
+    # action — the honest Streamlit version of Supabase's Cmd+K palette
+    # (no global keyboard listener exists in Streamlit; the box is the
+    # palette, and its label says so).
+    feat_quickjump.render_quick_jump(st)
+    # Quiet status pill (feat_status): the app's own health — the
+    # mode in local mode, "All systems operational" only when the
+    # cloud health check genuinely passed.
+    feat_status.render_status_pill(st)
 _banner = auth.get_local_mode_banner()
 if _banner:
     st.sidebar.info(_banner)
@@ -1179,7 +1273,7 @@ if uploaded is not None and st.session_state.get("last_upload") != uploaded.name
     try:
         storage.save_upload(_skey, uploaded.name, uploaded.getvalue())
     except Exception as e:  # noqa: BLE001 - show the error, don't crash
-        st.sidebar.error(f"Could not save that upload: {e}")
+        st.sidebar.error(f"Could not save that upload ({uploaded.name}): {e}")
     if uploaded.name.lower().endswith((".xlsx", ".xls")):
         # Excel: hold the bytes and let the user pick a sheet below.
         st.session_state["pending_excel"] = (uploaded.name, uploaded.getvalue())
@@ -1190,27 +1284,30 @@ if uploaded is not None and st.session_state.get("last_upload") != uploaded.name
                      uploaded.name)
             st.session_state["last_upload"] = uploaded.name
         except Exception as e:  # noqa: BLE001 - show the error, don't crash
-            st.sidebar.error(f"Could not read that file: {e}")
+            st.sidebar.error(f"Could not read {uploaded.name} as Parquet: {e}")
     else:
         try:
             _set_raw(engine.load_file(uploaded.name, uploaded.getvalue()),
                      uploaded.name)
             st.session_state["last_upload"] = uploaded.name
         except Exception as e:  # noqa: BLE001 - show the error, don't crash
-            st.sidebar.error(f"Could not read that file: {e}")
+            st.sidebar.error(f"Could not read {uploaded.name}: {e}")
 
 if st.session_state.get("pending_excel"):
     ex_name, ex_bytes = st.session_state["pending_excel"]
     try:
         ex_sheets = feat_combine.list_excel_sheets(ex_bytes)
     except Exception as e:  # noqa: BLE001
-        st.sidebar.error(f"Could not read that workbook: {e}")
+        st.sidebar.error(f"Could not read that workbook ({ex_name}): {e}")
         ex_sheets = []
     if ex_sheets:
         ex_choice = st.sidebar.selectbox(
             "Sheet", ex_sheets + ["All sheets combined"], key="excel_sheet_pick")
         if st.sidebar.button("Load sheet", key="excel_sheet_load"):
             try:
+                # Anti-shift skeleton: reserves the preview's space
+                # before the blocking load, exactly like st.spinner.
+                ui_loading.skeleton_table(rows=5, columns=4)
                 with st.spinner("Loading that sheet…"):
                     if ex_choice == "All sheets combined":
                         ex_df, _ = feat_combine.load_excel_all(ex_bytes)
@@ -1220,10 +1317,12 @@ if st.session_state.get("pending_excel"):
                                  f"{ex_name} : {ex_choice}")
                 st.session_state["pending_excel"] = None
             except Exception as e:  # noqa: BLE001
-                st.sidebar.error(f"Could not load that sheet: {e}")
+                st.sidebar.error(f"Could not load the '{ex_choice}' sheet "
+                                 f"from {ex_name}: {e}")
 
 if st.sidebar.button(_t("try_sample"), key="sample_btn"):
     _sample_path = _APP_DIR / "sample_data" / "messy_sales.csv"
+    ui_loading.skeleton_table(rows=5, columns=4)
     with st.spinner("Loading the sample file…"):
         _set_raw(engine.load_file("messy_sales.csv",
                                   _sample_path.read_bytes()),
@@ -1244,20 +1343,24 @@ if _saved_uploads:
         if _c1.button("Open", key="saved_upload_open",
                       disabled=not _saved_pick) and _saved_pick:
             try:
+                ui_loading.skeleton_table(rows=5, columns=4)
                 with st.spinner("Opening that file…"):
                     _saved_bytes = storage.read_file(_skey, "uploads", _saved_pick)
                     _set_raw(engine.load_file(_saved_pick, _saved_bytes),
                              _saved_pick, kind="upload")
                 st.session_state["last_upload"] = None
+                _opened_rows = len(st.session_state.raw)
                 if _restore_cleaned_state(_saved_pick):
                     st.sidebar.success(
-                        f"Opened {_saved_pick} — cleaned data restored too.")
+                        f"Opened {_saved_pick} ({_opened_rows:,} rows) — "
+                        "cleaned data restored too.")
                 else:
                     st.sidebar.success(
-                        f"Opened {_saved_pick}. Clean it in the Clean tab "
-                        "to rebuild the KPIs and the report.")
+                        f"Opened {_saved_pick} ({_opened_rows:,} rows). Clean "
+                        "it in the Clean tab to rebuild the KPIs and the "
+                        "report.")
             except Exception as e:  # noqa: BLE001
-                st.sidebar.error(f"Could not open that file: {e}")
+                st.sidebar.error(f"Could not open {_saved_pick}: {e}")
         if _c2.button("Delete", key="saved_upload_delete",
                       type="secondary",
                       disabled=not _saved_pick) and _saved_pick:
@@ -1279,12 +1382,14 @@ with st.sidebar.expander("More ways to load"):
                      "paste the link here.")
         else:
             try:
+                ui_loading.skeleton_table(rows=5, columns=4)
                 with st.spinner("Loading that sheet…"):
                     _set_raw(engine.load_sheets_url(sheet_url.strip()), "Google Sheet",
                              kind="sheets", url=sheet_url.strip())
                 st.session_state["last_upload"] = None
             except Exception as e:  # noqa: BLE001
-                st.error(f"Could not load that sheet: {e}")
+                st.error(f"Could not load that Google Sheet — check the "
+                         "link and sharing settings: {e}")
 
     st.write("... or a database file")
     db_file = st.file_uploader(
@@ -1294,18 +1399,20 @@ with st.sidebar.expander("More ways to load"):
         try:
             tables = engine.list_sqlite_tables(db_file.getvalue())
         except Exception as e:  # noqa: BLE001
-            st.error(f"Could not read that database: {e}")
+            st.error(f"Could not read that database file ({db_file.name}): {e}")
             tables = []
         if tables:
             table = st.selectbox("Table", tables, key="db_table")
             if st.button("Load table", key="db_load"):
                 try:
+                    ui_loading.skeleton_table(rows=5, columns=4)
                     with st.spinner("Loading that table…"):
                         _set_raw(engine.load_sqlite(db_file.getvalue(), table),
                                  f"{db_file.name} : {table}")
                     st.session_state["last_upload"] = None
                 except Exception as e:  # noqa: BLE001
-                    st.error(f"Could not load that table: {e}")
+                    st.error(f"Could not load the '{table}' table from "
+                             f"{db_file.name}: {e}")
 
 _last_raw_bytes = uploaded.getvalue() if uploaded is not None else None
 _reopened = feat_share.render_recent(
@@ -1327,10 +1434,15 @@ feat_analyse.render_client_mode_toggle(st)
 with st.sidebar.expander("Settings (API key)"):
     ai_settings.render_settings(st)
 
-# No theme picker any more: the app has one Supabase theme (set in
-# .streamlit/config.toml and in the design-system stylesheet at the top
-# of this file). The old per-theme CSS block that lived here is folded
-# into that stylesheet — there is exactly one stylesheet now.
+# Theme toggle: the sidebar Light/Dark switch
+# (ui_design.render_theme_toggle, wired just below the Profile / Log
+# out buttons) and the login-screen switch both write
+# st.session_state["dcs_theme"] ("light" by default); the stylesheet
+# injected at the top of this file follows it, so the whole app —
+# login screen included — switches between the light and dark
+# Supabase stylesheets. .streamlit/config.toml stays base="light":
+# it is only the first-paint base; the runtime CSS overrides do the
+# switching, since Streamlit's native theme is static.
 feat_enrich.render_language_picker(st)
 _ws_on = feat_enrich.render_workspace_toggle(st)
 
@@ -1383,6 +1495,15 @@ if raw is None:
             st, _user, _skey, on_logout=_do_logout)
         if _profile_result in ("deleted", "logout"):
             _do_logout()
+        st.stop()
+    # The Status tab needs no data either (it reports the app's own
+    # health and history): render it here too, same as Profile above.
+    if st.session_state.get("active_tab") == "Status":
+        if st.button("← Back to data", key="status_empty_back"):
+            st.session_state.pop("pending_tab", None)
+            st.session_state.pop("active_tab", None)
+            st.rerun()
+        feat_status.render_status_section(st)
         st.stop()
     # Guided empty state: what to do first, plus a one-click way to try
     # the sample — the same loader the sidebar "Try the messy sample"
@@ -1495,10 +1616,11 @@ _client = bool(st.session_state.get("client_mode", False))
 # secondary views. Nothing removed — just ordered by how often it
 # is used. Labels come from the shared _nav_labels mapping above.
 _tab_keys = ["preview", "clean", "kpis", "dashboard", "report",
-             "join", "compare", "tools", "tutorial", "settings", "profile"]
+             "join", "compare", "tools", "tutorial", "settings", "profile",
+             "status"]
 if _client:
     _tab_keys = ["preview", "clean", "kpis", "dashboard", "report", "tutorial",
-                 "profile"]
+                 "profile", "status"]
 _tab_labels = {k: _nav_labels[k] for k in _tab_keys}
 # Section switcher: a horizontal radio, NOT st.tabs.
 # Streamlit's tab selection is not sticky — it resets to the first
@@ -1597,7 +1719,7 @@ if "join" in tab:
             try:
                 right = engine.load_file(joined_file.name, joined_file.getvalue())
             except Exception as e:  # noqa: BLE001
-                st.error(f"Could not read that file: {e}")
+                st.error(f"Could not read {joined_file.name}: {e}")
                 right = None
             if right is not None:
                 c1, c2, c3 = st.columns(3)
@@ -2104,6 +2226,10 @@ if _active_tab == "report":
             st.session_state["pending_tab"] = "clean"
             st.rerun()
     else:
+        # Section rhythm: a generous gap before the report, the way
+        # the research's 128px marketing rhythm works at dashboard
+        # scale.
+        ui_loading.section_gap(px=64)
         ui_design.section_heading("Report")
         report = engine.build_report(raw, clean, st.session_state.actions,
                                      st.session_state.kpis)
@@ -2155,6 +2281,7 @@ if _active_tab == "report":
             clean = _oc["cleaned"]
             filtered = clean
         feat_enrich.render_versioned_download(st, clean)
+        ui_loading.section_gap()
         with st.expander("More export formats & sharing"):
             _num = engine.numeric_cols(clean)
             _cat = [c for c in clean.columns
@@ -2444,3 +2571,8 @@ if "profile" in tab:
             st, _user, _skey, on_logout=_do_logout)
         if _profile_result in ("deleted", "logout"):
             _do_logout()
+
+# --------------------------------------------------------------- status ---
+if "status" in tab:
+    if _active_tab == "status":
+        feat_status.render_status_section(st)

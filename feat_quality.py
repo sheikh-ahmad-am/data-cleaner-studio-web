@@ -517,12 +517,14 @@ def render_quality_panel(st, df: pd.DataFrame) -> None:
     st.metric("Quality score", f"{score} / 100")
     st.progress(score / 100)
     if score >= 90:
-        st.success("Clean data — nothing major is dragging the score down.")
+        st.success(f"Clean data — score {score}/100, nothing major is "
+                   "dragging it down.")
     elif score >= 70:
-        st.warning("Usable, but a few things are worth fixing before you "
-                   "trust the numbers.")
+        st.warning(f"Usable — score {score}/100. Fix the items below "
+                   "before you trust the numbers.")
     else:
-        st.error("Rough data — fix the items below before relying on it.")
+        st.error(f"Rough data — score {score}/100. Fix the items below "
+                 "before relying on it.")
     if breakdown:
         st.write("What is dragging the score down:")
         st.table(pd.DataFrame(breakdown))
@@ -539,7 +541,8 @@ def render_outliers(st, df: pd.DataFrame):
     the Apply button is pressed."""
     num_cols = engine.numeric_cols(df)
     if not num_cols:
-        st.info("No number columns, so there are no outliers to check.")
+        st.info("No number columns in this file, so there are no outliers "
+                "to check.")
         return None, []
     st.subheader("Outlier alerts")
     st.write("Values far outside the usual range (below Q1 − 1.5×IQR or "
@@ -548,7 +551,8 @@ def render_outliers(st, df: pd.DataFrame):
     col = st.selectbox("Number column", num_cols, key="q_outlier_col")
     outs = [o for o in find_outliers(df) if o["column"] == col]
     if not outs:
-        st.success(f"No outliers in {engine._pretty(col)}.")
+        st.success(f"No outliers in {engine._pretty(col)} — every value "
+                   "sits inside Q1 − 1.5×IQR to Q3 + 1.5×IQR.")
         return None, []
     st.write(f"{len(outs)} outlier(s) in {engine._pretty(col)}:")
     st.dataframe(pd.DataFrame(outs)[["row_index", "value", "lower", "upper"]]
@@ -564,13 +568,14 @@ def render_outliers(st, df: pd.DataFrame):
     if st.button("Apply", key="q_outlier_apply"):
         new_df, affected = apply_outliers(df, col, mode)
         if mode == "keep" or affected == 0:
-            st.info("Kept as they are — nothing changed.")
+            st.info("Kept as they are — nothing changed; the outlier rows "
+                    "stay in the file.")
             return None, []
         action = (f"Outliers: {col}",
                   f"{affected} row(s) "
                   f"{'removed' if mode == 'drop' else 'capped to the IQR bounds'}")
         record_audit(st.session_state, action[0], action[1])
-        st.success(f"Done — {action[1]}.")
+        st.success(f"Done — {action[1]} in '{col}'.")
         return new_df, [action]
     return None, []
 
@@ -629,7 +634,8 @@ def render_validation(st, df: pd.DataFrame) -> None:
             st.session_state["q_rules_data"] = []
             rules = []
     if not rules:
-        st.info("No rules yet — add one above.")
+        st.info("No rules yet — add one above and the rows that break it "
+                "will show here.")
         return
     violations = check_rules(df, rules)
     for i, r in enumerate(rules):
@@ -641,7 +647,8 @@ def render_validation(st, df: pd.DataFrame) -> None:
         if len(violations) > 200:
             st.caption(f"Showing 200 of {len(violations)} violating rows.")
     else:
-        st.success("All rules pass — no violating rows.")
+        st.success(f"All {len(rules)} rule(s) pass — 0 violating rows in "
+                   f"{len(df):,} rows.")
 
 
 def render_near_dupes(st, df: pd.DataFrame):
@@ -653,7 +660,8 @@ def render_near_dupes(st, df: pd.DataFrame):
                  if str(df[c].dtype) in ("object", "str")
                  and 1 < df[c].nunique() <= 500]
     if not text_cols:
-        st.info("No text column to check for near-duplicates.")
+        st.info("No text column in this file to check for "
+                "near-duplicates.")
         return None, []
     st.subheader("Near-duplicates")
     st.write("Rows that look like the same thing with a different "
@@ -677,7 +685,8 @@ def render_near_dupes(st, df: pd.DataFrame):
         st.session_state["q_nd_col_data"] = col
     groups = _valid_groups(df, st.session_state.get("q_nd_groups_data"))
     if st.session_state.get("q_nd_groups_data") is not None and not groups:
-        st.info("No near-duplicates found.")
+        st.info(f"No near-duplicates found in '{col}' at {thr:.0%} "
+                "similarity — nothing to merge.")
         return None, []
     if not groups:
         return None, []
@@ -694,7 +703,8 @@ def render_near_dupes(st, df: pd.DataFrame):
                   f"{removed} row(s) merged into their main spelling")
         record_audit(st.session_state, action[0], action[1])
         st.session_state["q_nd_groups_data"] = None
-        st.success(f"Merged — {removed} row(s) removed.")
+        st.success(f"Merged — {removed} row(s) removed, folded into their "
+                   "main spelling.")
         return new_df, [action]
     return None, []
 

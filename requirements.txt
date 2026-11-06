@@ -8,6 +8,10 @@ pandas==3.1.1
 altair
 openpyxl
 pypdf
+# PPTX report export (feat_export.py): a runtime dependency, not a
+# test-only one — fresh venvs from this file alone failed 3 pptx tests
+# without it. Version matches what the build venvs already used.
+python-pptx==1.0.2
 supabase==2.34.0
 # Live database drivers for the Tools tab (feat_db.py): without these the
 # Live DB test-connection path is dead on Streamlit Cloud. Versions match

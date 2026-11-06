@@ -327,7 +327,8 @@ def render_pptx_download(st, kpis, actions, raw, clean, brand=None):
     the plain Data Cleaner Studio branding.
     """
     if clean is None:
-        st.info("Clean the data first — the PowerPoint report will appear here.")
+        st.info("Clean the data first — the PowerPoint report is built "
+                "from the cleaned file and its KPIs.")
         return
     summary = (f"Rows: {len(raw):,} loaded -> {len(clean):,} after cleaning. "
                f"Columns: {len(raw.columns)} -> {len(clean.columns)}."
@@ -420,14 +421,16 @@ def render_email_schedule(st, kpis, actions, raw, clean):
                    "— the password is never stored). It sends while the app "
                    "is open.")
     elif enable:
-        st.warning("Fill in every field above before the schedule can start.")
+        st.warning("Fill in every field above (server, port, username, "
+                   "password, recipient) before the schedule can start.")
 
     if st.button("Send test email now", key="e_email_test"):
         if not filled:
             st.error("Fill in the server, port, username, password and "
                      "recipient first.")
         elif clean is None:
-            st.error("Clean the data first — there is no report to send yet.")
+            st.error("Clean the data first — the test email sends the "
+                     "report as a PDF, and there is no report yet.")
         else:
             try:
                 summary = (f"Rows: {len(raw):,} loaded -> "
@@ -452,7 +455,9 @@ def render_email_schedule(st, kpis, actions, raw, clean):
                     with smtp:
                         smtp.login(username.strip(), password)
                         smtp.send_message(msg)
-                st.success(f"Test email sent to {recipient.strip()}.")
+                st.success(f"Test email sent to {recipient.strip()} — "
+                           "the PDF report is attached; check the inbox "
+                           "(and spam).")
             except Exception as e:  # noqa: BLE001 - show the real error
                 st.error(f"Could not send the email: {e}")
 
@@ -509,7 +514,7 @@ def render_db_connect(st):
         try:
             tables = feat_db.list_tables(db_type, params=params)
         except Exception as e:  # noqa: BLE001 - show the error, don't crash
-            st.error(f"Could not list tables: {e}")
+            st.error(f"Could not list the tables in '{database}': {e}")
             tables = []
         if tables:
             table = st.selectbox("Table", tables, key="e_db_table_pick")
@@ -523,7 +528,8 @@ def render_db_connect(st):
                 except Exception as e:  # noqa: BLE001
                     st.error(f"Could not load that table: {e}")
         else:
-            st.info("Connected, but no tables found in that database.")
+            st.info(f"Connected to '{database}', but it has no tables to "
+                    "load.")
 
     details = db_connection_details(db_type, host, port, database, "", "")
     if details["host"] and details["database"]:
@@ -544,19 +550,29 @@ def render_column_charts(st, df):
     """
     if df is None or len(df) == 0:
         return
+    # Chart colours follow the theme toggle (dcs_theme): the light
+    # values are the Supabase tokens; the dark ones mirror
+    # ui_design.DARK_TOKENS. A near-black axis title on a dark surface
+    # would be invisible, so this cannot stay hardcoded to light.
+    _dark = (getattr(st, "session_state", {}) or {}).get(
+        "dcs_theme") == "dark"
+    _bar = "#006338" if _dark else "#117f50"
+    _label = "#989a99" if _dark else "#696969"
+    _title = "#edefee" if _dark else "#030303"
+    _stroke = "#2e2e2e" if _dark else "#e8e8e8"
     st.subheader("Column charts")
     num_cols = engine.numeric_cols(df)[:6]
     for col in num_cols:
         st.write(f"**{engine._pretty(col)}** — distribution")
         chart = (alt.Chart(df)
-                 .mark_bar(color="#117f50")
+                 .mark_bar(color=_bar)
                  .encode(x=alt.X(col, bin=True,
                                  title=engine._pretty(col)),
                          y=alt.Y("count()", title="Rows"),
                          tooltip=["count()"])
                  .properties(height=200)
-                 .configure_axis(labelColor="#696969", titleColor="#030303")
-                 .configure_view(stroke="#e8e8e8"))
+                 .configure_axis(labelColor=_label, titleColor=_title)
+                 .configure_view(stroke=_stroke))
         st.altair_chart(chart, width="stretch")
     cat_cols = [c for c in df.columns
                 if str(df[c].dtype) in ("object", "str")
@@ -567,12 +583,12 @@ def render_column_charts(st, df):
         counts.columns = ["value", "count"]
         st.write(f"**{engine._pretty(col)}** — value counts")
         chart = (alt.Chart(counts)
-                 .mark_bar(color="#117f50")
+                 .mark_bar(color=_bar)
                  .encode(x=alt.X("value:N", title=engine._pretty(col),
                                  sort="-y"),
                          y=alt.Y("count:Q", title="Rows"),
                          tooltip=["value", "count"])
                  .properties(height=200)
-                 .configure_axis(labelColor="#696969", titleColor="#030303")
-                 .configure_view(stroke="#e8e8e8"))
+                 .configure_axis(labelColor=_label, titleColor=_title)
+                 .configure_view(stroke=_stroke))
         st.altair_chart(chart, width="stretch")

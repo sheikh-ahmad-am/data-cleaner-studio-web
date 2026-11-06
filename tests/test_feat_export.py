@@ -331,6 +331,24 @@ def test_column_charts_supabase_green():
     print("column charts OK: green bars on white, ink/muted axes")
 
 
+def test_column_charts_dark_theme():
+    """Dark theme: deepened green bars, brightened axis text, dark view
+    stroke — a near-black axis title on a dark surface would be
+    invisible, so the colours follow dcs_theme."""
+    _, clean, _, _ = _sample_clean()
+    st = FakeSt()
+    st.session_state["dcs_theme"] = "dark"
+    feat_export.render_column_charts(st, clean)
+    assert len(st.charts) == 6
+    for c in st.charts:
+        spec = c.to_dict()
+        assert spec["mark"] == {"type": "bar", "color": "#006338"}, spec["mark"]
+        assert spec["config"]["view"]["stroke"] == "#2e2e2e"
+        assert spec["config"]["axis"]["labelColor"] == "#989a99"
+        assert spec["config"]["axis"]["titleColor"] == "#edefee"
+    print("column charts dark OK: dark bars, axis text, stroke")
+
+
 def test_render_pptx_download():
     _, clean, actions, kpis = _sample_clean()
     st = FakeSt()
@@ -412,6 +430,7 @@ if __name__ == "__main__":
     test_squarify_layout_pure()
     test_render_column_charts()
     test_column_charts_supabase_green()
+    test_column_charts_dark_theme()
     test_render_pptx_download()
     test_render_sheets_export()
     test_render_email_schedule_saves_no_password()

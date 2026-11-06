@@ -31,9 +31,26 @@ Rules the whole module follows:
     the restrained danger red below is for destructive actions only.
 
 Public API (presentation only — no behaviour changes):
-  * ``TOKENS`` — every design token as a dict of hex / size strings.
-  * ``DESIGN_SYSTEM_CSS`` — the full ``<style>...</style>`` block.
-  * ``inject_design_system(st=None)`` — inject the stylesheet.
+  * ``TOKENS`` — every light-theme design token as a dict of hex /
+    size strings.
+  * ``DARK_TOKENS`` — the dark-theme tokens, same keys as ``TOKENS``
+    plus ``primary_hover``, ``link`` and ``focus_gap``. Dark hexes
+    are secondary-sourced candidates from the research report
+    (§1.2) — surface ``#1b1d1c``, text ``#edefee`` — picked so every
+    text/background pair passes WCAG AA (see the contrast test in
+    tests/test_supabase_theme.py).
+  * ``DESIGN_SYSTEM_CSS`` — the full light ``<style>...</style>`` block.
+  * ``DARK_CSS`` — the full dark ``<style>...</style>`` block, same
+    structure and class names as the light one, dark tokens only.
+  * ``theme_css(theme)`` — the stylesheet for ``"light"`` or
+    ``"dark"`` (anything else falls back to light); ``normalize_theme``
+    does the same name check without returning CSS.
+  * ``inject_design_system(st=None, theme="light")`` — inject the
+    stylesheet for the given theme.
+  * ``render_theme_toggle(st=None)`` — the sidebar Light/Dark switch
+    (writes ``st.session_state["dcs_theme"]``); ``render_login_theme_toggle``
+    is the same switch as a button for the login screen, which has no
+    sidebar.
   * ``topbar(title, breadcrumb="")`` — 48px top bar with breadcrumb.
   * ``sidebar_nav(sections, active=None)`` — grouped nav rows.
   * ``section_heading(text, sub=None)`` — 16-18px section heading.
@@ -102,6 +119,78 @@ TOKENS = {
 }
 
 # ---------------------------------------------------------------------------
+# Dark tokens — same keys as TOKENS, plus the extras the dark theme
+# needs (primary hover, brightened link green, focus-ring gap colour).
+# Provenance: the research report's dark candidates (§1.2), all
+# secondary-sourced (measured by forcing the dark colour scheme, not
+# official tokens) — surface #1b1d1c, text #edefee, secondary #bcbdbc /
+# #989a99, primary fills deepened to #006338, brand links brightened to
+# #4acd8b. Every value below was picked against WCAG AA: ink-on-surface
+# 14.67:1, secondary-on-surface 8.99:1, muted-on-surface 5.99:1,
+# link-on-surface 8.39:1, white-on-primary-fill 7.39:1, mint-text on
+# mint-fill 6.65:1, amber-text on amber-fill 9.04:1, danger-on-surface
+# 5.84:1 (all >= 4.5:1; see test_dark_theme_contrast_aa). The brand
+# mint #3ecf8e stays logo-only, never text on a light surface — on dark
+# it is only ever a hover/link-adjacent green, never body text.
+# ---------------------------------------------------------------------------
+DARK_TOKENS = {
+    # Surfaces — near-black green-grey, card one step lighter
+    "bg": "#1b1d1c",
+    "card": "#232625",
+    "border": "#2e2e2e",
+    "button_border": "#363636",
+    "checkbox_border": "#4a4d4c",
+    "panel_grey": "#262928",
+    # Greens — primary fill deepened so it does not read lime on dark;
+    # links/icons brightened so they still read as green on dark.
+    "primary": "#006338",
+    "gradient_top": "#007243",
+    "gradient_bottom": "#006338",
+    "brand_green": "#3ecf8e",
+    "icon_green": "#4acd8b",
+    "mint_pill": "#123527",
+    # Amber — beta / warning pills (dark fill, brightened text)
+    "amber_fill": "#2a2118",
+    "amber_text": "#f3ba63",
+    "amber_border": "#8a6a2f",
+    # Type
+    "ink": "#edefee",
+    "body": "#bcbdbc",
+    "muted": "#989a99",
+    # Navigation
+    "active_nav": "#2a2d2c",
+    "hover": "#262928",
+    # Destructive actions only — brightened red, readable on dark
+    "danger": "#ff6369",
+    # Type scale / radii — identical to the light theme
+    "h1_size": "28px",
+    "section_size": "17px",
+    "body_size": "14px",
+    "micro_size": "11px",
+    "card_radius": "12px",
+    "button_radius": "6px",
+    "input_radius": "6px",
+    "topbar_height": "48px",
+    # Dark-only extras
+    "primary_hover": "#007243",
+    "link": "#4acd8b",
+    "focus_gap": "#1b1d1c",
+    "focus_halo": "#30ba798c",
+}
+
+#: The two themes the app ships. Default is "light" (the first-paint
+#: base in .streamlit/config.toml is light too).
+THEME_DEFAULT = "light"
+THEMES = ("light", "dark")
+
+
+def normalize_theme(value) -> str:
+    """Return ``"light"`` or ``"dark"`` for any stored theme value;
+    anything unknown (including None and legacy names) falls back to
+    the light default, so a stale value can never strand the app."""
+    return value if value in THEMES else THEME_DEFAULT
+
+# ---------------------------------------------------------------------------
 # Consolidated stylesheet. Worker B: paste this whole block verbatim into
 # app.py as its literal DESIGN_SYSTEM_CSS assignment — do not retype it,
 # do not re-derive it. The theme tests read that assignment from source.
@@ -140,9 +229,9 @@ div[data-testid="stButton"] > button[kind="primary"] {
   font-weight: 500; }
 .stApp .stButton > button[kind="primary"]:hover,
 div[data-testid="stButton"] > button[kind="primary"]:hover {
-  background-color: #117f50;
-  background: linear-gradient(180deg, #118050 0%, #0e7d4e 100%);
-  border-color: #117f50; color: #ffffff; }
+  background-color: #007243;
+  background: linear-gradient(180deg, #0e7d4e 0%, #007243 100%);
+  border-color: #007243; color: #ffffff; }
 /* ---- secondary buttons: white, 1px light border, black text ---- */
 .stApp .stButton > button[kind="secondary"],
 div[data-testid="stButton"] > button[kind="secondary"] {
@@ -150,7 +239,7 @@ div[data-testid="stButton"] > button[kind="secondary"] {
   border-radius: 6px; font-weight: 500; }
 .stApp .stButton > button[kind="secondary"]:hover,
 div[data-testid="stButton"] > button[kind="secondary"]:hover {
-  background-color: #f8f8f8; color: #030303; border-color: #e5e5e5; }
+  background-color: #03030307; color: #030303; border-color: #e5e5e5; }
 /* Danger buttons (delete / clear / reset / remove) are secondary buttons
    (type="secondary", never primary). Streamlit buttons cannot carry a
    custom class, so the danger colour lives on this .dcs-danger hook for
@@ -166,6 +255,10 @@ div[data-testid="stDownloadButton"] > button {
   background-color: #ffffff; color: #030303;
   border-color: #e8e8e8; border-radius: 6px; }
 .stApp label { color: #030303; }
+/* ---- checkboxes: hairline box border, green check ---- */
+.stApp input[type="checkbox"] { accent-color: #117f50; }
+div[data-testid="stCheckbox"] div[data-baseweb="checkbox"] span {
+  border-color: #d0d0d0; }
 /* ---- sidebar: near-white, hairline edge, nav rows as pills ---- */
 section[data-testid="stSidebar"] { background-color: #fdfdfd;
   border-right: 1px solid #e8e8e8; }
@@ -174,11 +267,12 @@ section[data-testid="stSidebar"] a { color: #117f50; }
 .dcs-nav-row { display: block; padding: 0.35rem 0.75rem;
   border-radius: 6px; font-size: 13px; color: #030303;
   border-left: 2px solid transparent; margin-bottom: 2px; }
-.dcs-nav-row:hover { background-color: #f8f8f8; }
+.dcs-nav-row:hover { background-color: #f8f8f8; color: #0e7e4e; }
 .dcs-nav-row.dcs-nav-active { background-color: #f3f3f3;
   font-weight: 600; color: #030303; border-left: 2px solid #030303; }
 /* ---- links: deep green, sparingly ---- */
 .stApp a { color: #117f50; }
+.stApp a:hover { color: #0e7e4e; }
 /* ---- top bar: 48px, near-white, hairline bottom border ---- */
 .dcs-topbar { height: 48px; display: flex; align-items: center;
   gap: 0.75rem; background-color: #fdfdfd;
@@ -264,9 +358,26 @@ div[data-testid="stDataFrame"] th, div[data-testid="stTable"] th {
 div[data-testid="stDataFrame"] td, div[data-testid="stTable"] td {
   background-color: #ffffff; color: #030303;
   border-bottom: 1px solid #e8e8e8; font-size: 13px; }
-/* ---- subtle, instant hovers (no long transitions) ---- */
-.stApp .stButton > button, .stApp a, .dcs-nav-row {
-  transition: background-color 0.1s ease, color 0.1s ease; }
+/* ---- motion, honestly measured: colour-only 0.2s ease-out ---- */
+.stApp .stButton > button, .stApp a, .dcs-nav-row,
+div[data-testid="stRadio"] div[role="radiogroup"] label,
+.stApp input, .stApp textarea, .stApp select {
+  transition: background-color 0.2s cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 0.2s cubic-bezier(0.22, 1, 0.36, 1),
+    color 0.2s cubic-bezier(0.22, 1, 0.36, 1); }
+/* ---- focus: one shared ring — 2px gap + 4px translucent green halo ---- */
+.stApp .stButton > button:focus-visible,
+div[data-testid="stDownloadButton"] > button:focus-visible,
+.stApp a:focus-visible,
+div[data-testid="stRadio"] div[role="radiogroup"] label:focus-within {
+  outline: none;
+  box-shadow: 0 0 0 2px #fdfdfd, 0 0 0 6px #30ba798c; }
+.stApp input:focus, .stApp textarea:focus, .stApp select:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px #fdfdfd, 0 0 0 6px #30ba798c; }
+/* ---- Turnstile container area: etched like any other panel ---- */
+div[data-testid="stCustomComponentV1"] { background-color: #ffffff;
+  border: 1px solid #e8e8e8; border-radius: 12px; }
 /* ---- empty state: centred, calm, guided ---- */
 .dcs-empty { text-align: center; padding: 2.5rem 1rem;
   background-color: #ffffff; border: 1px solid #e8e8e8;
@@ -279,13 +390,290 @@ div[data-testid="stDataFrame"] td, div[data-testid="stTable"] td {
 </style>"""
 
 
-def inject_design_system(st_module=None) -> None:
-    """Inject ``DESIGN_SYSTEM_CSS`` into the page. Call once, right after
-    ``set_page_config`` (and before the login view renders), so the auth
-    screen gets the design system too. ``st_module`` defaults to the
-    imported ``streamlit`` module; pass the app's ``st`` when testing
-    with a fake."""
-    (st_module or st).markdown(DESIGN_SYSTEM_CSS, unsafe_allow_html=True)
+# ---------------------------------------------------------------------------
+# Dark stylesheet. Same structure, selectors and class names as the light
+# one above, with DARK_TOKENS substituted — every rule below is the dark
+# twin of a light rule, so switching themes never moves layout, only
+# colour. Notes on the substitutions:
+#   * primary fill deepens to #006338 (rest) and lightens toward #007243
+#     on hover — the reverse direction of light, where the fill darkens
+#     toward #007243 — because a dark fill cannot darken further and
+#     stay readable; white on #006338 is 7.39:1.
+#   * links / icons brighten to #4acd8b (8.39:1 on the surface).
+#   * the focus-ring gap is the dark surface #1b1d1c, not #fdfdfd, so
+#     the 2px gap still reads; the halo stays #30ba798c in both themes.
+#   * code blocks stay panel-dark (#232625 / #262928), never pure black.
+#   * the Turnstile iframe itself is untouched (its internals are not
+#     ours); only its container area gets the dark panel treatment.
+#   * Streamlit's native dropdown menus render in a baseweb portal, so
+#     the dark menu rules at the end are best-effort — the native theme
+#     in .streamlit/config.toml stays light (first-paint base only).
+# ---------------------------------------------------------------------------
+DARK_CSS = """<style>
+/* ---- page: near-black green-grey everywhere ---- */
+.stApp { background-color: #1b1d1c; color: #edefee; }
+.stApp p, .stApp li, .stApp span { color: #edefee; }
+.stApp { font-size: 14px; }
+header[data-testid="stHeader"] { background-color: #1b1d1c; }
+/* ---- typography: H1 28px medium, sections 16-18px, body 13-14px ---- */
+.stApp h1 { font-size: 28px; font-weight: 500; color: #edefee;
+  line-height: 1.2; margin-bottom: 0.25rem; }
+.stApp h2 { font-size: 18px; font-weight: 500; color: #edefee;
+  margin-top: 1.25rem; margin-bottom: 0.5rem; }
+.stApp h3 { font-size: 16px; font-weight: 600; color: #edefee;
+  margin-top: 1rem; margin-bottom: 0.4rem; }
+.stApp [data-testid="stCaptionContainer"], .stApp small {
+  color: #989a99; }
+/* ---- tiny uppercase section labels: 10-11px, letterspaced, muted ---- */
+.dcs-micro-label, .dcs-section-label {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.08em;
+  text-transform: uppercase; color: #989a99; }
+/* ---- cards: dark panel, 1px hairline border, 10-12px radius, flat ---- */
+.dcs-card { background-color: #232625; border: 1px solid #2e2e2e;
+  border-radius: 12px; padding: 1rem 1.25rem; margin-bottom: 1rem; }
+div[data-testid="stExpander"] { background-color: #232625;
+  border: 1px solid #2e2e2e; border-radius: 12px; }
+/* ---- spacing: consistent gaps between sections ---- */
+div[data-testid="stVerticalBlock"] > div { gap: 0.75rem; }
+/* ---- buttons: primary deepened green, subtle vertical gradient ---- */
+.stApp .stButton > button[kind="primary"],
+div[data-testid="stButton"] > button[kind="primary"] {
+  background-color: #006338;
+  background: linear-gradient(180deg, #007243 0%, #006338 100%);
+  color: #ffffff; border: 1px solid #006338; border-radius: 6px;
+  font-weight: 500; }
+.stApp .stButton > button[kind="primary"]:hover,
+div[data-testid="stButton"] > button[kind="primary"]:hover {
+  background-color: #007243;
+  background: linear-gradient(180deg, #007a4d 0%, #007243 100%);
+  border-color: #007243; color: #ffffff; }
+/* ---- secondary buttons: dark panel, 1px border, bright text ---- */
+.stApp .stButton > button[kind="secondary"],
+div[data-testid="stButton"] > button[kind="secondary"] {
+  background-color: #232625; color: #edefee; border: 1px solid #363636;
+  border-radius: 6px; font-weight: 500; }
+.stApp .stButton > button[kind="secondary"]:hover,
+div[data-testid="stButton"] > button[kind="secondary"]:hover {
+  background-color: #2a2d2c; color: #edefee; border-color: #363636; }
+/* Danger buttons (delete / clear / reset / remove) are secondary buttons
+   (type="secondary", never primary). See the light stylesheet for why
+   the danger colour lives on this .dcs-danger hook. */
+.dcs-danger button[kind="secondary"] { color: #ff6369 !important;
+  border-color: #ff6369 !important; }
+div[data-testid="stDownloadButton"] > button {
+  background-color: #232625; color: #edefee; border: 1px solid #363636;
+  border-radius: 6px; }
+/* ---- inputs: dark panel, 6px radius, hairline border ---- */
+.stApp input, .stApp textarea, .stApp select {
+  background-color: #232625; color: #edefee;
+  border-color: #2e2e2e; border-radius: 6px; }
+.stApp label { color: #edefee; }
+/* ---- checkboxes: hairline box border, bright green check ---- */
+.stApp input[type="checkbox"] { accent-color: #4acd8b; }
+div[data-testid="stCheckbox"] div[data-baseweb="checkbox"] span {
+  border-color: #4a4d4c; }
+/* ---- sidebar: near-black, hairline edge, nav rows as pills ---- */
+section[data-testid="stSidebar"] { background-color: #1b1d1c;
+  border-right: 1px solid #2e2e2e; }
+section[data-testid="stSidebar"] * { color: #edefee; }
+section[data-testid="stSidebar"] a { color: #4acd8b; }
+/* The sidebar profile card carries inline light-theme colours from
+   app.py; the dark rules below win over them so the name/email stay
+   readable on the dark card. */
+section[data-testid="stSidebar"] .dcs-card > div {
+  color: #edefee !important; }
+section[data-testid="stSidebar"] .dcs-card > div + div {
+  color: #bcbdbc !important; }
+.dcs-nav-row { display: block; padding: 0.35rem 0.75rem;
+  border-radius: 6px; font-size: 13px; color: #edefee;
+  border-left: 2px solid transparent; margin-bottom: 2px; }
+.dcs-nav-row:hover { background-color: #262928; color: #4acd8b; }
+.dcs-nav-row.dcs-nav-active { background-color: #2a2d2c;
+  font-weight: 600; color: #edefee; border-left: 2px solid #edefee; }
+/* ---- links: brightened green, sparingly ---- */
+.stApp a { color: #4acd8b; }
+.stApp a:hover { color: #3ecf8e; }
+/* ---- top bar: 48px, near-black, hairline bottom border ---- */
+.dcs-topbar { height: 48px; display: flex; align-items: center;
+  gap: 0.75rem; background-color: #1b1d1c;
+  border-bottom: 1px solid #2e2e2e; margin-bottom: 1rem; }
+.dcs-topbar .dcs-topbar-title { font-size: 17px; font-weight: 500;
+  color: #edefee; }
+.dcs-topbar .dcs-topbar-crumb { font-size: 13px; color: #989a99; }
+/* ---- KPI metric values + labels: bright text, never faint grey ---- */
+div[data-testid="stMetricValue"], div[data-testid="stMetricValue"] * {
+  color: #edefee !important; }
+div[data-testid="stMetricLabel"], div[data-testid="stMetricLabel"] * {
+  color: #989a99 !important; }
+/* ---- KPI tiles: dark panel icon box + micro-label + value ---- */
+.dcs-kpi { background-color: #232625; border: 1px solid #2e2e2e;
+  border-radius: 12px; padding: 0.9rem 1rem; }
+.dcs-kpi .dcs-kpi-label { font-size: 11px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase; color: #989a99; }
+.dcs-kpi .dcs-kpi-value { font-size: 20px; font-weight: 500;
+  color: #edefee; font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+.dcs-kpi .dcs-kpi-sub { font-size: 13px; color: #989a99; }
+/* ---- file-uploader dropzone + uploaded-file chips: bright on dark ---- */
+div[data-testid="stFileUploader"], div[data-testid="stFileUploader"] * {
+  color: #edefee !important; }
+div[data-testid="stFileUploaderDropzone"] {
+  background-color: #232625; border-color: #2e2e2e; }
+/* ---- info / success / warning / error boxes: dark panel, bright text ---- */
+div[data-testid="stAlert"] { background-color: #232625;
+  border-color: #2e2e2e; }
+div[data-testid="stAlert"], div[data-testid="stAlert"] * {
+  color: #edefee !important; }
+div[data-testid="stAlert"] a { color: #4acd8b !important; }
+/* ---- pills: fully rounded, uppercase ~10px, letterspaced ---- */
+.dcs-pill { display: inline-block; font-size: 10px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  border-radius: 999px; padding: 0.15rem 0.6rem; line-height: 1.6; }
+.dcs-pill-mint { background-color: #123527; color: #4acd8b; }
+.dcs-pill-amber { background-color: #2a2118; color: #f3ba63;
+  border: 1px solid #8a6a2f; }
+.dcs-pill-green { background-color: #006338; color: #ffffff; }
+.dcs-pill-grey { background-color: #2a2d2c; color: #989a99; }
+.dcs-pill-danger { background-color: #2b1e1e; color: #ff6369;
+  border: 1px solid #ff6369; }
+/* ---- code: dark panels with hairline border, never pure black ---- */
+.stApp code, .stApp pre { background-color: #262928; color: #edefee;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+div[data-testid="stCodeBlock"] { background-color: #232625;
+  border: 1px solid #2e2e2e; border-radius: 12px; }
+div[data-testid="stCodeBlock"] pre { background-color: #232625; }
+/* ---- numbers and code: monospace ---- */
+.dcs-mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+/* ---- column headers show their type (name text, price numeric) ---- */
+.dcs-coltype { font-size: 13px; color: #edefee; }
+.dcs-coltype .dcs-coltype-kind { font-size: 12px; color: #989a99;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+/* ---- storage usage: one thin hairline, bright green fill, muted label ---- */
+.dcs-storage { height: 4px; background-color: #2e2e2e;
+  border-radius: 999px; overflow: hidden; }
+.dcs-storage > div { height: 100%; background-color: #4acd8b;
+  border-radius: 999px; }
+/* ---- spinner: bright green ---- */
+div[data-testid="stSpinner"] { color: #4acd8b; }
+div[data-testid="stSpinner"] > div { border-top-color: #4acd8b !important; }
+/* ---- section switcher (radio styled as a tab bar) ---- */
+div[data-testid="stRadio"] div[role="radiogroup"] {
+  gap: 0.35rem !important; }
+div[data-testid="stRadio"] div[role="radiogroup"] label {
+  background-color: #232625 !important;
+  border: 1px solid #2e2e2e !important;
+  border-radius: 6px !important;
+  padding: 0.35rem 0.9rem !important;
+  color: #edefee !important; }
+div[data-testid="stRadio"] div[role="radiogroup"] label:hover {
+  background-color: #262928 !important; }
+div[data-testid="stRadio"] div[role="radiogroup"] label:has(input:checked) {
+  background-color: #2a2d2c !important;
+  border-color: #2e2e2e !important;
+  color: #edefee !important; font-weight: 600 !important; }
+/* ---- dense spreadsheet-like tables: dark panel, hairline gridlines ---- */
+div[data-testid="stDataFrame"], div[data-testid="stTable"] {
+  background-color: #232625; border: 1px solid #2e2e2e;
+  border-radius: 12px; }
+div[data-testid="stDataFrame"] table, div[data-testid="stTable"] table {
+  background-color: #232625; }
+div[data-testid="stDataFrame"] th, div[data-testid="stTable"] th {
+  background-color: #262928; color: #edefee; font-weight: 600;
+  border-bottom: 1px solid #2e2e2e; font-size: 13px; }
+div[data-testid="stDataFrame"] td, div[data-testid="stTable"] td {
+  background-color: #232625; color: #edefee;
+  border-bottom: 1px solid #2e2e2e; font-size: 13px; }
+/* ---- motion, honestly measured: colour-only 0.2s ease-out ---- */
+.stApp .stButton > button, .stApp a, .dcs-nav-row,
+div[data-testid="stRadio"] div[role="radiogroup"] label,
+.stApp input, .stApp textarea, .stApp select {
+  transition: background-color 0.2s cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 0.2s cubic-bezier(0.22, 1, 0.36, 1),
+    color 0.2s cubic-bezier(0.22, 1, 0.36, 1); }
+/* ---- focus: one shared ring — 2px dark gap + 4px translucent green halo ---- */
+.stApp .stButton > button:focus-visible,
+div[data-testid="stDownloadButton"] > button:focus-visible,
+.stApp a:focus-visible,
+div[data-testid="stRadio"] div[role="radiogroup"] label:focus-within {
+  outline: none;
+  box-shadow: 0 0 0 2px #1b1d1c, 0 0 0 6px #30ba798c; }
+.stApp input:focus, .stApp textarea:focus, .stApp select:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px #1b1d1c, 0 0 0 6px #30ba798c; }
+/* ---- Turnstile container area: dark panel, iframe internals untouched ---- */
+div[data-testid="stCustomComponentV1"] { background-color: #232625;
+  border: 1px solid #2e2e2e; border-radius: 12px; }
+/* ---- native dropdown menus (baseweb portal): best-effort dark ---- */
+div[data-baseweb="popover"] { background-color: #232625; }
+div[data-baseweb="menu"] li[role="option"] { color: #edefee; }
+div[data-baseweb="menu"] li[role="option"]:hover {
+  background-color: #2a2d2c; }
+/* ---- empty state: centred, calm, guided ---- */
+.dcs-empty { text-align: center; padding: 2.5rem 1rem;
+  background-color: #232625; border: 1px solid #2e2e2e;
+  border-radius: 12px; }
+.dcs-empty h3 { font-size: 17px; font-weight: 500; color: #edefee; }
+.dcs-empty p { font-size: 14px; color: #989a99; }
+/* ---- footer ---- */
+.dcs-footer { color: #989a99; font-size: 0.85rem; text-align: center;
+  padding: 1.5rem 0 0.5rem; }
+</style>"""
+
+
+def theme_css(theme) -> str:
+    """Return the full stylesheet for ``theme`` (``"light"`` or
+    ``"dark"``). Anything else — None, a legacy name, a typo — falls
+    back to the light stylesheet, so a bad stored value can never
+    strand the app without styling. The light return is exactly
+    ``DESIGN_SYSTEM_CSS`` (pixel-identical tokens, spacing and radii);
+    the dark return is exactly ``DARK_CSS``."""
+    return DARK_CSS if normalize_theme(theme) == "dark" else DESIGN_SYSTEM_CSS
+
+
+def inject_design_system(st_module=None, theme: str = "light") -> None:
+    """Inject the stylesheet for ``theme`` into the page. Call once,
+    right after ``set_page_config`` (and before the login view renders),
+    so the auth screen gets the design system too. ``st_module``
+    defaults to the imported ``streamlit`` module; pass the app's
+    ``st`` when testing with a fake."""
+    (st_module or st).markdown(theme_css(theme), unsafe_allow_html=True)
+
+
+def render_theme_toggle(st_module=None) -> str:
+    """Render the Light/Dark switch in the sidebar and return the
+    theme now in effect. The switch is a selectbox whose widget key
+    *is* ``st.session_state["dcs_theme"]`` ("light" by default), so
+    picking a theme persists for the session and the stylesheet
+    injected at the top of the app follows it on the next rerun —
+    login screen included. No behaviour change: the toggle only
+    swaps the stylesheet."""
+    st_mod = st_module or st
+    current = normalize_theme(
+        st_mod.session_state.get("dcs_theme", THEME_DEFAULT))
+    st_mod.sidebar.selectbox(
+        "Theme", options=list(THEMES),
+        format_func=lambda t: "Dark" if t == "dark" else "Light",
+        key="dcs_theme",
+        help="Switch the whole app between the light and dark "
+             "Supabase look.")
+    return normalize_theme(
+        st_mod.session_state.get("dcs_theme", current))
+
+
+def render_login_theme_toggle(st_module=None) -> None:
+    """Render the theme switch as a button for the login screen, which
+    has no sidebar. Flips ``st.session_state["dcs_theme"]`` between
+    light and dark and reruns, so the login screen itself restyles.
+    The sidebar selectbox is not rendered on this screen, so writing
+    the shared key here never collides with the widget."""
+    st_mod = st_module or st
+    current = normalize_theme(
+        st_mod.session_state.get("dcs_theme", THEME_DEFAULT))
+    label = ("Switch to light theme" if current == "dark"
+             else "Switch to dark theme")
+    if st_mod.button(label, key="dcs_theme_login_toggle"):
+        st_mod.session_state["dcs_theme"] = (
+            "light" if current == "dark" else "dark")
+        st_mod.rerun()
 
 
 def topbar(title: str, breadcrumb: str = "") -> None:
