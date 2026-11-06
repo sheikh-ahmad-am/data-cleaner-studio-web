@@ -82,7 +82,7 @@ class FakeSt:
     def error(self, text):
         self._rec("error", text)
 
-    def markdown(self, text):
+    def markdown(self, text, unsafe_allow_html=None):
         self._rec("markdown", text)
 
     def dataframe(self, df, width=None):
@@ -569,7 +569,11 @@ def test_html_dashboard():
     assert "207,992.00" in text, "Revenue KPI must appear"
     assert "Electronics (33)" in text, "Top category KPI must appear"
     assert "35,367" in text, "Electronics bar value must appear"
-    assert "<svg" in text and "#2F5D5A" in text, "hand-drawn SVG chart"
+    assert "<svg" in text and "#117f50" in text, "hand-drawn SVG chart"
+    # Supabase look: white page, white cards, ink text — no dark chrome.
+    assert "background: #ffffff" in text
+    assert "#121212" not in text and "#1e1e1e" not in text
+    assert "#2F5D5A" not in text
     assert "<style>" in text and "http://" not in text \
         and "https://" not in text and "<script" not in text, \
         "self-contained: inline CSS only, no external links or scripts"
@@ -618,7 +622,8 @@ def test_chart_png():
         from PIL import Image
         img = Image.open(io.BytesIO(data))
         assert img.size == (1200, 675), img.size
-        assert img.getpixel((0, 0)) == (18, 18, 18), "dark #121212 background"
+        assert img.getpixel((0, 0)) == (255, 255, 255), \
+            "white #ffffff background"
     try:
         feat_share.chart_png_bytes(grouped, "category", "unit_price", "T",
                                    kind="pie")
@@ -629,8 +634,56 @@ def test_chart_png():
     empty = feat_share.chart_png_bytes(pd.DataFrame(), "category",
                                        "unit_price", "Empty")
     from PIL import Image
-    assert Image.open(io.BytesIO(empty)).size == (1200, 675)
-    print("chart PNG OK: bar + line 1200x675, dark background, empty handled")
+    empty_img = Image.open(io.BytesIO(empty))
+    assert empty_img.size == (1200, 675)
+    assert empty_img.getpixel((0, 0)) == (255, 255, 255), \
+        "empty chart is white too"
+    print("chart PNG OK: bar + line 1200x675, white background, empty handled")
+
+
+# ------------------------------------------- white charts + column types
+def test_svg_bar_chart_white():
+    _, clean, _, _ = _sample_clean()
+    grouped = _grouped(clean)
+    svg = feat_share._svg_bar_chart(grouped, "category", "unit_price",
+                                    "Sales by category")
+    assert svg.startswith("<svg")
+    assert 'fill="#ffffff"' in svg, "chart background must be white"
+    assert "#121212" not in svg and "#2e2e2e" not in svg
+    assert "#117f50" in svg, "bars use the Supabase green accent"
+    assert "#030303" in svg, "labels are ink"
+    # A custom accent recolours the bars only, not the background.
+    custom = feat_share._svg_bar_chart(grouped, "category", "unit_price",
+                                       "T", accent="#ff8800")
+    assert "#ff8800" in custom and 'fill="#ffffff"' in custom
+    # An invalid accent falls back to the Supabase green.
+    bad = feat_share._svg_bar_chart(grouped, "category", "unit_price",
+                                    "T", accent="banana")
+    assert "#117f50" in bad
+    print("SVG chart OK: white background, green bars, ink labels")
+
+
+def test_column_type_labels():
+    df = pd.DataFrame({"name": ["a"], "price": [1.5], "n": [2],
+                       "when": pd.to_datetime(["2026-01-01"]),
+                       "ok": [True]})
+    labels = feat_share.column_type_labels(df)
+    assert len(labels) == 5
+    joined = " ".join(labels)
+    assert "name" in joined and "text" in joined
+    assert "price" in joined and "numeric" in joined
+    assert "when" in joined and "timestamp" in joined
+    assert "ok" in joined and "boolean" in joined
+    assert "dcs-coltype" in joined
+    assert feat_share.column_type_labels(None) == []
+    # render_type_override shows the picked column with its type.
+    st = FakeSt(values={"s_type_col": "price", "s_type_kind": "number",
+                        "s_type_apply": False})
+    assert feat_share.render_type_override(st, df) is None
+    md = " ".join(st.messages("markdown"))
+    assert "price" in md and "numeric" in md, md
+    print("column type labels OK: name text / price numeric, shown in "
+          "the type-override panel")
 
 
 # ------------------------------------------------------- 14 styled excel
@@ -729,6 +782,8 @@ if __name__ == "__main__":
     test_html_dashboard()
     test_portfolio_zip()
     test_chart_png()
+    test_svg_bar_chart_white()
+    test_column_type_labels()
     test_styled_excel()
     test_render_downloads()
     test_no_forbidden_imports()

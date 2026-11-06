@@ -285,19 +285,19 @@ def test_settings_roundtrip():
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / "settings.json"
         assert ai_settings.load_settings(path)["groq_api_key"] == ""
-        assert ai_settings.load_settings(path)["theme"] == "Classic"
+        assert ai_settings.load_settings(path)["theme"] == "Supabase"
         assert ai_settings.get_api_key(path) is None
         ai_settings.save_settings({"groq_api_key": "gsk_abc",
-                                   "theme": "Classic"}, path)
+                                   "theme": "Supabase"}, path)
         assert ai_settings.load_settings(path)["groq_api_key"] == "gsk_abc"
         assert ai_settings.get_api_key(path) == "gsk_abc"
-        # A stored legacy theme name migrates to Classic on load.
+        # A stored legacy theme name migrates to Supabase on load.
         ai_settings.save_settings({"groq_api_key": "gsk_abc",
                                    "theme": "Dark blue"}, path)
-        assert ai_settings.load_settings(path)["theme"] == "Classic"
+        assert ai_settings.load_settings(path)["theme"] == "Supabase"
         # A broken file falls back to defaults, never crashes.
         path.write_text("{not json", encoding="utf-8")
-        assert ai_settings.load_settings(path)["theme"] == "Classic"
+        assert ai_settings.load_settings(path)["theme"] == "Supabase"
     print("settings round-trip OK")
 
 
@@ -447,16 +447,19 @@ def test_workspace_roundtrip():
 # --------------------------------------------------------------------------
 
 def test_themes():
-    # One Classic theme: the warm off-white / ink / deep-teal palette,
-    # and no trace of the retired dark themes.
-    assert set(fe.THEMES) == {"Classic"}
-    classic = fe.theme_css("Classic")
-    for colour in ("#FAF7F2", "#23272E", "#2F5D5A", "#F3EFE8", "#FFFFFF"):
-        assert colour in classic, f"{colour} missing from Classic CSS"
-    for banned in ("#121212", "#0d1b2a", "#4da6ff", "#1a7f37"):
-        assert banned not in classic, f"{banned} must not be in Classic CSS"
-    assert fe.theme_css("Nope") == fe.theme_css("Classic")
-    assert fe.theme_css("Dark green") == fe.theme_css("Classic")
+    # One Supabase theme: near-white background, near-black ink, one
+    # deep-green accent — and no trace of the retired Classic palette
+    # or the old dark themes.
+    assert set(fe.THEMES) == {"Supabase"}
+    supabase = fe.theme_css("Supabase")
+    for colour in ("#fdfdfd", "#030303", "#117f50", "#FFFFFF"):
+        assert colour in supabase, f"{colour} missing from Supabase CSS"
+    for banned in ("#121212", "#0d1b2a", "#4da6ff", "#1a7f37",
+                   "#FAF7F2", "#23272E", "#2F5D5A", "#F3EFE8"):
+        assert banned not in supabase, f"{banned} must not be in Supabase CSS"
+    assert fe.theme_css("Nope") == fe.theme_css("Supabase")
+    assert fe.theme_css("Dark green") == fe.theme_css("Supabase")
+    assert fe.theme_css("Classic") == fe.theme_css("Supabase")
     print("themes OK")
 
 
@@ -751,13 +754,13 @@ def test_render_workspace_theme_masking_versioned_language():
     with tempfile.TemporaryDirectory() as tmp:
         settings_path = Path(tmp) / "settings.json"
         with mock.patch.object(ai_settings, "SETTINGS_PATH", settings_path):
-            # The theme picker is retired: it applies Classic and returns
+            # The theme picker is retired: it applies Supabase and returns
             # it, with no picker UI (a stale stored name migrates too).
             ai_settings.save_settings({"theme": "Dark blue"}, settings_path)
             fake3 = FakeSt()
-            assert fe.render_theme_picker(fake3) == "Classic"
-            assert ai_settings.load_settings()["theme"] == "Classic"
-            assert fake3.session_state["n_theme_data"] == "Classic"
+            assert fe.render_theme_picker(fake3) == "Supabase"
+            assert ai_settings.load_settings()["theme"] == "Supabase"
+            assert fake3.session_state["n_theme_data"] == "Supabase"
             fake4 = FakeSt(presets={"n_lang_pick": "हिन्दी"})
             assert fe.render_language_picker(fake4) == "hi"
             assert ai_settings.load_settings()["language"] == "hi"

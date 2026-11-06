@@ -9,7 +9,7 @@ puts the plain "Data Cleaner Studio" brand back.
 
 Stored fields (brand.json):
   name   : the brand name shown in titles ("Data Cleaner Studio")
-  accent : the accent colour, a #RRGGBB hex string ("#2F5D5A")
+  accent : the accent colour, a #RRGGBB hex string ("#117f50")
   logo   : "logo.png" once a logo has been saved, else None
 
 Contract:
@@ -36,11 +36,11 @@ BRAND_FILE = "brand.json"
 LOGO_FILE = "logo.png"
 
 DEFAULT_NAME = "Data Cleaner Studio"
-# Muted deep teal — the app's one accent (see feat_mobile.py for the
-# full palette). Never a bright/neon colour here: the brand default
-# must match the app theme.
-DEFAULT_ACCENT = "#2F5D5A"
-ACCENT_HOVER = "#264845"
+# Deep Supabase green — the app's one accent (see ui_design.py TOKENS
+# for the full palette). Never a bright/neon colour here: the brand
+# default must match the app theme.
+DEFAULT_ACCENT = "#117f50"
+ACCENT_HOVER = "#0e7d4e"
 
 DEFAULT_BRAND = {"name": DEFAULT_NAME, "accent": DEFAULT_ACCENT, "logo": None}
 
@@ -134,7 +134,7 @@ def brand_css(accent) -> str:
     st.markdown(..., unsafe_allow_html=True).
 
     Primary buttons get white text: the default accent is a deep
-    teal, and dark text on it would be unreadable. Headings are NOT
+    green, and dark text on it would be unreadable. Headings are NOT
     recoloured here — the palette keeps them deep charcoal ink, and
     the theme stylesheet owns them. Links and download-button borders
     take the accent. Inject this AFTER the theme stylesheet so a

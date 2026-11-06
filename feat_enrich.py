@@ -14,7 +14,7 @@ Features
 6.  Row filter builder     — apply_filter_rules(df, rules), filtered_to_csv_bytes(df)
 7.  Sampling for huge files — sample_frame(df, n, method, seed)
 8.  Auto-save workspace    — save_workspace(...), load_workspace(...)
-9.  Classic light theme  — theme_css(theme), apply_theme(st, theme)
+9.  Supabase light theme — theme_css(theme), apply_theme(st, theme)
 10. Data masking           — mask_columns(df, columns, kinds), masked_csv_bytes(df),
                              masked_excel_bytes(df)
 11. Versioned exports      — next_versioned_name(base)
@@ -33,16 +33,16 @@ Tabs (simple_app.py) — suggested homes; the coordinator wires these in:
   - Report tab (under the downloads)  : render_versioned_download(st, clean, base)
   - Sidebar (under "Load your data")  : render_settings(st) [ai_settings],
       render_language_picker(st), render_workspace_toggle(st)
-      (the theme picker is retired — the app has one Classic theme now;
+      (the theme picker is retired — the app has one Supabase theme now;
       render_theme_picker() still exists as a no-UI shim that applies
-      Classic, for backwards compatibility)
+      Supabase, for backwards compatibility)
 
 Session-state keys (data — never widget keys):
   - "n_fx_rates_data"    : {"INR": 1.0, "USD": 83.0, ...} edited FX rates
   - "n_filter_rules_data": list of {"column","condition","value"} filter rules
   - "n_ai_insight_data"  : last AI insight paragraph (str)
   - "n_version_name_data": last reserved versioned filename (str)
-  - "n_theme_data"       : chosen theme name (str) — always "Classic"
+  - "n_theme_data"       : chosen theme name (str) — always "Supabase"
   - "n_lang_data"        : chosen language code "en" | "hi" | "ur"
   - "n_sample_clean_data" / "n_sample_actions_data" / "n_sample_opts_data":
       last sample-clean run (frame / log / engine.clean options)

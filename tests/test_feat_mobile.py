@@ -97,6 +97,24 @@ def test_apply_mobile_css_uses_markdown():
     print("apply_mobile_css OK: st.markdown(mobile_css(), unsafe_allow_html=True)")
 
 
+def test_supabase_palette():
+    """The base theme is the Supabase palette — near-white page, white
+    cards, near-black ink, one deep-green accent — and no retired
+    Classic colour survives in the CSS or the constants."""
+    css = fm.mobile_css()
+    for token in ("#FDFDFD", "#FFFFFF", "#E8E8E8", "#030303", "#696969",
+                  "#117F50", "#0E7D4E", "#E5E5E5", "#B91C1C"):
+        assert token in css, f"{token} missing from mobile CSS"
+    for retired in ("#FAF7F2", "#23272E", "#2F5D5A", "#264845", "#F3EFE8",
+                    "#EFEDE8", "#E5E0D8", "#D9D4C9", "#6E6A61", "#121212",
+                    "#9A4A38", "#8A6D3B"):
+        assert retired not in css, f"retired Classic colour {retired} in CSS"
+    assert fm.PAGE_BG == "#FDFDFD" and fm.ACCENT == "#117F50"
+    assert fm.ACCENT_HOVER == "#0E7D4E" and fm.INK == "#030303"
+    assert fm.DANGER == "#B91C1C" and fm.WARNING == "#E69344"
+    print("Supabase palette OK: tokens in CSS, no Classic colours left")
+
+
 def test_app_renders_with_css_injected():
     """A small AppTest run: the app renders with the CSS injected and
     raises no exception — the mobile stylesheet does not break the app."""
@@ -130,6 +148,7 @@ if __name__ == "__main__":
     test_media_query_present()
     test_key_rules_present()
     test_css_is_safe_to_inject()
+    test_supabase_palette()
     test_apply_mobile_css_uses_markdown()
     test_app_renders_with_css_injected()
     print("ALL MOBILE TESTS PASSED")
