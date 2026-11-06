@@ -134,7 +134,14 @@
   function init() {
     container = document.getElementById("turnstile-container");
     note = document.getElementById("turnstile-note");
-    sendMessage("streamlit:componentReady", { height: FRAME_HEIGHT });
+    // apiVersion is REQUIRED: Streamlit rejects the handshake with
+    // "Unrecognized component API version: 'undefined'" without it
+    // (this bit the live app on 2026-11-06 — the widget showed a red
+    // error instead of the check). Version 1 is the component API.
+    sendMessage("streamlit:componentReady", {
+      apiVersion: 1,
+      height: FRAME_HEIGHT,
+    });
     sendMessage("streamlit:setFrameHeight", { height: FRAME_HEIGHT });
   }
 

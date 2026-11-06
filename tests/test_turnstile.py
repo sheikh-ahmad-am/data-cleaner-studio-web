@@ -266,5 +266,10 @@ def test_frontend_files_carry_the_protocol():
                    "turnstile.render", "expired-callback",
                    "theme: \"light\""):
         assert marker in js, f"missing frontend marker: {marker}"
+    # Regression (2026-11-06, live app): the componentReady message
+    # must carry apiVersion, or Streamlit rejects the handshake with
+    # "Unrecognized component API version: 'undefined'" and the widget
+    # shows a red error instead of the check.
+    assert "apiVersion: 1" in js
     # No site key or secret may ever be baked into the frontend.
     assert "0x4AAAAA" not in html and "0x4AAAAA" not in js
