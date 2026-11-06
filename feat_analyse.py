@@ -26,15 +26,18 @@ Features
                            (Windows Task Scheduler; set up on the user's
                            own PC, never from here)
 12. In-app what's-new    — WHATS_NEW / should_show_whats_new /
-                           mark_whats_new_seen (+ seen_version.json)
+                           mark_whats_new_seen (+ seen_version.json
+                           locally; per-user views/whats_new_seen.json
+                           via storage.py when a user key is given)
 
 Integrator spec (simple_app.py)
 -------------------------------
   - Sidebar (under Load): render_client_mode_toggle(st) — sets the data
     key "client_mode"; the coordinator hides the advanced tabs when it
     is True and shows client_summary(df, kpis) instead.
-  - Top of the app (right after the title): call render_whats_new(st)
-    — it shows itself only once per new version.
+  - Top of the app (right after the title): call
+    render_whats_new(st, user_key=_skey) — it shows itself only once
+    per new version, per user.
   - Preview tab: render_trust(st, clean) — row health, next to the
     quality panel.
   - KPIs tab: render_what_if(st, filtered) — below "Build your own KPI".
@@ -65,6 +68,11 @@ Local files (in the app folder, next to this module):
   - views.json        : saved views {name: {chart_type, group_by,
                         num_col, slicers}}
   - seen_version.json : {"version": "1.3"} — last what's-new seen
+                        (local mode, no user key). With a user key the
+                        record lives in that user's per-user storage
+                        instead (views/whats_new_seen.json via
+                        storage.py), so the dismiss holds per user on
+                        Streamlit Cloud too.
   - morning_run.py / setup_morning_run.bat : written by
     write_morning_files() and offered as downloads by
     render_morning_run; morning_in/ and morning_out/ folders are
@@ -74,6 +82,7 @@ Local files (in the app folder, next to this module):
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import numpy as np
@@ -90,6 +99,9 @@ except ImportError:  # Batch 3 module not landed yet — AI layer stays off
 APP_DIR = Path(__file__).resolve().parent
 VIEWS_FILE = APP_DIR / "views.json"
 SEEN_VERSION_FILE = APP_DIR / "seen_version.json"
+# Per-user seen record inside the user's storage "views" folder
+# (storage.save_json/load_json). Same shape as seen_version.json.
+WHATS_NEW_SEEN_FILENAME = "whats_new_seen.json"
 CURRENT_VERSION = "1.3"
 
 
@@ -142,8 +154,28 @@ WHATS_NEW = {
 }
 
 
-def _read_seen_version(seen_file=None) -> str | None:
-    """Last version the user has seen, or None if never recorded."""
+def _read_seen_version(seen_file=None, user_key=None) -> str | None:
+    """Last version the user has seen, or None if never recorded.
+
+    With a user key the record lives in that user's per-user storage
+    (views/whats_new_seen.json via storage.py), which holds per user
+    in both backends — on Streamlit Cloud the local seen_version.json
+    file does not survive across instances, so a plain local file
+    can never remember a cloud user's dismiss. Without a user key
+    the local seen_version.json file is used, exactly as before
+    (local mode / old callers). A storage failure reads as "never
+    seen" rather than crashing the page."""
+    if user_key is not None:
+        import storage
+        try:
+            data = storage.load_json(user_key, "views",
+                                     WHATS_NEW_SEEN_FILENAME)
+        except Exception:  # noqa: BLE001 - a broken store must not crash the page
+            return None
+        if isinstance(data, dict):
+            version = data.get("version")
+            return str(version) if version else None
+        return None
     path = Path(seen_file) if seen_file is not None else SEEN_VERSION_FILE
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
@@ -155,27 +187,40 @@ def _read_seen_version(seen_file=None) -> str | None:
     return None
 
 
-def should_show_whats_new(seen_file=None) -> bool:
+def should_show_whats_new(seen_file=None, user_key=None) -> bool:
     """True once per new version: the stored seen-version differs from
     the current version (or nothing was ever stored). Pure check — it
     does not mark anything as seen; render_whats_new does that after
-    showing the notes."""
-    return _read_seen_version(seen_file) != CURRENT_VERSION
+    showing the notes. Pass user_key (the app's per-user storage key)
+    so the check is per user in cloud mode; without it the local
+    file is checked, as before."""
+    return _read_seen_version(seen_file, user_key) != CURRENT_VERSION
 
 
-def mark_whats_new_seen(seen_file=None) -> None:
+def mark_whats_new_seen(seen_file=None, user_key=None) -> None:
     """Record the current version as seen, so the notes stop appearing
-    until the next version."""
+    until the next version. With a user key the record goes to that
+    user's per-user storage (views/whats_new_seen.json); without one
+    it goes to the local seen_version.json file, as before."""
+    if user_key is not None:
+        import storage
+        storage.save_json(user_key, "views", WHATS_NEW_SEEN_FILENAME,
+                          {"version": CURRENT_VERSION})
+        return None
     path = Path(seen_file) if seen_file is not None else SEEN_VERSION_FILE
     path.write_text(json.dumps({"version": CURRENT_VERSION}, indent=2),
                     encoding="utf-8")
 
 
-def render_whats_new(st) -> None:
+def render_whats_new(st, user_key=None) -> None:
     """Top of the app: show the what's-new notes once per version, then
     mark them seen. Shows nothing at all when this version was already
-    seen. Returns None."""
-    if not should_show_whats_new():
+    seen. Pass user_key (the app's per-user storage key, _skey) so the
+    dismiss is remembered per user in cloud mode; without it the
+    local file is used, as before. A storage failure on dismiss shows
+    a warning instead of crashing the page — the box may then show
+    again, but the app keeps working. Returns None."""
+    if not should_show_whats_new(user_key=user_key):
         return None
     notes = WHATS_NEW.get(CURRENT_VERSION, [])
     st.subheader(f"What's new in v{CURRENT_VERSION}")
@@ -184,7 +229,11 @@ def render_whats_new(st) -> None:
     for note in notes:
         st.write(f"- {note}")
     if st.button("Got it — don't show this again", key="an_whats_new_seen"):
-        mark_whats_new_seen()
+        try:
+            mark_whats_new_seen(user_key=user_key)
+        except Exception as e:  # noqa: BLE001 - dismiss failure is not fatal
+            st.warning(f"Could not remember that ({e}) — this box may "
+                       "show again next time.")
     return None
 
 
@@ -268,14 +317,25 @@ def render_correlations(st, df: pd.DataFrame) -> None:
 # 2. Trend forecast (straight line — a guess, not a promise)
 # --------------------------------------------------------------------------
 
+# A slope smaller than this (per day) counts as no trend at all: the
+# line is flat, so the guess must sit at the last value and the words
+# must say so — a flat series guessed from the line's intercept can
+# land far from the last value and contradict it (e.g. guess 2.69
+# with last value 3.00 and slope +0.00).
+FLAT_SLOPE_EPS = 0.005
+
+
 def forecast_next(df: pd.DataFrame, date_col: str, num_col: str,
                   periods: int = 1) -> dict:
     """Fit a straight line to a number over time and guess the next
     value(s). Returns {last_value, forecast, slope_per_day, words,
     last_date}. periods is how many days ahead to guess (1 = tomorrow).
     The line is numpy polyfit degree 1 on days since the first date.
-    Raises ValueError for a missing column, too few dated rows, or
-    periods < 1."""
+    When |slope| < FLAT_SLOPE_EPS the series is flat: slope_per_day
+    is reported as 0.0, the guess is the last value, and the words
+    say there is no trend — the line's intercept is never allowed to
+    pull a flat guess away from the last value. Raises ValueError for
+    a missing column, too few dated rows, or periods < 1."""
     if date_col not in df.columns:
         raise ValueError(f"Column '{date_col}' not in the data.")
     if num_col not in df.columns:
@@ -299,14 +359,27 @@ def forecast_next(df: pd.DataFrame, date_col: str, num_col: str,
     slope = float(slope)
     last_value = float(y[-1])
     last_date = work["d"].iloc[-1]
-    forecast = float(slope * (x.max() + periods) + intercept)
-    direction = "rising" if slope > 0 else ("falling" if slope < 0
-                                            else "flat")
-    words = (f"{engine._pretty(num_col)} is {direction} by about "
-             f"{abs(slope):,.2f} per day. The straight-line guess for "
-             f"{periods} day(s) after {last_date.date()} is "
-             f"{forecast:,.2f} (last value {last_value:,.2f}) — a "
-             f"straight-line guess, not a promise.")
+    if abs(slope) < FLAT_SLOPE_EPS:
+        # Flat — no trend. The straight line's intercept can sit well
+        # away from the last value, so a line-based guess would
+        # contradict the last value and the "flat" wording; a flat
+        # series guesses about the last value instead.
+        slope = 0.0
+        forecast = last_value
+        words = (f"{engine._pretty(num_col)} shows no clear trend — "
+                 f"it is flat at around {last_value:,.2f}. The "
+                 f"straight-line guess for {periods} day(s) after "
+                 f"{last_date.date()} is {last_value:,.2f} (last value "
+                 f"{last_value:,.2f}) — a straight-line guess, not a "
+                 f"promise.")
+    else:
+        forecast = float(slope * (x.max() + periods) + intercept)
+        direction = "rising" if slope > 0 else "falling"
+        words = (f"{engine._pretty(num_col)} is {direction} by about "
+                 f"{abs(slope):,.2f} per day. The straight-line guess for "
+                 f"{periods} day(s) after {last_date.date()} is "
+                 f"{forecast:,.2f} (last value {last_value:,.2f}) — a "
+                 f"straight-line guess, not a promise.")
     return {"last_value": last_value, "forecast": forecast,
             "slope_per_day": slope, "words": words,
             "last_date": last_date}
@@ -425,7 +498,10 @@ def row_trust_scores(df: pd.DataFrame) -> pd.DataFrame:
     The input frame is never modified."""
     out = df.copy()
     scores = pd.Series(100, index=df.index, dtype=int)
-    missing = df.isna().sum(axis=1)
+    # All-empty columns are not a row's fault: count missing cells
+    # only over columns that have at least one value.
+    missing = df.drop(columns=[c for c in df.columns
+                               if df[c].isna().all()]).isna().sum(axis=1)
     scores = scores - (missing * 10)
     for col in engine.numeric_cols(df):
         bounds = _iqr_bounds(df[col])
@@ -600,7 +676,7 @@ def client_summary(df: pd.DataFrame, kpis: list | None) -> str:
     by_label = {k.get("label", ""): k.get("value", "") for k in kpis
                 if isinstance(k, dict)}
     totals = [f"{label}: {value}" for label, value in by_label.items()
-              if label.startswith("Total ")]
+              if label.startswith(("Total ", "Sum of ", "Revenue ("))]
     if totals:
         lines.append("Headline totals — " + "; ".join(totals[:3]) + ".")
     cat_cols = [c for c in df.columns
@@ -821,13 +897,73 @@ def _category_columns(df: pd.DataFrame) -> list:
             and 1 < df[c].nunique(dropna=True) <= 50]
 
 
+_SALES_QUESTION_RE = re.compile(r"\b(sold|sell|sales|sale)\b")
+
+
+def _column_name_tokens(col) -> set:
+    """Lowercase word tokens of a column name: unit_price -> {unit,
+    price}, so "price" matches but "salesperson" does not match
+    "sales"."""
+    return {t for t in re.split(r"[^a-z0-9]+", str(col).lower()) if t}
+
+
+def _find_measure_column(df: pd.DataFrame, tokens) -> str | None:
+    """First number column whose name contains one of the tokens, or
+    None. Only number columns count — a text column called e.g.
+    sales_region is not a measure."""
+    wanted = set(tokens)
+    for col in engine.numeric_cols(df):
+        if _column_name_tokens(col) & wanted:
+            return col
+    return None
+
+
+def _sales_measure(df: pd.DataFrame):
+    """The sales measure for a "sold the most" question: (label,
+    per-row values), or None when the data has nothing to measure
+    sales with. Preference order:
+      1. a revenue/sales column, summed as revenue;
+      2. a quantity x price pair, multiplied row by row as revenue;
+      3. a quantity column on its own, as total quantity sold;
+      4. the single number column, as its total.
+    A row count is never a sales measure."""
+    revenue_col = _find_measure_column(
+        df, ("revenue", "sales", "turnover"))
+    if revenue_col is not None:
+        return ("revenue",
+                pd.to_numeric(df[revenue_col], errors="coerce"))
+    qty_col = _find_measure_column(
+        df, ("quantity", "qty", "units", "sold"))
+    price_col = _find_measure_column(
+        df, ("price", "rate", "amount", "cost"))
+    if (qty_col is not None and price_col is not None
+            and qty_col != price_col):
+        return ("revenue",
+                pd.to_numeric(df[qty_col], errors="coerce")
+                * pd.to_numeric(df[price_col], errors="coerce"))
+    if qty_col is not None:
+        return ("total quantity sold",
+                pd.to_numeric(df[qty_col], errors="coerce"))
+    num_cols = engine.numeric_cols(df)
+    if len(num_cols) == 1:
+        col = num_cols[0]
+        return (f"total {engine._pretty(col)}",
+                pd.to_numeric(df[col], errors="coerce"))
+    return None
+
+
 def answer_question(df: pd.DataFrame, question: str) -> str:
     """Answer a plain-words question from the data — no API key needed.
 
     Patterns handled:
-      - top value of a category column ("which region sold the most?",
-        "what is the most common category?") — the top value by row
-        count, or by the total of a named number column;
+      - top value of a category column ("what is the most common
+        category?") — the top value by row count, or by the total of
+        a named number column;
+      - "sold the most" / "most sales" ("which region sold the
+        most?") — the top category by a SALES measure (revenue where
+        a quantity x price pair is available, else total quantity
+        sold), with the measure named in the answer. A row count is
+        never presented as sales;
       - sum / average / max / min of a number column ("what is the
         total unit_price?", "what is the average quantity?");
       - count of rows matching a simple condition ("how many orders
@@ -891,6 +1027,25 @@ def answer_question(df: pd.DataFrame, question: str) -> str:
         if any(w in q for w in ("lowest", "minimum", "min", "smallest",
                                 "cheapest")):
             return f"The lowest {pretty} is {float(s.min()):,.2f}."
+
+    # --- "sold the most" / "most sales": measure sales, never count --
+    # "Which region sold the most?" is a sales question, not a "most
+    # rows" question — so aggregate the sales measure and name it in
+    # the answer (e.g. "by revenue"). A row count is never presented
+    # as sales. Runs before the plain top-value branch below, which
+    # would otherwise answer with a row count.
+    if (cat_col is not None and _SALES_QUESTION_RE.search(q)
+            and any(w in q for w in ("most", "top", "which", "highest",
+                                     "biggest", "largest"))):
+        measure = _sales_measure(df)
+        if measure is None:
+            return ("I can't measure sales from this data — there is "
+                    "no quantity or price column to add up.")
+        label, values = measure
+        grouped = values.groupby(df[cat_col], dropna=False).sum()
+        best = grouped.sort_values(ascending=False)
+        return (f"{best.index[0]} sold the most, by {label} "
+                f"({float(best.iloc[0]):,.2f}).")
 
     # --- top value of a category column ------------------------------
     cat_col = _find_column(q, cat_cols)

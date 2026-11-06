@@ -147,7 +147,7 @@ def test_pptx_opens():
              if sh.has_text_frame]
     joined = "\n".join(texts)
     assert "Data Cleaner Studio — Report" in joined, "title missing"
-    assert "78,323.0" in joined, "Total unit_price KPI missing"
+    assert "207,992.00" in joined, "Revenue KPI missing"
     assert "Electronics (33)" in joined, "Top category KPI missing"
     assert "80 -> 77 rows" in joined, "cleaning log missing"
     table = next(sh.table for s in prs.slides for sh in s.shapes
@@ -240,7 +240,7 @@ def test_db_driver_and_details():
     assert d == {"type": "MySQL", "host": "db.example.com", "port": "3306",
                  "database": "sales", "table": "orders", "query": ""}
     assert "password" not in json.dumps(d).lower()
-    print("db OK: drivers honestly absent; details never carry a password")
+    print("db OK: drivers honestly reported; details never carry a password")
 
 
 # ------------------------------------------------------------------- charts
@@ -367,9 +367,12 @@ def test_render_db_connect():
     assert "password" not in json.dumps(details).lower()
     assert "pw" not in json.dumps(details)
     # Test-connection button reports honestly, never a fake success.
+    # The PostgreSQL driver now ships in requirements.txt, so the click
+    # runs a real connection attempt (no server here) and fails with the
+    # plain "Could not connect" error instead of "NOT installed".
     st2 = FakeSt(values={"e_db_test": True, "e_db_type": "PostgreSQL"})
     feat_export.render_db_connect(st2)
-    assert any("NOT installed" in m for m in st2.messages("error")), \
+    assert any("Could not connect" in m for m in st2.messages("error")), \
         st2.calls
     assert not st2.messages("success")
     print("db connect render OK: honest driver message + password-free JSON")

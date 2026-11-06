@@ -74,7 +74,8 @@ import auth as _auth
 
 BASE_DIR = Path(__file__).resolve().parent / "data" / "users"
 
-SUBFOLDERS = ("uploads", "cleaned", "recipes", "views", "workspaces")
+SUBFOLDERS = ("uploads", "cleaned", "recipes", "views", "workspaces",
+              "backups")
 
 STORAGE_BUCKET = "user-files"
 

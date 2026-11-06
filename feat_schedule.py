@@ -7,7 +7,7 @@ registers one Windows scheduled task that runs morning_run.py daily,
 even when the app is closed.
 
 How it works (on your Windows PC only):
-  * "Set up daily auto-clean" registers a daily task in Windows Task
+  * "Set up auto-clean" registers a daily task in Windows Task
     Scheduler — the same task setup_morning_run.bat creates, so the
     .bat file stays as the fallback for anyone who prefers it.
   * The task runs the portable package's own pythonw.exe (no console
@@ -20,8 +20,12 @@ How it works (on your Windows PC only):
 
 Nothing here works on a Mac, on Linux, or on the web — the task only
 runs on his Windows PC, and every message in this module says so
-plainly. On any other system the status call reports that plainly and
-the buttons do nothing except explain it, so the app never crashes.
+plainly. On any other system the status call reports that plainly
+(the notice is shown exactly once, at the top), the "Set up
+auto-clean" button is disabled, and "Test it now" still works —
+it just runs the Python script once, which needs no Task Scheduler.
+Nothing is attempted that the system cannot do, so the app never
+crashes.
 
 Contract:
   - TASK_NAME = "Data Cleaner Studio Morning Run"
@@ -149,7 +153,7 @@ def task_status() -> tuple:
             detail += f" Next run: {next_run}."
         return True, detail
     return (False, "No daily auto-clean is set up yet on this Windows PC. "
-                   "Press 'Set up daily auto-clean' below to create it — "
+                   "Press 'Set up auto-clean' below to create it — "
                    "it takes one click.")
 
 
@@ -188,10 +192,13 @@ def test_run_now(folder, recipe=None) -> tuple:
 def render_schedule_section(st, folder=None, recipe=None) -> tuple:
     """Tools tab: set up the daily auto-clean, test it, see its status.
 
-    All widget keys start with "sched_". Every Windows-only action is
-    guarded: on a non-Windows computer the buttons only explain that
-    the schedule runs on your Windows PC, and nothing is attempted.
-    Returns task_status() — (exists, detail).
+    All widget keys start with "sched_". The Windows-only notice is
+    shown exactly once (the status line from task_status()); the
+    "Set up auto-clean" button is disabled on a non-Windows computer
+    instead of stacking another copy of the notice, and "Test it now"
+    still runs the morning script once (that test needs no Task
+    Scheduler, so it works anywhere). Returns task_status() —
+    (exists, detail).
     """
     folder = _app_dir(folder)
     st.subheader("Daily auto-clean — while the app is closed")
@@ -212,13 +219,27 @@ def render_schedule_section(st, folder=None, recipe=None) -> tuple:
                                   "your Windows PC.")
     time_str = run_time.strftime("%H:%M") if run_time else DEFAULT_TIME
     exists, detail = task_status()
+    # The Windows-only notice lives HERE and nowhere else: the status
+    # line below is the one place it is shown, so pressing a button
+    # can never stack a second identical box underneath it.
     if exists:
         st.success(detail)
     else:
         st.info(detail)
-    if st.button("Set up daily auto-clean", key="sched_setup", type="primary"):
-        if not _is_windows():
-            st.info(NON_WINDOWS_MSG)
+    _on_windows = _is_windows()
+    if st.button("Set up auto-clean", key="sched_setup", type="primary",
+                 disabled=not _on_windows,
+                 help=("Creates the daily task in Windows Task Scheduler."
+                       if _on_windows else
+                       "Needs your Windows PC — this computer is not "
+                       "Windows, so no task can be set up here.")):
+        if not _on_windows:
+            # Unreachable in the real app (the button is disabled),
+            # kept so a simulated press still explains instead of
+            # crashing — and in different words from the status line
+            # above, so it never stacks an identical box.
+            st.info("Nothing was set up — this computer is not Windows, "
+                    "so no scheduled task can be created here.")
         else:
             try:
                 result = subprocess.run(
@@ -239,7 +260,9 @@ def render_schedule_section(st, folder=None, recipe=None) -> tuple:
                              f"{(result.stderr or result.stdout or '').strip()}")
             except Exception as e:  # noqa: BLE001 - show, don't crash
                 st.error(f"Could not create the scheduled task: {e}")
-    if st.button("Test it now", key="sched_test_now"):
+    if st.button("Test it now", key="sched_test_now",
+                 help="Runs the morning script once, right now, and shows "
+                      "what it did — this test works on any computer."):
         ok, output = test_run_now(folder, recipe)
         if ok:
             st.success("Test run finished — the morning run works.")

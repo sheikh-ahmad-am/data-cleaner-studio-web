@@ -118,6 +118,27 @@ class AuthServiceError(Exception):
     """
 
 
+class EmailNotConfirmedError(AuthServiceError):
+    """The email address is registered but not confirmed yet.
+
+    A subclass of AuthServiceError (so every existing
+    ``except AuthServiceError`` still catches it), raised only when
+    Supabase answers a sign-in with "Email not confirmed". The app
+    catches this subclass FIRST and shows the inbox message instead
+    of a wrong-password or service error — an unconfirmed email is
+    neither.
+    """
+
+
+#: create_user() return marker: the account WAS created, but the email
+#: is not confirmed yet (Supabase "Confirm email" is on). The second
+#: element of the (ok, error) tuple is this string instead of None.
+#: The caller must NOT log the user in — tell them to check their
+#: inbox and click the verification link first. Local mode never
+#: returns this (local accounts have no confirmation step).
+SIGNUP_NEEDS_CONFIRMATION = "needs_confirmation"
+
+
 # ---------------------------------------------------------------------------
 # Small shared helpers
 # ---------------------------------------------------------------------------
@@ -674,15 +695,21 @@ def _sb_create_user(email, password) -> tuple[bool, str | None]:
     user_id = str(getattr(user, "id", "") or "")
     if not user_id:
         return False, "Could not create the account — please try again."
+    # Whether the new account still needs its email confirmed:
+    # with "Confirm email" ON, Supabase answers the sign-up with no
+    # session and email_confirmed_at unset, and sign-in stays blocked
+    # until the user clicks the link in their inbox. With confirmation
+    # OFF the sign-up comes back with a session and a confirmed email.
+    # Either positive sign counts as confirmed; anything else means
+    # the account needs the inbox step first.
+    _confirmed = (getattr(resp, "session", None) is not None
+                  or bool(getattr(user, "email_confirmed_at", None)))
     try:
         _sb_upsert_profile(user_id, email)
     except AuthServiceError:
         raise
-    # NOTE: if the project has "Confirm email" turned on (Supabase's
-    # default), the account exists but sign-in stays blocked until the
-    # user clicks the confirmation link in their inbox. DEPLOY.md
-    # recommends turning confirmation OFF for this app so signup logs
-    # straight in; authenticate() reports the unconfirmed state clearly.
+    if not _confirmed:
+        return True, SIGNUP_NEEDS_CONFIRMATION
     return True, None
 
 
@@ -690,9 +717,10 @@ def _sb_authenticate(email, password) -> dict | None:
     """Sign in via Supabase Auth.
 
     Returns the user dict on success, None on wrong email/password.
-    Raises AuthServiceError if Supabase is unreachable/misconfigured
-    or the email is not confirmed yet — neither is a wrong password
-    and both must be shown as such.
+    Raises EmailNotConfirmedError (an AuthServiceError subclass) when
+    the email is not confirmed yet, and AuthServiceError if Supabase
+    is unreachable/misconfigured — neither is a wrong password and
+    both must be shown as such.
     """
     if not isinstance(email, str) or not isinstance(password, str):
         return None
@@ -707,7 +735,7 @@ def _sb_authenticate(email, password) -> dict | None:
         if "invalid login credentials" in lowered:
             return None
         if "email not confirmed" in lowered:
-            raise AuthServiceError(
+            raise EmailNotConfirmedError(
                 "Email not confirmed — check your inbox for the "
                 "confirmation link, then try again."
             )
@@ -789,6 +817,11 @@ def create_user(username_or_email, password) -> tuple[bool, str | None]:
     """Sign up. Local mode: identifier is a username (3-30 [a-zA-Z0-9_]).
     Supabase mode: identifier is an email address. Returns (ok, error).
 
+    When ok is True and error is SIGNUP_NEEDS_CONFIRMATION, the
+    account was created but the email is not confirmed yet — do NOT
+    log the user in; tell them to check their inbox first. Local mode
+    never returns that marker.
+
     Raises AuthServiceError in Supabase mode when the service is
     unreachable or the tables are not set up yet.
     """
@@ -800,9 +833,10 @@ def create_user(username_or_email, password) -> tuple[bool, str | None]:
 def authenticate(email_or_username, password) -> dict | None:
     """Log in. Returns the user dict, or None for wrong credentials.
 
-    Raises AuthServiceError when the Supabase backend is configured but
-    unreachable — the app must show that as a service error, not as a
-    wrong-password message.
+    Raises EmailNotConfirmedError (an AuthServiceError subclass) when
+    the email is registered but not confirmed yet, and AuthServiceError
+    when the Supabase backend is configured but unreachable — the app
+    must show each as its own message, not as a wrong-password message.
     """
     if get_auth_backend() == "supabase":
         return _sb_authenticate(email_or_username, password)

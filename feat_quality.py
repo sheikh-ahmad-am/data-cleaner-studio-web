@@ -119,7 +119,10 @@ def quality_score(df: pd.DataFrame) -> tuple:
     """Score the frame 0–100 and say what drags it down, in plain words.
 
     Points lost (each capped so one problem cannot zero the score):
-      - Missing cells : 1 point per 2% of cells empty, max 40.
+      - Missing cells : 1 point per 2% of cells empty, max 40. Cells in
+        a column that is 100% empty do NOT count here — that column is
+        already charged under "Empty columns" below, and an empty
+        column is not any one row's fault.
       - Duplicate rows: 1 point per 1% of rows duplicated, max 20.
       - Empty columns : 5 points per column that is 100% empty, max 20.
       - Mixed-type columns: 5 points per column mixing numbers and text,
@@ -134,14 +137,28 @@ def quality_score(df: pd.DataFrame) -> tuple:
                     "points_lost": 100,
                     "detail": "The file has no rows or no columns to score."}]
 
-    missing_pct = 100 * float(df.isna().mean().mean())
+    empty_cols = [c for c in df.columns if df[c].isna().all()]
+    # Missing cells are scored only over columns that hold some data:
+    # an all-empty column's cells are charged once, under "Empty
+    # columns" below — counting them here too would punish the same
+    # defect twice.
+    scored = df.drop(columns=empty_cols) if empty_cols else df
+    scored_cells = scored.size
+    if scored_cells:
+        missing_pct = 100 * float(scored.isna().mean().mean())
+    else:
+        missing_pct = 0.0
     if missing_pct > 0:
         lost = min(40, int(round(missing_pct / 2)))
+        detail = (f"{int(scored.isna().sum().sum()):,} of "
+                  f"{scored_cells:,} cells ({missing_pct:.1f}%) are empty.")
+        if empty_cols:
+            detail += (" Columns that are completely empty are not "
+                       "counted here — they are listed below.")
         breakdown.append({
             "label": "Missing values",
             "points_lost": lost,
-            "detail": (f"{int(df.isna().sum().sum()):,} of {total_cells:,} cells "
-                       f"({missing_pct:.1f}%) are empty."),
+            "detail": detail,
         })
 
     if len(df) > 0:
@@ -155,7 +172,6 @@ def quality_score(df: pd.DataFrame) -> tuple:
                            f"({dup_pct:.1f}%) are exact duplicates."),
             })
 
-    empty_cols = [c for c in df.columns if df[c].isna().all()]
     if empty_cols:
         lost = min(20, 5 * len(empty_cols))
         breakdown.append({

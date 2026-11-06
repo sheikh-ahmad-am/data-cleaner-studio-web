@@ -42,6 +42,16 @@ def _grouped(clean):
             .reset_index().sort_values("unit_price", ascending=False))
 
 
+class _SpinnerCtx:
+    """No-op context manager for FakeSt.spinner."""
+
+    def __enter__(self):
+        return None
+
+    def __exit__(self, *exc):
+        return False
+
+
 class FakeSt:
     """Minimal stand-in for the Streamlit module for render tests."""
 
@@ -118,6 +128,11 @@ class FakeSt:
     def button(self, label, key=None, **kw):
         self._rec("button", label)
         return self.values.get(key, False)
+
+    def spinner(self, text):
+        """Context manager stand-in for st.spinner (records the text)."""
+        self._rec("spinner", text)
+        return _SpinnerCtx()
 
     def download_button(self, label, data, file_name=None, mime=None,
                         key=None, help=None):
@@ -511,8 +526,8 @@ def test_render_one_click():
         status = feat_share.render_one_click(st, raw, None, base_dir=tmp)
         assert status["status"] == "done", status
         assert (len(status["cleaned"]), len(status["cleaned"].columns)) == (77, 9)
-        assert any(k["label"] == "Total unit_price"
-                   and k["value"] == "78,323.0" for k in status["kpis"])
+        assert any(k["label"] == "Revenue (quantity x unit_price)"
+                   and k["value"] == "207,992.00" for k in status["kpis"])
         assert "80 -> 77 rows" in status["report"]
         assert status["pdf_bytes"][:5] == b"%PDF-"
         assert Path(status["backup_path"]).exists()
@@ -551,10 +566,10 @@ def test_html_dashboard():
     data = feat_share.html_dashboard_bytes(kpis, actions, grouped,
                                            "category", "unit_price")
     text = data.decode("utf-8")
-    assert "78,323.0" in text, "Total unit_price KPI must appear"
+    assert "207,992.00" in text, "Revenue KPI must appear"
     assert "Electronics (33)" in text, "Top category KPI must appear"
     assert "35,367" in text, "Electronics bar value must appear"
-    assert "<svg" in text and "#6fff54" in text, "hand-drawn SVG chart"
+    assert "<svg" in text and "#2F5D5A" in text, "hand-drawn SVG chart"
     assert "<style>" in text and "http://" not in text \
         and "https://" not in text and "<script" not in text, \
         "self-contained: inline CSS only, no external links or scripts"
@@ -580,7 +595,7 @@ def test_portfolio_zip():
     readme = zf.read("README.md").decode("utf-8")
     assert "Messy sales — case study" in readme
     assert "77 rows" in readme and "9 columns" in readme
-    assert "78,323.0" in readme and "Electronics (33)" in readme
+    assert "207,992.00" in readme and "Electronics (33)" in readme
     assert "What was cleaned" in readme and "What the data was" in readme
     csv = zf.read("cleaned_data.csv").decode("utf-8")
     assert len(csv.strip().splitlines()) == 78, "header + 77 rows"

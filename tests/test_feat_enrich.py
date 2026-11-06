@@ -213,7 +213,7 @@ def test_insight_prompt():
     kpis = engine.auto_kpis(clean)
     prompt = fe.build_insight_prompt(clean, kpis)
     assert "77 rows" in prompt and "9 columns" in prompt
-    assert "Total unit_price: 78,323.0" in prompt
+    assert "Revenue (quantity x unit_price): 207,992.00" in prompt
     assert "Top category: Electronics (33)" in prompt
     assert "Top customer: Ananya Rao (13)" in prompt
     assert "most common is Electronics" in prompt
@@ -445,7 +445,7 @@ def test_workspace_roundtrip():
 def test_themes():
     assert set(fe.THEMES) == {"Dark green", "Dark blue", "Light"}
     green = fe.theme_css("Dark green")
-    assert "#121212" in green and "#6fff54" in green
+    assert "#121212" in green and "#2F5D5A" in green
     blue = fe.theme_css("Dark blue")
     assert "#0d1b2a" in blue and "#4da6ff" in blue
     light = fe.theme_css("Light")

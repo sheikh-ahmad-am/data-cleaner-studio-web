@@ -161,7 +161,7 @@ def test_render_schedule_section():
         assert "sched_time" in st.keys_used("sched_")
         assert "sched_setup" in st.keys_used("sched_")
         assert "sched_test_now" in st.keys_used("sched_")
-        assert any("Set up daily auto-clean" in c[1]
+        assert any("Set up auto-clean" in c[1]
                    for c in st.calls if c[0] == "button")
         assert any("Test it now" in c[1]
                    for c in st.calls if c[0] == "button")

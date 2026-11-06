@@ -18,13 +18,22 @@ Web differences (all deliberate):
   backend-agnostic API: create_user / authenticate / create_session /
   validate_session / delete_session). Sessions live in
   st.session_state and are validated with auth.validate_session on
-  every run. Passwords are never stored or logged. If the auth
+  every run. The token is ALSO kept in a browser cookie (7 days, the
+  same as auth.SESSION_TTL) so a page refresh does not log the user
+  out — only the random token is stored, never a password. If the
+  cookie library is missing, the app falls back to session-state-only
+  behaviour. Passwords are never stored or logged. If the auth
   backend reports a problem, auth.get_backend_warning() says so
   plainly and the app shows that message instead of crashing.
 * GOOGLE SIGN-IN: wired to auth.get_google_sign_in_url() /
   auth.handle_oauth_code() (Supabase Auth OAuth). In local mode
   those return None / a clean error, so the login screen shows a
   plain "needs Supabase" note instead of a button — never a crash.
+  The button is ALSO gated on the GOOGLE_OAUTH_ENABLED flag
+  (Streamlit secrets or environment, default OFF — only
+  true/True/"true"/"1" switch it on), because the Google provider
+  is not enabled in Supabase: with the flag off the button stays
+  hidden even when Supabase is up. See _google_oauth_enabled().
   The OAuth callback (?code=...) is exchanged once and the code is
   cleared from the URL immediately (see _consume_oauth_callback).
   Google sign-in also needs Google enabled in the Supabase
@@ -88,6 +97,29 @@ st.set_page_config(page_title="Data Cleaner Studio", layout="wide")
 _APP_DIR = Path(__file__).resolve().parent
 _SHARES_FILENAME = "shares.json"
 _STORAGE_KEY_RE = re.compile(r"^[a-zA-Z0-9_]{3,30}$")
+
+# The deployed app's public address, used for the full share link.
+# Override it with the APP_PUBLIC_URL (or APP_URL) environment
+# variable or Streamlit secret when the app moves to a new address.
+# Default: the live Streamlit Community Cloud URL for this app.
+_DEFAULT_APP_URL = "https://data-c-ak7dfcpvbzklkfn8gozels.streamlit.app"
+
+
+def _app_base_url() -> str:
+    """This app's public web address, for the full share link.
+
+    APP_PUBLIC_URL / APP_URL (environment, then Streamlit secrets)
+    wins when set; otherwise the known deployed URL above. Never a
+    "<your-app>" placeholder — the example link must be openable."""
+    raw = (os.environ.get("APP_PUBLIC_URL")
+           or os.environ.get("APP_URL") or "").strip()
+    if not raw:
+        try:
+            raw = str(st.secrets.get("APP_PUBLIC_URL", "")
+                      or st.secrets.get("APP_URL", "") or "").strip()
+        except Exception:  # noqa: BLE001 - no secrets file: use the default
+            raw = ""
+    return (raw or _DEFAULT_APP_URL).rstrip("/")
 
 
 # ------------------------------------------------------------- sharing ----
@@ -213,6 +245,126 @@ for key, default in [
         st.session_state[key] = default
 
 
+# ------------------------------------------- login cookie (refresh-proof) --
+# The session token ALSO lives in a browser cookie (7 days, the same
+# as auth.SESSION_TTL) so refreshing the page does not log the user
+# out. Only the random token is stored — never a password. If the
+# cookie library is missing at runtime, the app falls back to the
+# old session-state-only behaviour without crashing.
+_AUTH_COOKIE = "dcs_auth_token"
+_AUTH_COOKIE_MAX_AGE = 7 * 24 * 3600  # seconds; matches auth.SESSION_TTL
+
+try:
+    from streamlit_cookies_controller import CookieController
+    _cookie_controller = CookieController()
+except Exception:  # noqa: BLE001 - no cookie library: session-state only
+    _cookie_controller = None
+
+
+def _cookie_get(name):
+    """Cookie value, or None when cookies are unavailable/empty."""
+    if _cookie_controller is None:
+        return None
+    try:
+        value = _cookie_controller.get(name)
+    except Exception:  # noqa: BLE001 - a cookie read never crashes login
+        return None
+    return value if isinstance(value, str) and value else None
+
+
+def _cookie_set(name, value):
+    """Store a cookie: 7-day expiry, Secure, SameSite=Lax."""
+    if _cookie_controller is None:
+        return
+    try:
+        _cookie_controller.set(name, value, max_age=_AUTH_COOKIE_MAX_AGE,
+                               secure=True, same_site="lax")
+    except Exception:  # noqa: BLE001 - a cookie write never crashes login
+        pass
+
+
+def _cookie_clear(name):
+    """Remove a cookie (same attributes it was set with)."""
+    if _cookie_controller is None:
+        return
+    try:
+        _cookie_controller.remove(name, secure=True, same_site="lax")
+    except Exception:  # noqa: BLE001 - a cookie clear never crashes logout
+        pass
+
+
+def _remember_session(token):
+    """Persist a login: session state AND the login cookie."""
+    st.session_state["auth_token"] = token
+    _cookie_set(_AUTH_COOKIE, token)
+
+
+def _log_user_in(user):
+    """Start a session for an authenticated user dict and persist it
+    (session state + login cookie) — the one path the Log in button
+    and the auto-login after sign-up both use. Returns True when the
+    session is live, False when no session could be started (the
+    caller shows the error)."""
+    try:
+        token = auth.create_session(user["id"])
+    except AuthServiceError as exc:
+        st.error(f"Account service error: {exc}")
+        return False
+    if not token:
+        st.error("Could not start a session. Try again.")
+        return False
+    _remember_session(token)
+    st.session_state["current_user"] = user
+    st.session_state["storage_key"] = _storage_key(user)
+    return True
+
+
+def _restore_session_from_cookie():
+    """On startup, when session state has no token: read the token
+    from the login cookie and validate it with auth.validate_session.
+
+    Returns the user dict when the cookie holds a live session (and
+    restores session state), else None — and clears a dead/expired
+    cookie so a stale token never lingers. Never raises."""
+    if st.session_state.get("auth_token"):
+        return None
+    token = _cookie_get(_AUTH_COOKIE)
+    if not token:
+        return None
+    try:
+        user = auth.validate_session(token)
+    except AuthServiceError:
+        user = None
+    except Exception:  # noqa: BLE001 - a broken backend never crashes login
+        return None
+    if user is None:
+        _cookie_clear(_AUTH_COOKIE)
+        return None
+    st.session_state["auth_token"] = token
+    st.session_state["current_user"] = user
+    st.session_state["storage_key"] = _storage_key(user)
+    return user
+
+
+def _google_oauth_enabled() -> bool:
+    """True only when Google OAuth is explicitly switched on.
+
+    Flag: GOOGLE_OAUTH_ENABLED in Streamlit secrets or the
+    environment. Only true/True/"true"/"1" count as on; anything
+    else — including a missing flag — is OFF. Default OFF, because
+    the Google provider is not enabled in the Supabase dashboard:
+    with the flag off the "Continue with Google" button stays
+    hidden instead of leading to a dead end.
+    """
+    raw = (os.environ.get("GOOGLE_OAUTH_ENABLED") or "").strip()
+    if not raw:
+        try:
+            raw = str(st.secrets.get("GOOGLE_OAUTH_ENABLED", "") or "").strip()
+        except Exception:  # noqa: BLE001 - no secrets file: not configured
+            raw = ""
+    return raw in ("true", "True", "1")
+
+
 def _consume_oauth_callback() -> None:
     """Consume an OAuth redirect (?code=...) once, if one ever arrives.
 
@@ -251,9 +403,10 @@ def _consume_oauth_callback() -> None:
                or getattr(auth, "handle_google_callback", None))
     if handler is None or not callable(handler):
         st.session_state["google_error"] = (
-            "Google sign-in needs Supabase configured — add "
-            "supabase_config.json (see README.md) and enable Google "
-            "in the Supabase dashboard. Use email and password for now.")
+            "Google sign-in needs Supabase configured — add the "
+            "Supabase details to the app's secrets (see README.md) "
+            "and enable Google in the Supabase dashboard. "
+            "Use email and password for now.")
         return
     try:
         user, session_token, error = handler(str(code))
@@ -267,12 +420,17 @@ def _consume_oauth_callback() -> None:
         st.session_state["google_error"] = error
         return
     if user is not None and session_token:
-        st.session_state["auth_token"] = session_token
+        _remember_session(session_token)
         st.session_state["current_user"] = user
         st.session_state["storage_key"] = _storage_key(user)
 
 
 _consume_oauth_callback()
+
+# A refresh wipes session state but not the login cookie: when there
+# is no token in state, try to restore the session from the cookie
+# before deciding the user is logged out.
+_restore_session_from_cookie()
 
 _current_user = None
 if st.session_state.get("auth_token"):
@@ -323,45 +481,70 @@ if _current_user is None:
             if not ident.strip() or not password:
                 st.error("Enter your email/username and password.")
             else:
-                try:
-                    user = auth.authenticate(ident.strip(), password)
-                except AuthServiceError as exc:
-                    st.error(f"Account service error: {exc}")
-                    user = None
-                if user is None:
-                    st.error("Wrong email/username or password. Try again.")
-                else:
+                _unconfirmed = False
+                with st.spinner("Logging you in…"):
                     try:
-                        token = auth.create_session(user["id"])
+                        user = auth.authenticate(ident.strip(), password)
+                    except auth.EmailNotConfirmedError:
+                        # Registered but the email is not confirmed yet:
+                        # neither a wrong password nor a service error.
+                        st.error("Check your inbox — click the verification "
+                                 "link first, then log in.")
+                        user = None
+                        _unconfirmed = True
                     except AuthServiceError as exc:
                         st.error(f"Account service error: {exc}")
-                        token = None
-                    if not token:
-                        st.error("Could not start a session. Try again.")
-                    else:
-                        st.session_state["auth_token"] = token
-                        st.session_state["current_user"] = user
-                        st.session_state["storage_key"] = _storage_key(user)
-                        st.rerun()
+                        user = None
+                if user is None:
+                    if not _unconfirmed:
+                        st.error("Wrong email/username or password. Try again.")
+                elif _log_user_in(user):
+                    st.rerun()
     else:
         if st.button("Create account", key="auth_signup_btn", type="primary"):
             if not ident.strip() or not password:
                 st.error("Enter an email/username and a password "
                          "(at least 8 characters).")
             else:
-                try:
-                    ok, error = auth.create_user(ident.strip(), password)
-                except AuthServiceError as exc:
-                    st.error(f"Account service error: {exc}")
-                    ok, error = False, None
+                with st.spinner("Creating your account…"):
+                    try:
+                        ok, error = auth.create_user(ident.strip(), password)
+                    except AuthServiceError as exc:
+                        st.error(f"Account service error: {exc}")
+                        ok, error = False, None
                 if not ok:
                     st.error(error or "Could not create the account.")
+                elif error == auth.SIGNUP_NEEDS_CONFIRMATION:
+                    # The account exists but the email is not confirmed
+                    # yet ("Confirm email" is on): no auto-login and no
+                    # session cookie — the user must click the link in
+                    # their inbox first.
+                    st.success("Account created — check your inbox and click "
+                               "the verification link first, then log in here.")
                 else:
-                    # NOTE: the mode radio owns the "auth_mode" key, so the
-                    # app cannot flip it programmatically after the widget
-                    # exists — the user switches to "Log in" above.
-                    st.success("Account created — switch to 'Log in' above "
-                               "and log in with it.")
+                    # Confirmed account (or local mode, which has no
+                    # confirmation step): log the new user straight in,
+                    # on the same session path the Log in button uses.
+                    # If that ever fails, fall back to the old
+                    # "switch to Log in" message.
+                    _unconfirmed = False
+                    with st.spinner("Logging you in…"):
+                        try:
+                            user = auth.authenticate(ident.strip(), password)
+                        except auth.EmailNotConfirmedError:
+                            user = None
+                            _unconfirmed = True
+                        except AuthServiceError:
+                            user = None
+                    if user is not None and _log_user_in(user):
+                        st.session_state["just_signed_up"] = True
+                        st.rerun()
+                    elif _unconfirmed:
+                        st.success("Account created — check your inbox and click "
+                                   "the verification link first, then log in here.")
+                    else:
+                        st.success("Account created — switch to 'Log in' "
+                                   "above and log in with it.")
     google_url = None
     _google_entry = (getattr(auth, "get_google_sign_in_url", None)
                      or getattr(auth, "google_sign_in_url", None))
@@ -370,16 +553,19 @@ if _current_user is None:
             google_url = _google_entry()
         except Exception:  # noqa: BLE001 - no Google URL, show the note
             google_url = None
-    if google_url:
+    if google_url and _google_oauth_enabled():
         st.write("— or —")
         st.link_button("Continue with Google", google_url)
-    else:
+    elif not google_url:
         # Local mode: get_google_sign_in_url() returns None, so there
         # is no button — show the plain-words reason instead.
         st.caption("Google sign-in needs Supabase configured first: "
-                   "add supabase_config.json (see README.md) and enable "
-                   "Google in the Supabase dashboard. "
+                   "add the Supabase details to the app's secrets "
+                   "(see README.md) and enable Google in the Supabase "
+                   "dashboard. "
                    "For now, use email and password above.")
+    # else: Supabase is up but GOOGLE_OAUTH_ENABLED is off (the
+    # default) — the button stays hidden, no dead end, no note.
     st.stop()
 
 # ---- logged in from here on. ----
@@ -392,19 +578,22 @@ _ws_dir = _paths["ws_dir"]
 _settings_path = _paths["settings_path"]
 
 # ------------------------------------------------------- brand + mobile ---
+# Theme first, brand second: with the default accent both agree, and
+# a user-picked accent wins the tie on buttons and links.
 try:
     _brand = feat_brand.load_brand(base_dir=_user_root)
 except Exception:  # noqa: BLE001 - a broken brand file must not stop the app
-    _brand = {"name": "Data Cleaner Studio", "accent": "#6fff54",
-              "logo": None}
-try:
-    st.markdown(feat_brand.brand_css(_brand.get("accent", "#6fff54")),
-                unsafe_allow_html=True)
-except Exception:  # noqa: BLE001 - brand CSS must never stop the app
-    pass
+    _brand = {"name": "Data Cleaner Studio",
+              "accent": feat_brand.DEFAULT_ACCENT, "logo": None}
 try:
     st.markdown(feat_mobile.mobile_css(), unsafe_allow_html=True)
-except Exception:  # noqa: BLE001 - mobile CSS must never stop the app
+except Exception:  # noqa: BLE001 - theme CSS must never stop the app
+    pass
+try:
+    st.markdown(feat_brand.brand_css(
+        _brand.get("accent", feat_brand.DEFAULT_ACCENT)),
+        unsafe_allow_html=True)
+except Exception:  # noqa: BLE001 - brand CSS must never stop the app
     pass
 
 for key, default in [
@@ -449,8 +638,22 @@ _title = (_brand.get("name") if _brand.get("name")
           and _brand["name"] != "Data Cleaner Studio" else _t("app_title"))
 st.title(_title)
 st.write("Put in messy data. Get clean data, KPIs, charts and a report.")
+# The main flow, at a glance: upload -> clean -> KPIs -> export.
+# One step is "you are here"; finished steps get a tick.
+_flow_current = 2 if st.session_state.clean is None else 3
+_flow_parts = []
+for _i, _label in enumerate(["Upload", "Clean", "KPIs", "Export"], start=1):
+    if _i < _flow_current:
+        _flow_parts.append(f"{_label} ✓")
+    elif _i == _flow_current:
+        _flow_parts.append(f"**{_label}** — you are here")
+    else:
+        _flow_parts.append(_label)
+st.caption("Your flow: " + " → ".join(_flow_parts))
+if st.session_state.pop("just_signed_up", False):
+    st.success("Account created — you're logged in. Welcome!")
 feat_tutorial.render_first_run_banner(st, settings_path=_settings_path)
-feat_analyse.render_whats_new(st)
+feat_analyse.render_whats_new(st, user_key=_skey)
 
 # ------------------------------------------- workspace restore (startup) ---
 _ws_marker = _ws_dir / "autosave.txt"
@@ -541,13 +744,46 @@ def _apply_pending_view(view):
 
 def _save_cleaned_copy(df, source_name):
     """Best-effort: persist the cleaned frame to cleaned/ so it
-    survives the session. Never stops the app when it fails."""
+    survives the session, plus a small state file (actions, KPIs,
+    clean options) so reopening the file restores the cleaned data
+    too instead of only the raw file. Never stops the app when it
+    fails."""
     try:
         safe = re.sub(r"[^A-Za-z0-9._-]+", "_", str(source_name or "data"))
         storage.save_file(_skey, "cleaned", f"cleaned_{safe}.csv",
                           df.to_csv(index=False).encode("utf-8"))
+        storage.save_json(_skey, "cleaned", f"cleaned_{safe}.state", {
+            "source_name": str(source_name or ""),
+            "actions": [[str(a), str(b)] for a, b in
+                        (st.session_state.get("actions") or [])],
+            "kpis": st.session_state.get("kpis") or [],
+            "clean_opts": st.session_state.get("clean_opts"),
+        })
     except Exception:  # noqa: BLE001 - saving a copy must never stop the app
         pass
+
+
+def _restore_cleaned_state(source_name):
+    """Best-effort: restore the cleaned frame + KPIs saved by
+    _save_cleaned_copy for this source file. Returns True when the
+    cleaned state was restored, False otherwise (the caller then
+    says plainly that only the raw file came back). Never raises."""
+    try:
+        safe = re.sub(r"[^A-Za-z0-9._-]+", "_", str(source_name or "data"))
+        state = storage.load_json(_skey, "cleaned", f"cleaned_{safe}.state")
+        if not isinstance(state, dict):
+            return False
+        raw_bytes = storage.read_file(_skey, "cleaned", f"cleaned_{safe}.csv")
+        cleaned = engine.load_file(f"cleaned_{safe}.csv", raw_bytes)
+        st.session_state.clean = cleaned
+        st.session_state.actions = (
+            [(str(a), str(b)) for a, b in (state.get("actions") or [])]
+            or None)
+        st.session_state.kpis = state.get("kpis") or engine.auto_kpis(cleaned)
+        st.session_state.clean_opts = state.get("clean_opts")
+        return True
+    except Exception:  # noqa: BLE001 - a missing/broken copy is not fatal
+        return False
 
 
 # ------------------------------------------------------------------ load ---
@@ -563,8 +799,9 @@ if st.sidebar.button("Log out", key="logout_btn"):
         auth.delete_session(st.session_state.get("auth_token"))
     except AuthServiceError:
         pass
+    _cookie_clear(_AUTH_COOKIE)
     for _k in ("auth_token", "current_user", "storage_key", "user_paths",
-               "raw", "clean", "actions", "kpis"):
+               "raw", "clean", "actions", "kpis", "active_tab"):
         st.session_state[_k] = None
     st.rerun()
 _banner = auth.get_local_mode_banner()
@@ -624,9 +861,10 @@ if st.session_state.get("pending_excel"):
 
 if st.sidebar.button(_t("try_sample"), key="sample_btn"):
     _sample_path = _APP_DIR / "sample_data" / "messy_sales.csv"
-    _set_raw(engine.load_file("messy_sales.csv",
-                              _sample_path.read_bytes()),
-             "messy_sales.csv (sample)", kind="sample")
+    with st.spinner("Loading the sample file…"):
+        _set_raw(engine.load_file("messy_sales.csv",
+                                  _sample_path.read_bytes()),
+                 "messy_sales.csv (sample)", kind="sample")
     st.session_state["last_upload"] = None
 
 # Your saved uploads (per-user storage): re-open without uploading again.
@@ -635,65 +873,87 @@ try:
 except Exception:  # noqa: BLE001
     _saved_uploads = []
 if _saved_uploads:
-    st.sidebar.subheader("Your saved files")
-    _saved_pick = st.sidebar.selectbox(
-        "Open a saved upload", [""] + _saved_uploads, key="saved_upload_pick")
-    _c1, _c2 = st.sidebar.columns(2)
-    if _c1.button("Open", key="saved_upload_open") and _saved_pick:
-        try:
-            _saved_bytes = storage.read_file(_skey, "uploads", _saved_pick)
-            _set_raw(engine.load_file(_saved_pick, _saved_bytes), _saved_pick,
-                     kind="upload")
-            st.session_state["last_upload"] = None
-            st.sidebar.success(f"Opened {_saved_pick}.")
-        except Exception as e:  # noqa: BLE001
-            st.sidebar.error(f"Could not open that file: {e}")
-    if _c2.button("Delete", key="saved_upload_delete") and _saved_pick:
-        try:
-            storage.delete_file(_skey, "uploads", _saved_pick)
-            st.sidebar.success(f"Deleted {_saved_pick}.")
-            st.rerun()
-        except Exception as e:  # noqa: BLE001
-            st.sidebar.error(f"Could not delete that file: {e}")
-
-sheet_url = st.sidebar.text_input(
-    "Google Sheets link (public sheet)",
-    help="File -> Share -> Anyone with the link. Paste the link here.")
-if st.sidebar.button("Load sheet", key="sheet_btn") and sheet_url.strip():
-    try:
-        _set_raw(engine.load_sheets_url(sheet_url.strip()), "Google Sheet",
-                 kind="sheets", url=sheet_url.strip())
-        st.session_state["last_upload"] = None
-    except Exception as e:  # noqa: BLE001
-        st.sidebar.error(f"Could not load that sheet: {e}")
-
-st.sidebar.header("... or a database file")
-db_file = st.sidebar.file_uploader(
-    "SQLite database (.db)", type=["db", "sqlite", "sqlite3"],
-    help="A SQLite database file — pick one of its tables to load.")
-if db_file is not None:
-    try:
-        tables = engine.list_sqlite_tables(db_file.getvalue())
-    except Exception as e:  # noqa: BLE001
-        st.sidebar.error(f"Could not read that database: {e}")
-        tables = []
-    if tables:
-        table = st.sidebar.selectbox("Table", tables, key="db_table")
-        if st.sidebar.button("Load table", key="db_load"):
+    with st.sidebar.expander("Your saved files"):
+        _saved_pick = st.sidebar.selectbox(
+            "Open a saved upload", [""] + _saved_uploads,
+            key="saved_upload_pick")
+        _c1, _c2 = st.sidebar.columns(2)
+        if _c1.button("Open", key="saved_upload_open",
+                      disabled=not _saved_pick) and _saved_pick:
             try:
-                _set_raw(engine.load_sqlite(db_file.getvalue(), table),
-                         f"{db_file.name} : {table}")
+                _saved_bytes = storage.read_file(_skey, "uploads", _saved_pick)
+                _set_raw(engine.load_file(_saved_pick, _saved_bytes),
+                         _saved_pick, kind="upload")
+                st.session_state["last_upload"] = None
+                if _restore_cleaned_state(_saved_pick):
+                    st.sidebar.success(
+                        f"Opened {_saved_pick} — cleaned data restored too.")
+                else:
+                    st.sidebar.success(
+                        f"Opened {_saved_pick}. Clean it in the Clean tab "
+                        "to rebuild the KPIs and the report.")
+            except Exception as e:  # noqa: BLE001
+                st.sidebar.error(f"Could not open that file: {e}")
+        if _c2.button("Delete", key="saved_upload_delete",
+                      disabled=not _saved_pick) and _saved_pick:
+            try:
+                storage.delete_file(_skey, "uploads", _saved_pick)
+                st.sidebar.success(f"Deleted {_saved_pick}.")
+                st.rerun()
+            except Exception as e:  # noqa: BLE001
+                st.sidebar.error(f"Could not delete that file: {e}")
+
+with st.sidebar.expander("More ways to load"):
+    sheet_url = st.text_input(
+        "Google Sheets link (public sheet)",
+        help="File -> Share -> Anyone with the link. Paste the link here.")
+    if st.button("Load sheet", key="sheet_btn"):
+        if not sheet_url.strip():
+            st.error("Paste a Google Sheets link first — "
+                     "File -> Share -> Anyone with the link, then "
+                     "paste the link here.")
+        else:
+            try:
+                _set_raw(engine.load_sheets_url(sheet_url.strip()), "Google Sheet",
+                         kind="sheets", url=sheet_url.strip())
                 st.session_state["last_upload"] = None
             except Exception as e:  # noqa: BLE001
-                st.sidebar.error(f"Could not load that table: {e}")
+                st.error(f"Could not load that sheet: {e}")
+
+    st.write("... or a database file")
+    db_file = st.file_uploader(
+        "SQLite database (.db)", type=["db", "sqlite", "sqlite3"],
+        help="A SQLite database file — pick one of its tables to load.")
+    if db_file is not None:
+        try:
+            tables = engine.list_sqlite_tables(db_file.getvalue())
+        except Exception as e:  # noqa: BLE001
+            st.error(f"Could not read that database: {e}")
+            tables = []
+        if tables:
+            table = st.selectbox("Table", tables, key="db_table")
+            if st.button("Load table", key="db_load"):
+                try:
+                    _set_raw(engine.load_sqlite(db_file.getvalue(), table),
+                             f"{db_file.name} : {table}")
+                    st.session_state["last_upload"] = None
+                except Exception as e:  # noqa: BLE001
+                    st.error(f"Could not load that table: {e}")
 
 _last_raw_bytes = uploaded.getvalue() if uploaded is not None else None
 _reopened = feat_share.render_recent(
     st, df=st.session_state.raw,
     source_name=st.session_state.source_name, raw_bytes=_last_raw_bytes,
-    base_dir=_user_root)
+    base_dir=_user_root, storage_key=_skey)
 if _reopened is not None:
+    _reopened_name = st.session_state.pop("s_recent_opened", None)
     _set_raw(_reopened, "Recent file (reopened)", kind="recent")
+    if _reopened_name and _restore_cleaned_state(_reopened_name):
+        st.sidebar.success(f"Opened {_reopened_name} — cleaned data "
+                           "restored too.")
+    elif _reopened_name:
+        st.sidebar.info(f"Opened {_reopened_name}. Clean it in the Clean "
+                        "tab to rebuild the KPIs and the report.")
 
 feat_analyse.render_client_mode_toggle(st)
 
@@ -701,38 +961,82 @@ with st.sidebar.expander("Settings (API key)"):
     ai_settings.render_settings(st)
 
 feat_enrich.render_theme_picker(st)
+# Extra readable-contrast rules: the theme stylesheet already covers
+# secondary buttons, but KPI metric values, file-uploader chips and
+# info boxes still relied on Streamlit's faint defaults. Ink #23272E
+# on warm neutrals; accent teal #2F5D5A for primary actions only.
+# Injected AFTER the theme picker (which injects its own CSS), so
+# these rules win. The section-switcher rules style the radio below
+# as a tab bar; if Streamlit ever changes those selectors it
+# degrades to a plain option row, still fully working.
+st.markdown("""<style>
+/* KPI metric values + labels: ink, never faint grey. */
+div[data-testid="stMetricValue"], div[data-testid="stMetricValue"] * {
+  color: #23272E !important;
+}
+div[data-testid="stMetricLabel"], div[data-testid="stMetricLabel"] * {
+  color: #6E6A61 !important;
+}
+/* File-uploader dropzone + uploaded-file chips: ink text on white. */
+div[data-testid="stFileUploader"], div[data-testid="stFileUploader"] * {
+  color: #23272E !important;
+}
+/* Info / success / warning / error boxes: every nested element ink. */
+div[data-testid="stAlert"], div[data-testid="stAlert"] * {
+  color: #23272E !important;
+}
+div[data-testid="stAlert"] a {
+  color: #2F5D5A !important;
+}
+/* Section switcher (radio styled as a tab bar). */
+div[data-testid="stRadio"] div[role="radiogroup"] {
+  gap: 0.35rem !important;
+}
+div[data-testid="stRadio"] div[role="radiogroup"] label {
+  background-color: #EFEDE8 !important;
+  border: 1px solid #D9D4C9 !important;
+  border-radius: 8px !important;
+  padding: 0.35rem 0.9rem !important;
+  color: #23272E !important;
+}
+div[data-testid="stRadio"] div[role="radiogroup"] label:has(input:checked) {
+  background-color: #2F5D5A !important;
+  border-color: #2F5D5A !important;
+  color: #FFFFFF !important;
+}
+</style>""", unsafe_allow_html=True)
 feat_enrich.render_language_picker(st)
 _ws_on = feat_enrich.render_workspace_toggle(st)
 
 # ---------------------------------------------------------- auto-refresh ---
 raw = st.session_state.raw
 if raw is not None and st.session_state.source_kind == "sheets":
-    st.sidebar.header("Auto-refresh")
-    st.sidebar.checkbox("Auto-refresh this sheet", value=False,
-                        key="auto_refresh",
-                        help="While the app is open, it re-checks the sheet "
-                             "and updates the data and KPIs by itself.")
-    if st.session_state.get("auto_refresh"):
-        mins = st.sidebar.selectbox(
-            "Every", [5, 15, 30, 60], index=1, key="refresh_mins",
-            format_func=lambda m: f"{m} minutes")
-        st.session_state["refresh_seconds"] = mins * 60
-    if st.sidebar.button("Refresh now", key="refresh_now_btn"):
-        try:
-            opts = st.session_state.get("clean_opts")
-            fresh = engine.load_sheets_url(st.session_state["source_url"])
-            _set_raw(fresh, st.session_state["source_name"],
-                     kind="sheets", url=st.session_state["source_url"])
-            if opts:
-                cleaned, actions = engine.clean(
-                    fresh, feat_automate.to_engine_opts(opts))
-                st.session_state["clean"] = cleaned
-                st.session_state["actions"] = actions
-                st.session_state["kpis"] = engine.auto_kpis(cleaned)
-                st.session_state["clean_opts"] = opts
-            st.sidebar.success("Refreshed.")
-        except Exception as e:  # noqa: BLE001
-            st.sidebar.error(f"Refresh failed: {e}")
+    with st.sidebar.expander("Auto-refresh"):
+        st.checkbox("Auto-refresh this sheet", value=False,
+                    key="auto_refresh",
+                    help="While the app is open, it re-checks the sheet "
+                         "and updates the data and KPIs by itself.")
+        if st.session_state.get("auto_refresh"):
+            mins = st.selectbox(
+                "Every", [5, 15, 30, 60], index=1, key="refresh_mins",
+                format_func=lambda m: f"{m} minutes")
+            st.session_state["refresh_seconds"] = mins * 60
+        if st.button("Refresh now", key="refresh_now_btn"):
+            try:
+                opts = st.session_state.get("clean_opts")
+                fresh = engine.load_sheets_url(st.session_state["source_url"])
+                _set_raw(fresh, st.session_state["source_name"],
+                         kind="sheets", url=st.session_state["source_url"])
+                if opts:
+                    cleaned, actions = engine.clean(
+                        fresh, feat_automate.to_engine_opts(opts))
+                    st.session_state["clean"] = cleaned
+                    st.session_state["actions"] = actions
+                    st.session_state["kpis"] = engine.auto_kpis(cleaned)
+                    st.session_state["clean_opts"] = opts
+                st.success("Refreshed.")
+            except Exception as e:  # noqa: BLE001
+                st.error(f"Refresh failed: {e}")
 
 if raw is None:
     st.info("Upload a file, load a Google Sheet, open a database table, "
@@ -824,8 +1128,11 @@ if clean is not None:
     st.sidebar.caption(f"Showing {len(filtered):,} of {len(clean):,} rows")
 
 _client = bool(st.session_state.get("client_mode", False))
-_tab_keys = ["preview", "join", "clean", "kpis", "dashboard", "compare",
-             "report", "tools", "tutorial", "settings"]
+# Main flow first (upload -> clean -> KPIs -> export), then the
+# secondary views. Nothing removed — just ordered by how often it
+# is used.
+_tab_keys = ["preview", "clean", "kpis", "dashboard", "report",
+             "join", "compare", "tools", "tutorial", "settings"]
 if _client:
     _tab_keys = ["preview", "clean", "kpis", "dashboard", "report", "tutorial"]
 _tab_labels = {"preview": _t("preview"), "join": _t("join"),
@@ -833,11 +1140,28 @@ _tab_labels = {"preview": _t("preview"), "join": _t("join"),
                "dashboard": _t("dashboard"), "compare": _t("compare"),
                "report": _t("report"), "tools": _t("tools"),
                "tutorial": _t("tutorial"), "settings": "Settings"}
-_tabs = st.tabs([_tab_labels[k] for k in _tab_keys])
-tab = dict(zip(_tab_keys, _tabs))
+# Section switcher: a horizontal radio, NOT st.tabs.
+# Streamlit's tab selection is not sticky — it resets to the first
+# tab after some actions (downloads, saves), yanking the user away
+# from where they were. A radio IS sticky: its value lives in
+# session state under "active_tab", survives every rerun, and can
+# be set programmatically (e.g. back to the first section on
+# logout). The CSS below (injected after the theme picker) styles
+# the options as a tab bar; if those selectors ever stop matching
+# a new Streamlit version it degrades to a plain option row, still
+# fully working. `tab` stays a set of the available keys so the
+# `if "join" in tab:` guards below keep working.
+_tab_options = [_tab_labels[k] for k in _tab_keys]
+if st.session_state.get("active_tab") not in _tab_options:
+    st.session_state["active_tab"] = _tab_options[0]
+_active_label = st.radio("Section", _tab_options, key="active_tab",
+                         horizontal=True, label_visibility="collapsed")
+_active_tab = next(k for k, v in _tab_labels.items()
+                   if v == _active_label)
+tab = set(_tab_keys)
 
 # --------------------------------------------------------------- preview ---
-with tab["preview"]:
+if _active_tab == "preview":
     if _client and clean is not None:
         st.info(feat_analyse.client_summary(clean, st.session_state.kpis))
     if st.session_state.source_kind == "workspace":
@@ -853,28 +1177,40 @@ with tab["preview"]:
     shown = feat_share.render_sort(st, raw)
     st.dataframe(shown.head(100), width="stretch")
     feat_share.render_search(st, raw)
-    feat_enrich.render_filter_builder(st, raw)
-    profile = engine.profile(raw)
-    st.subheader("Health check")
-    st.write(f"Missing cells: {int(raw.isna().sum().sum()):,}  |  "
-             f"Duplicate rows: {int(raw.duplicated().sum())}")
-    st.table(pd.DataFrame(profile))
-    sugg_df, sugg_actions = feat_share.render_suggestions(st, raw)
-    if sugg_df is not None:
-        _set_raw(sugg_df, st.session_state.source_name)
-        _audit("Suggestion applied",
-               sugg_actions[0][1] if sugg_actions else "Fix applied")
-        raw = sugg_df
-        clean = None
-        filtered = None
-    feat_quality.render_quality_panel(st, raw)
-    feat_analyse.render_trust(st, raw)
-    feat_quality.render_dictionary(st, raw)
-    feat_export.render_column_charts(st, clean)
+    with st.expander("Search, filter & suggested fixes"):
+        feat_enrich.render_filter_builder(st, raw)
+        sugg_df, sugg_actions = feat_share.render_suggestions(st, raw)
+        if sugg_df is not None:
+            _set_raw(sugg_df, st.session_state.source_name)
+            _audit("Suggestion applied",
+                   sugg_actions[0][1] if sugg_actions else "Fix applied")
+            raw = sugg_df
+            clean = None
+            filtered = None
+    with st.expander("Health check & data dictionary"):
+        profile = engine.profile(raw)
+        st.subheader("Health check")
+        st.write(f"Missing cells: {int(raw.isna().sum().sum()):,}  |  "
+                 f"Duplicate rows: {int(raw.duplicated().sum())}")
+        st.table(pd.DataFrame(profile))
+        feat_quality.render_quality_panel(st, raw)
+        feat_analyse.render_trust(st, raw)
+        # One data dictionary, shown once: heading + table + download.
+        # (render_dictionary would show the same table twice — once as
+        # markdown, once as a dataframe — so the pieces are rendered
+        # here directly from data_dictionary().)
+        _dict_md, _dict_table = feat_quality.data_dictionary(raw)
+        st.subheader("Data dictionary")
+        st.dataframe(_dict_table, width="stretch")
+        st.download_button("Download data dictionary (.md)",
+                           _dict_md.encode("utf-8"),
+                           file_name="data_dictionary.md",
+                           key="q_dict_download")
+        feat_export.render_column_charts(st, clean)
 
 # ------------------------------------------------------------------ join ---
 if "join" in tab:
-    with tab["join"]:
+    if _active_tab == "join":
         st.subheader("Join two files")
         st.write("Combine this file with a second one on a shared column — "
                  "like a customer ID or order ID. Nothing changes until you "
@@ -915,9 +1251,9 @@ if "join" in tab:
                     st.write(f"Left: {info['left_rows']:,} rows  ·  "
                              f"Right: {info['right_rows']:,} rows  →  "
                              f"Joined: {info['joined_rows']:,} rows")
-                    st.write(f"Matched keys: {info['matched_keys']}  ·  "
-                             f"Only in this file: {info['left_only']}  ·  "
-                             f"Only in second file: {info['right_only']}")
+                    st.write(f"Matched keys: {info['matched_keys']:,}  ·  "
+                             f"Only in this file: {info['left_only']:,}  ·  "
+                             f"Only in second file: {info['right_only']:,}")
                     st.dataframe(joined.head(100), width="stretch")
                     if st.button("Use joined data", type="primary", key="join_use"):
                         _set_raw(joined,
@@ -927,11 +1263,12 @@ if "join" in tab:
                         st.success("Joined — now clean it in the Clean tab.")
 
 # ----------------------------------------------------------------- clean ---
-with tab["clean"]:
+if _active_tab == "clean":
     feat_automate.render_undo(st)
     restored = feat_share.render_backups(
         st, df=raw, source_name=st.session_state.source_name,
-        base_dir=_user_root)
+        base_dir=_user_root, storage_key=_skey,
+        key_prefix="s_backup_clean")
     if restored is not None:
         _set_raw(restored,
                  st.session_state.source_name + " (restored from backup)")
@@ -955,13 +1292,14 @@ with tab["clean"]:
     if st.button(_t("clean_my_data"), type="primary", key="clean_btn"):
         feat_automate.push_snapshot(st.session_state, "Before cleaning")
         _opts = feat_automate.to_engine_opts(opts)
-        if (len(raw) > 100_000 and uploaded is not None
-                and uploaded.name.lower().endswith(".csv")):
-            # Big file: clean in chunks (same result, less memory).
-            cleaned, actions = engine.clean_csv_chunked(
-                uploaded.getvalue(), _opts)
-        else:
-            cleaned, actions = engine.clean(raw, _opts)
+        with st.spinner("Cleaning your data…"):
+            if (len(raw) > 100_000 and uploaded is not None
+                    and uploaded.name.lower().endswith(".csv")):
+                # Big file: clean in chunks (same result, less memory).
+                cleaned, actions = engine.clean_csv_chunked(
+                    uploaded.getvalue(), _opts)
+            else:
+                cleaned, actions = engine.clean(raw, _opts)
         st.session_state.clean = cleaned
         st.session_state.actions = actions
         st.session_state.kpis = engine.auto_kpis(cleaned)
@@ -1012,10 +1350,10 @@ with tab["clean"]:
                     st.info("No similar names found in that column.")
                 else:
                     for g in groups:
-                        members = ", ".join(f"{v} ({n})"
+                        members = ", ".join(f"{v} ({n:,})"
                                             for v, n in g["members"])
                         st.write(f"→ **{g['canonical']}**: {members}")
-                    if st.button("Merge these names", type="primary",
+                    if st.button("Merge these names",
                                  key="fuzzy_apply"):
                         mapping = {}
                         for g in groups:
@@ -1042,23 +1380,24 @@ with tab["clean"]:
             st.info("No text column with a manageable number of values "
                     "in this file.")
 
-        _ov = feat_share.render_type_override(st, clean)
-        if _ov is not None:
-            _ov_col = st.session_state.get("s_type_col", "?")
-            _ov_kind = st.session_state.get("s_type_kind", "?")
-            clean = _apply_new_clean(
-                _ov, [("Column type override",
-                       f"{_ov_col} forced to {_ov_kind}")],
-                "Column type override")
-            filtered = clean
-        _nd, _na = feat_share.render_standardize_phones(st, clean)
-        if _nd is not None:
-            clean = _apply_new_clean(_nd, _na, "Standardize phones")
-            filtered = clean
-        _nd, _na = feat_share.render_strip_specials(st, clean)
-        if _nd is not None:
-            clean = _apply_new_clean(_nd, _na, "Strip special characters")
-            filtered = clean
+        with st.expander("More fixes (column type, phones, special characters)"):
+            _ov = feat_share.render_type_override(st, clean)
+            if _ov is not None:
+                _ov_col = st.session_state.get("s_type_col", "?")
+                _ov_kind = st.session_state.get("s_type_kind", "?")
+                clean = _apply_new_clean(
+                    _ov, [("Column type override",
+                           f"{_ov_col} forced to {_ov_kind}")],
+                    "Column type override")
+                filtered = clean
+            _nd, _na = feat_share.render_standardize_phones(st, clean)
+            if _nd is not None:
+                clean = _apply_new_clean(_nd, _na, "Standardize phones")
+                filtered = clean
+            _nd, _na = feat_share.render_strip_specials(st, clean)
+            if _nd is not None:
+                clean = _apply_new_clean(_nd, _na, "Strip special characters")
+                filtered = clean
 
         with st.expander("Recipes & templates"):
             new_df, new_actions = feat_automate.render_recipes(st, raw)
@@ -1123,7 +1462,7 @@ with tab["clean"]:
             feat_automate.render_bulk(st)
 
 # ------------------------------------------------------------------ KPIs ---
-with tab["kpis"]:
+if _active_tab == "kpis":
     if clean is None:
         st.info("Clean the data first — the KPIs will appear here.")
     else:
@@ -1155,7 +1494,7 @@ with tab["kpis"]:
         feat_enrich.render_ai_insights(st, filtered, st.session_state.kpis)
 
 # -------------------------------------------------------------- dashboard ---
-with tab["dashboard"]:
+if _active_tab == "dashboard":
     if clean is None:
         st.info("Clean the data first — the charts will appear here.")
     else:
@@ -1271,84 +1610,89 @@ with tab["dashboard"]:
                     tooltip=[x_col, y_col]).properties(height=380)
             st.altair_chart(chart, width="stretch")
             st.subheader("The numbers behind the chart")
-            st.dataframe(grouped, width="stretch")
+            _grouped_display = grouped.copy()
+            _grouped_display[y_col] = _grouped_display[y_col].map(
+                lambda v: (f"{v:,.2f}" if float(v) % 1 else f"{v:,.0f}")
+                if pd.notna(v) else v)
+            st.dataframe(_grouped_display, width="stretch")
             feat_share.render_chart_png(
                 st, grouped, x_col, y_col, title=f"{x_col} vs {y_col}",
                 kind="line" if chart_type == "Line" else "bar",
                 key_suffix="_dash")
 
         # ---- shareable read-only dashboard link (snapshot, not live data) ----
-        st.subheader("Share this dashboard")
-        st.write("Creates a read-only link anyone can open without logging "
-                 "in. It shows a saved snapshot of the KPIs and the chart "
-                 "numbers — not your files, and not live data. You can "
-                 "revoke it any time in Settings.")
-        if st.button("Share dashboard", key="share_create_btn"):
-            try:
-                _snap_grouped = grouped
-                _snap_gx, _snap_gy = gx, gy
-                if _snap_grouped is None and cat_cols and num_cols:
-                    _snap_gx = cat_cols[0]
-                    _snap_gy = num_cols[0]
-                    _snap_grouped = df.groupby(
-                        _snap_gx, dropna=False)[_snap_gy].sum().reset_index()
-                    _snap_grouped = _snap_grouped.sort_values(
-                        _snap_gy, ascending=False)
-                _rows = []
-                if _snap_grouped is not None:
-                    _rows = [{str(k): (None if pd.isna(v) else v)
-                              for k, v in row.items()}
-                             for row in
-                             _snap_grouped.head(50).to_dict("records")]
-                _token = secrets.token_urlsafe(24)
-                _registry = storage.load_json(_skey, "views", _SHARES_FILENAME)
-                if not isinstance(_registry, dict):
-                    _registry = {}
-                _registry[_token] = {
-                    "title": f"{_brand.get('name', 'Data Cleaner Studio')} — shared dashboard",
-                    "kpis": [{"label": str(k.get("label", "")),
-                              "value": str(k.get("value", ""))}
-                             for k in (st.session_state.kpis or [])],
-                    "rows": _rows,
-                    "x_col": str(_snap_gx) if _snap_gx else None,
-                    "y_col": str(_snap_gy) if _snap_gy else None,
-                    "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-                    "revoked": False,
-                }
-                storage.save_json(_skey, "views", _SHARES_FILENAME, _registry)
-                st.session_state["last_share_token"] = _token
-                st.success("Share link created — it stays valid until you "
-                           "revoke it in Settings.")
-            except Exception as e:  # noqa: BLE001 - show the error, don't crash
-                st.error(f"Could not create the share link: {e}")
-        _last_token = st.session_state.get("last_share_token")
-        if _last_token:
-            st.code(f"?share={_last_token}", language="text")
-            st.write("Full link: your app's web address + "
-                     f"`?share={_last_token}` — for example, on Streamlit "
-                     "Community Cloud, `https://<your-app>.streamlit.app/"
-                     f"?share={_last_token}`.")
+        with st.expander("Share this dashboard"):
+            st.write("Creates a read-only link anyone can open without logging "
+                     "in. It shows a saved snapshot of the KPIs and the chart "
+                     "numbers — not your files, and not live data. You can "
+                     "revoke it any time in Settings.")
+            if st.button("Share dashboard", key="share_create_btn"):
+                try:
+                    _snap_grouped = grouped
+                    _snap_gx, _snap_gy = gx, gy
+                    if _snap_grouped is None and cat_cols and num_cols:
+                        _snap_gx = cat_cols[0]
+                        _snap_gy = num_cols[0]
+                        _snap_grouped = df.groupby(
+                            _snap_gx, dropna=False)[_snap_gy].sum().reset_index()
+                        _snap_grouped = _snap_grouped.sort_values(
+                            _snap_gy, ascending=False)
+                    _rows = []
+                    if _snap_grouped is not None:
+                        _rows = [{str(k): (None if pd.isna(v) else v)
+                                  for k, v in row.items()}
+                                 for row in
+                                 _snap_grouped.head(50).to_dict("records")]
+                    _token = secrets.token_urlsafe(24)
+                    with st.spinner("Creating your share link…"):
+                        _registry = storage.load_json(_skey, "views", _SHARES_FILENAME)
+                        if not isinstance(_registry, dict):
+                            _registry = {}
+                        _registry[_token] = {
+                            "title": f"{_brand.get('name', 'Data Cleaner Studio')} — shared dashboard",
+                            "kpis": [{"label": str(k.get("label", "")),
+                                      "value": str(k.get("value", ""))}
+                                     for k in (st.session_state.kpis or [])],
+                            "rows": _rows,
+                            "x_col": str(_snap_gx) if _snap_gx else None,
+                            "y_col": str(_snap_gy) if _snap_gy else None,
+                            "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                            "revoked": False,
+                        }
+                        storage.save_json(_skey, "views", _SHARES_FILENAME, _registry)
+                    st.session_state["last_share_token"] = _token
+                    st.success("Share link created — it stays valid until you "
+                               "revoke it in Settings.")
+                except Exception as e:  # noqa: BLE001 - show the error, don't crash
+                    st.error(f"Could not create the share link: {e}")
+            _last_token = st.session_state.get("last_share_token")
+            if _last_token:
+                st.code(f"{_app_base_url()}?share={_last_token}",
+                        language="text")
+                st.caption("Anyone with this link can open the read-only dashboard — no login needed.")
 
-        st.subheader("Pivot table")
+        # One pivot table only: render_pivot() prints its own heading.
         feat_combine.render_pivot(st, df)
-        feat_analyse.render_correlations(st, df)
-        feat_analyse.render_forecast(st, df)
-        feat_analyse.render_ask(st, df)
+        with st.expander("More analysis"):
+            feat_analyse.render_correlations(st, df)
+            feat_analyse.render_forecast(st, df)
+            feat_analyse.render_ask(st, df)
 
 # --------------------------------------------------------------- compare ---
 if "compare" in tab:
-    with tab["compare"]:
+    if _active_tab == "compare":
         st.subheader("Compare & combine")
         st.write("See what changed between two files, stack files together, "
                  "or check whether this month's numbers jumped.")
         feat_combine.render_compare(st)
-        feat_combine.render_append(st)
-        if clean is not None:
-            feat_combine.render_anomaly(st, clean)
-        feat_analyse.render_multi_kpi(st)
+        with st.expander("Combine & check (stack files, anomalies, multi-KPI)"):
+            feat_combine.render_append(st)
+            if clean is not None:
+                feat_combine.render_anomaly(st, clean)
+            feat_analyse.render_multi_kpi(st)
 
 # ---------------------------------------------------------------- report ---
-with tab["report"]:
+if _active_tab == "report":
     if clean is None:
         st.info("Clean the data first — the report will appear here.")
     else:
@@ -1388,47 +1732,52 @@ with tab["report"]:
                            key="dl_parquet")
         _oc_opts = (st.session_state.get("clean_opts")
                     or dict(feat_automate.DEFAULT_CLEAN_OPTS))
-        _oc = feat_share.render_one_click(st, raw, _oc_opts, base_dir=_user_root)
+        _oc = feat_share.render_one_click(st, raw, _oc_opts,
+                                          base_dir=_user_root,
+                                          storage_key=_skey)
         _oc_ran = isinstance(_oc, dict) and _oc.get("status") == "done"
         if _oc_ran:
             st.session_state.clean = _oc["cleaned"]
             st.session_state.actions = _oc["actions"]
             st.session_state.kpis = _oc["kpis"]
+            st.session_state.clean_opts = _oc_opts
             _audit("One-click flow",
                    f"{len(raw):,} -> {len(_oc['cleaned']):,} rows")
+            _save_cleaned_copy(_oc["cleaned"], st.session_state.source_name)
             clean = _oc["cleaned"]
             filtered = clean
         feat_enrich.render_versioned_download(st, clean)
-        _num = engine.numeric_cols(clean)
-        _cat = [c for c in clean.columns
-                if str(clean[c].dtype) in ("object", "str")
-                and clean[c].nunique() <= 50]
-        if _cat and _num:
-            _gx, _gy = _cat[0], _num[0]
-            _grouped = clean.groupby(_gx, dropna=False)[_gy].sum().reset_index()
-            _grouped = _grouped.sort_values(_gy, ascending=False)
-            feat_share.render_html_download(
-                st, st.session_state.kpis, st.session_state.actions,
-                _grouped, _gx, _gy, brand=_brand_x)
-            feat_share.render_chart_png(
-                st, _grouped, _gx, _gy, title=f"{_gx} vs {_gy}",
-                key_suffix="_report")
-        feat_share.render_portfolio_download(
-            st, clean, st.session_state.kpis, st.session_state.actions)
-        feat_share.render_styled_excel_download(
-            st, clean, st.session_state.kpis, st.session_state.actions)
-        feat_export.render_pptx_download(
-            st, st.session_state.kpis, st.session_state.actions, raw, clean,
-            brand=_brand_x)
-        feat_export.render_sheets_export(st, clean)
-        if not _oc_ran:
-            feat_export.render_email_schedule(
-                st, st.session_state.kpis, st.session_state.actions, raw, clean)
-        feat_quality.render_audit(st)
+        with st.expander("More export formats & sharing"):
+            _num = engine.numeric_cols(clean)
+            _cat = [c for c in clean.columns
+                    if str(clean[c].dtype) in ("object", "str")
+                    and clean[c].nunique() <= 50]
+            if _cat and _num:
+                _gx, _gy = _cat[0], _num[0]
+                _grouped = clean.groupby(_gx, dropna=False)[_gy].sum().reset_index()
+                _grouped = _grouped.sort_values(_gy, ascending=False)
+                feat_share.render_html_download(
+                    st, st.session_state.kpis, st.session_state.actions,
+                    _grouped, _gx, _gy, brand=_brand_x)
+                feat_share.render_chart_png(
+                    st, _grouped, _gx, _gy, title=f"{_gx} vs {_gy}",
+                    key_suffix="_report")
+            feat_share.render_portfolio_download(
+                st, clean, st.session_state.kpis, st.session_state.actions)
+            feat_share.render_styled_excel_download(
+                st, clean, st.session_state.kpis, st.session_state.actions)
+            feat_export.render_pptx_download(
+                st, st.session_state.kpis, st.session_state.actions, raw, clean,
+                brand=_brand_x)
+            feat_export.render_sheets_export(st, clean)
+            if not _oc_ran:
+                feat_export.render_email_schedule(
+                    st, st.session_state.kpis, st.session_state.actions, raw, clean)
+            feat_quality.render_audit(st)
 
 # ----------------------------------------------------------------- tools ---
 if "tools" in tab:
-    with tab["tools"]:
+    if _active_tab == "tools":
         st.subheader("Watch folder (automatic cleaning)")
         st.write("The app cleans files while it is open. For hands-free "
                  "cleaning, run this small script: drop a messy file into a "
@@ -1445,27 +1794,31 @@ if "tools" in tab:
                  "script at it. It also works with `--once` to clean the files "
                  "already waiting in the folder and stop.")
         feat_schedule.render_schedule_section(st)
-        feat_analyse.render_morning_run(st)
-        feat_analyse.render_shortcuts_panel(st)
-        _restored_tools = feat_share.render_backups(st, base_dir=_user_root)
-        if _restored_tools is not None:
-            _set_raw(_restored_tools,
-                     st.session_state.source_name + " (restored from backup)")
-        st.subheader("Live database connections")
-        _db_df, _db_name = feat_export.render_db_connect(st)
-        if _db_df is not None:
-            _set_raw(_db_df, _db_name, kind="database")
-            _audit("Database load", f"{len(_db_df):,} rows from {_db_name}")
-            st.success(f"Loaded {_db_name} — clean it in the Clean tab.")
+        with st.expander("Shortcuts & morning run"):
+            feat_analyse.render_morning_run(st)
+            feat_analyse.render_shortcuts_panel(st)
+        with st.expander("Backups & live databases"):
+            _restored_tools = feat_share.render_backups(
+                st, base_dir=_user_root, storage_key=_skey,
+                key_prefix="s_backup_tools")
+            if _restored_tools is not None:
+                _set_raw(_restored_tools,
+                         st.session_state.source_name + " (restored from backup)")
+            st.subheader("Live database connections")
+            _db_df, _db_name = feat_export.render_db_connect(st)
+            if _db_df is not None:
+                _set_raw(_db_df, _db_name, kind="database")
+                _audit("Database load", f"{len(_db_df):,} rows from {_db_name}")
+                st.success(f"Loaded {_db_name} — clean it in the Clean tab.")
 
 # ------------------------------------------------------------- tutorial ---
 if "tutorial" in tab:
-    with tab["tutorial"]:
+    if _active_tab == "tutorial":
         feat_tutorial.render_tutorial_page(st, settings_path=_settings_path)
 
 # -------------------------------------------------------------- settings ---
 if "settings" in tab:
-    with tab["settings"]:
+    if _active_tab == "settings":
         st.subheader("Settings")
 
         st.subheader("Account")
@@ -1482,21 +1835,21 @@ if "settings" in tab:
         _config_exists = auth.SUPABASE_CONFIG_PATH.is_file()
         _env_configured = bool((os.environ.get("SUPABASE_URL") or "").strip()
                                and (os.environ.get("SUPABASE_ANON_KEY") or "").strip())
-        st.write(f"Supabase config file (`supabase_config.json`): "
-                 f"{'found ✓' if _config_exists else 'not found'}"
-                 f"{' · also set via environment variables ✓' if _env_configured else ''}")
+        _cloud_ready = _config_exists or _env_configured
+        st.write("Cloud setup: "
+                 f"{'connected ✓' if _cloud_ready else 'not set up yet'}")
         _warn = auth.get_backend_warning()
         if _warn:
             st.warning(_warn)
         if _backend == "local":
-            st.info("Local mode — accounts live in a SQLite file on this "
+            st.info("Local mode — accounts live in a file on this "
                     "server, and your files live in your folder on this "
                     "server. That means: your data leaves your computer — "
                     "it lives on the server. Cloud accounts (including "
                     "Google sign-in) need a Supabase project: create the "
-                    "free project, copy its URL and anon key into "
-                    "`supabase_config.json`, and run `supabase_setup.sql` "
-                    "in the Supabase SQL editor. Full steps: "
+                    "free project, add its URL and anon key to the app's "
+                    "secrets, and run the setup SQL in the Supabase SQL "
+                    "editor. Full steps: "
                     "[README.md — Auth: Supabase](README.md) and "
                     "[DEPLOY.md — section 0](DEPLOY.md). "
                     "Local accounts and Supabase accounts are different "
@@ -1549,121 +1902,123 @@ if "settings" in tab:
             except Exception as e:  # noqa: BLE001
                 st.error(f"Could not save the keys: {e}")
 
-        st.subheader("Your brand (white-label)")
+        # One "Your brand" heading only: render_brand_section prints its own.
         feat_brand.render_brand_section(st, base_dir=_user_root)
 
-        st.subheader("Scheduled refresh jobs")
-        st.write("Jobs refresh a Google Sheet or a database table into "
-                 "your folder on a schedule. The app only manages the "
-                 "list below — the refresh itself is done by the separate "
-                 "scheduler process (`python scheduler.py --daemon`), "
-                 "which is not running inside this app. On Streamlit "
-                 "Community Cloud the daemon cannot run at all.")
-        st.write("The default interval below is 3 days — a regular job "
-                 "keeps your data fresh without refreshing every hour.")
-        _jobs_file = scheduler.DEFAULT_JOBS_FILE
-        _payload, _jobs_err = scheduler.load_registry(_jobs_file)
-        if _jobs_err:
-            st.error(f"Could not read the job registry: {_jobs_err}")
-            _payload = {"version": 1, "jobs": []}
-        _all_jobs = _payload.get("jobs", []) if isinstance(_payload, dict) else []
-        _my_idx = [i for i, j in enumerate(_all_jobs)
-                   if isinstance(j, dict) and j.get("user") == _skey]
-        if not _my_idx:
-            st.info("No scheduled jobs yet.")
-        for _pos, _ji in enumerate(_my_idx):
-            _job = _all_jobs[_ji]
-            _c1, _c2, _c3 = st.columns([3, 1, 1])
-            _c1.write(f"**{_job.get('source_type', '?')}** — "
-                      f"{_job.get('source', '')} → {_job.get('target', '')} "
-                      f"· every {_job.get('interval_minutes', 60)} min · "
-                      f"{'enabled' if _job.get('enabled', True) else 'disabled'}"
-                      f"{' · last: ' + str(_job.get('last_status')) if _job.get('last_status') else ''}"
-                      f"{' · ' + str(_job.get('last_error')) if _job.get('last_error') else ''}")
-            if _c2.button("Enable" if not _job.get("enabled", True) else "Disable",
-                          key=f"sched_toggle_{_pos}"):
-                _all_jobs[_ji]["enabled"] = not _job.get("enabled", True)
-                try:
-                    scheduler.save_registry(_jobs_file, _payload)
-                    st.rerun()
-                except Exception as e:  # noqa: BLE001
-                    st.error(f"Could not save the job list: {e}")
-            if _c3.button("Delete", key=f"sched_delete_{_pos}"):
-                del _all_jobs[_ji]
-                try:
-                    scheduler.save_registry(_jobs_file, _payload)
-                    st.rerun()
-                except Exception as e:  # noqa: BLE001
-                    st.error(f"Could not save the job list: {e}")
-        st.write("Add a job:")
-        _nj_type = st.selectbox("Source type", ["sheets", "db"],
-                                key="sched_new_type",
-                                help="'sheets' = a public Google Sheet link. "
-                                     "'db' = a saved connection name (create it "
-                                     "in the Tools tab first).")
-        _nj_source = st.text_input("Source (sheet link, or saved connection name)",
-                                   key="sched_new_source")
-        _nj_target = st.text_input("Save refreshed data to (inside your folder)",
-                                   value="uploads/refreshed.csv",
-                                   key="sched_new_target")
-        _nj_interval = st.number_input("Every (minutes)", min_value=5,
-                                       max_value=10080, value=4320,
-                                       key="sched_new_interval",
-                                       help="Defaults to 3 days (4320 minutes). "
-                                            "Set it shorter if you want fresher data.")
-        if st.button("Add scheduled job", key="sched_new_add"):
-            if not _nj_source.strip() or not _nj_target.strip():
-                st.error("Fill in the source and the target file first.")
-            else:
-                _all_jobs.append({
-                    "user": _skey, "source_type": _nj_type,
-                    "source": _nj_source.strip(),
-                    "target": _nj_target.strip(),
-                    "interval_minutes": int(_nj_interval),
-                    "last_run": None, "next_run": None, "enabled": True,
-                })
-                try:
-                    scheduler.save_registry(_jobs_file, _payload)
-                    st.success("Job added.")
-                    st.rerun()
-                except Exception as e:  # noqa: BLE001
-                    st.error(f"Could not save the job list: {e}")
-
-        st.subheader("Shared dashboard links")
-        try:
-            _shares = storage.load_json(_skey, "views", _SHARES_FILENAME)
-        except Exception:  # noqa: BLE001 - no share links without storage
-            _shares = None
-        if not isinstance(_shares, dict) or not _shares:
-            st.info("No share links yet — create one from the Dashboard tab.")
-        else:
-            for _pos, (_tok, _snap) in enumerate(sorted(_shares.items())):
-                _c1, _c2 = st.columns([3, 1])
-                _c1.write(f"`?share={_tok[:12]}…` — "
-                          f"created {_snap.get('created_at', '?')} — "
-                          f"{'REVOKED' if _snap.get('revoked') else 'active'}")
-                if not _snap.get("revoked"):
-                    if _c2.button("Revoke", key=f"share_revoke_{_pos}"):
-                        _shares[_tok]["revoked"] = True
-                        try:
-                            storage.save_json(_skey, "views", _SHARES_FILENAME,
-                                              _shares)
-                            st.success("Link revoked — it now shows "
-                                       "'revoked or does not exist'.")
-                            st.rerun()
-                        except Exception as e:  # noqa: BLE001
-                            st.error(f"Could not revoke the link: {e}")
+        with st.expander("Scheduled refresh jobs"):
+            st.write("Jobs refresh a Google Sheet or a database table into "
+                     "your folder on a schedule. The app only manages the "
+                     "list below — the refresh itself is done by the separate "
+                     "scheduler process (`python scheduler.py --daemon`), "
+                     "which is not running inside this app. On Streamlit "
+                     "Community Cloud the daemon cannot run at all.")
+            st.write("The default interval below is 3 days — a regular job "
+                     "keeps your data fresh without refreshing every hour.")
+            _jobs_file = scheduler.DEFAULT_JOBS_FILE
+            _payload, _jobs_err = scheduler.load_registry(_jobs_file)
+            if _jobs_err:
+                st.error(f"Could not read the job registry: {_jobs_err}")
+                _payload = {"version": 1, "jobs": []}
+            _all_jobs = _payload.get("jobs", []) if isinstance(_payload, dict) else []
+            _my_idx = [i for i, j in enumerate(_all_jobs)
+                       if isinstance(j, dict) and j.get("user") == _skey]
+            if not _my_idx:
+                st.info("No scheduled jobs yet.")
+            for _pos, _ji in enumerate(_my_idx):
+                _job = _all_jobs[_ji]
+                _c1, _c2, _c3 = st.columns([3, 1, 1])
+                _c1.write(f"**{_job.get('source_type', '?')}** — "
+                          f"{_job.get('source', '')} → {_job.get('target', '')} "
+                          f"· every {_job.get('interval_minutes', 60)} min · "
+                          f"{'enabled' if _job.get('enabled', True) else 'disabled'}"
+                          f"{' · last: ' + str(_job.get('last_status')) if _job.get('last_status') else ''}"
+                          f"{' · ' + str(_job.get('last_error')) if _job.get('last_error') else ''}")
+                if _c2.button("Enable" if not _job.get("enabled", True) else "Disable",
+                              key=f"sched_toggle_{_pos}"):
+                    _all_jobs[_ji]["enabled"] = not _job.get("enabled", True)
+                    try:
+                        scheduler.save_registry(_jobs_file, _payload)
+                        st.rerun()
+                    except Exception as e:  # noqa: BLE001
+                        st.error(f"Could not save the job list: {e}")
+                if _c3.button("Delete", key=f"sched_delete_{_pos}"):
+                    del _all_jobs[_ji]
+                    try:
+                        scheduler.save_registry(_jobs_file, _payload)
+                        st.rerun()
+                    except Exception as e:  # noqa: BLE001
+                        st.error(f"Could not save the job list: {e}")
+            st.write("Add a job:")
+            _nj_type = st.selectbox("Source type", ["sheets", "db"],
+                                    key="sched_new_type",
+                                    help="'sheets' = a public Google Sheet link. "
+                                         "'db' = a saved connection name (create it "
+                                         "in the Tools tab first).")
+            _nj_source = st.text_input("Source (sheet link, or saved connection name)",
+                                       key="sched_new_source")
+            _nj_target = st.text_input("Save refreshed data to (inside your folder)",
+                                       value="uploads/refreshed.csv",
+                                       key="sched_new_target")
+            _nj_interval = st.number_input("Every (minutes)", min_value=5,
+                                           max_value=10080, value=4320,
+                                           key="sched_new_interval",
+                                           help="Defaults to 3 days (4320 minutes). "
+                                                "Set it shorter if you want fresher data.")
+            if st.button("Add scheduled job", key="sched_new_add"):
+                if not _nj_source.strip() or not _nj_target.strip():
+                    st.error("Fill in the source and the target file first.")
                 else:
-                    _c2.write("—")
+                    _all_jobs.append({
+                        "user": _skey, "source_type": _nj_type,
+                        "source": _nj_source.strip(),
+                        "target": _nj_target.strip(),
+                        "interval_minutes": int(_nj_interval),
+                        "last_run": None, "next_run": None, "enabled": True,
+                    })
+                    try:
+                        scheduler.save_registry(_jobs_file, _payload)
+                        st.success("Job added.")
+                        st.rerun()
+                    except Exception as e:  # noqa: BLE001
+                        st.error(f"Could not save the job list: {e}")
 
-        st.subheader("Still needs your details")
-        st.write("- **Email reports (SMTP):** the Report tab asks for your "
-                 "SMTP server, port, username, app password and recipient. "
-                 "Nothing is sent until you fill those in and press send.")
-        st.write("- **Export to Google Sheets:** needs your Google "
-                 "credentials and the Sheets API — not connected yet.")
-        st.write("- **Live databases:** need your server details and the "
-                 "right driver installed on the server (see the Tools tab).")
-        st.write("- **Hosting:** nothing is deployed yet. Pick a host in "
-                 "DEPLOY.md when you are ready — it needs your decision "
-                 "and, for paid options, your payment details.")
+        with st.expander("Shared dashboard links"):
+            try:
+                _shares = storage.load_json(_skey, "views", _SHARES_FILENAME)
+            except Exception:  # noqa: BLE001 - no share links without storage
+                _shares = None
+            if not isinstance(_shares, dict) or not _shares:
+                st.info("No share links yet — create one from the Dashboard tab.")
+            else:
+                for _pos, (_tok, _snap) in enumerate(sorted(_shares.items())):
+                    _c1, _c2 = st.columns([3, 1])
+                    _c1.write(f"`?share={_tok[:12]}…` — "
+                              f"created {_snap.get('created_at', '?')} — "
+                              f"{'REVOKED' if _snap.get('revoked') else 'active'}")
+                    if not _snap.get("revoked"):
+                        if _c2.button("Revoke", key=f"share_revoke_{_pos}"):
+                            _shares[_tok]["revoked"] = True
+                            try:
+                                storage.save_json(_skey, "views", _SHARES_FILENAME,
+                                                  _shares)
+                                st.success("Link revoked — it now shows "
+                                           "'revoked or does not exist'.")
+                                st.rerun()
+                            except Exception as e:  # noqa: BLE001
+                                st.error(f"Could not revoke the link: {e}")
+                    else:
+                        _c2.write("—")
+
+        with st.expander("Still needs your details"):
+            st.write("- **Email reports (SMTP):** the Report tab asks for your "
+                     "SMTP server, port, username, app password and recipient. "
+                     "Nothing is sent until you fill those in and press send.")
+            st.write("- **Export to Google Sheets:** needs your Google "
+                     "credentials and the Sheets API — not connected yet.")
+            st.write("- **Live databases:** need your server details and the "
+                     "right driver installed on the server (see the Tools tab).")
+            st.write("- **Hosting:** "
+                     + ("cloud (Streamlit Cloud)" if _backend != "local"
+                        else "this computer")
+                     + ". The app is deployed and running here — see DEPLOY.md "
+                       "for the hosting notes.")

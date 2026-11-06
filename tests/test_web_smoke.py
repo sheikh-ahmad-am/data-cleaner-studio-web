@@ -47,6 +47,13 @@ def find_text_input(at, label):
     raise AssertionError(f"text input {label!r} missing")
 
 
+def goto_section(at, label):
+    """Pick a section in the sticky section switcher (radio 'Section')."""
+    radio = next(r for r in at.radio if r.label == "Section")
+    radio.set_value(label).run()
+    assert not at.exception, f"exception going to {label}: {at.exception}"
+
+
 def main():
     tmp = tempfile.mkdtemp(prefix="dcs-web-test-")
     tmp_path = Path(tmp)
@@ -87,22 +94,18 @@ def main():
         "failed login must not open the app"
     print("wrong-password login fails as expected")
 
-    # ---- 3. Sign up, then log in. ----
+    # ---- 3. Sign up logs the user straight in (no manual login step). ----
     at.radio[0].set_value("Sign up").run()
     find_text_input(at, "Username").set_value("alice1").run()
     find_text_input(at, "Password").set_value("password123").run()
     find_button(at, "Create account").click().run()
     assert not at.exception, f"exception on signup: {at.exception}"
+    assert any(b.label == "Try the messy sample" for b in at.button), \
+        "signup should log the user straight in"
     assert any("Account created" in v for v in vals(at.success)), \
         "signup should confirm the account was created"
-    # Switch the mode radio back to Log in (values persist).
-    at.radio[0].set_value("Log in").run()
-    find_button(at, "Log in").click().run()
-    assert not at.exception, f"exception on login: {at.exception}"
-    assert any(b.label == "Try the messy sample" for b in at.button), \
-        "login should open the app"
     assert at.session_state.get("current_user", {}).get("username") == "alice1"
-    print("signup -> login works")
+    print("signup -> logged in straight away (auto-login)")
 
     # ---- 4. Upload the sample CSV: stored per-user, data loads. ----
     up = next(f for f in at.file_uploader if f.label == "Upload a file")
@@ -115,18 +118,22 @@ def main():
     print("upload works: 80 rows, saved to alice1/uploads/")
 
     # ---- 5. Clean -> 77 rows; dashboard renders; chart types switch. ----
+    goto_section(at, "Clean")
     find_button(at, "Clean my data").click().run()
     assert not at.exception, f"exception after cleaning: {at.exception}"
     clean = at.session_state["clean"]
     assert clean is not None and len(clean) == 77, "cleaned data should have 77 rows"
     assert storage.list_files("alice1", "cleaned"), \
         "cleaned copy should be saved to alice1/cleaned/"
+    goto_section(at, "Dashboard")
     assert any("Group by" in s.label for s in at.selectbox), "dashboard X picker missing"
+    goto_section(at, "Report")
     assert any("Download cleaned Excel" in b.label for b in at.download_button), \
         "excel download missing"
     assert any("Download PDF report" in b.label for b in at.download_button), \
         "PDF download missing"
     print("clean works: 77 rows, cleaned copy saved, dashboard + report render")
+    goto_section(at, "Dashboard")
     for kind in ("Histogram", "Scatter", "Box plot", "Heatmap", "Treemap",
                  "Funnel"):
         chart = next(s for s in at.selectbox if s.label == "Chart")
@@ -135,6 +142,7 @@ def main():
     print("Histogram / Scatter / Box plot / Heatmap / Treemap / Funnel render")
 
     # v1.2 checkbox regression: unchecking "Drop duplicate rows" keeps 80.
+    goto_section(at, "Clean")
     drop_box = next(c for c in at.checkbox if c.label == "Drop duplicate rows")
     drop_box.uncheck().run()
     find_button(at, "Clean my data").click().run()
@@ -148,6 +156,7 @@ def main():
     print("checkboxes really control cleaning (80 vs 77 rows)")
 
     # ---- 6. Share dashboard: renders without login; revoke -> not found. ----
+    goto_section(at, "Dashboard")
     find_button(at, "Share dashboard").click().run()
     assert not at.exception, f"exception on share: {at.exception}"
     token = at.session_state.get("last_share_token")
@@ -169,6 +178,7 @@ def main():
     assert len(shared.metric) > 0, "shared dashboard should show KPI metrics"
     print("share link renders the dashboard without login")
 
+    goto_section(at, "Settings")
     find_button(at, "Revoke").click().run()
     assert not at.exception, f"exception on revoke: {at.exception}"
     registry = storage.load_json("alice1", "views", "shares.json")

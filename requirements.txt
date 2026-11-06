@@ -1,6 +1,17 @@
 streamlit==1.66.1
+# Login cookie (item 16): persists the session token in the browser
+# so a refresh does not log the user out. streamlit-cookies-controller
+# 0.0.4 works with streamlit==1.66.1 and on Streamlit Cloud; if it is
+# ever unavailable the app falls back to session-state-only login.
+streamlit-cookies-controller==0.0.4
 pandas==3.1.1
 altair
 openpyxl
 pypdf
 supabase==2.34.0
+# Live database drivers for the Tools tab (feat_db.py): without these the
+# Live DB test-connection path is dead on Streamlit Cloud. Versions match
+# the drivers bundled in the .exe build (see feat_db.py header).
+mysql-connector-python==26.10.0
+psycopg2-binary==2.9.13
+pymssql==2.4.6

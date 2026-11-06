@@ -288,7 +288,7 @@ def test_compare_kpis_on_sample():
     clean = _sample_clean()
     kpis = engine.auto_kpis(clean)
     labels = [k["label"] for k in kpis]
-    assert "Total unit_price" in labels and "Top category" in labels
+    assert "Revenue (quantity x unit_price)" in labels and "Top category" in labels
     r = fc.compare_kpis(kpis, kpis)
     assert all(x["pct_change"] == 0.0 and x["flagged"] is False for x in r)
     half = clean.iloc[:40].copy()

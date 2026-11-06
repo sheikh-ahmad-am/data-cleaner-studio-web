@@ -617,8 +617,8 @@ def load_workspace(base_dir=None):
 THEMES = {
     "Dark green": {
         "background": "#121212", "text": "#e8e8e8",
-        "accent": "#6fff54", "secondary": "#1e1e1e",
-        "button_text": "#121212",
+        "accent": "#2F5D5A", "secondary": "#1e1e1e",
+        "button_text": "#FFFFFF",
     },
     "Dark blue": {
         "background": "#0d1b2a", "text": "#e0e7ff",

@@ -72,7 +72,7 @@ def test_apply_recipe_options_actually_work():
     assert len(cleaned) == 77 and len(cleaned.columns) == 9, len(cleaned)
     # The sample's known totals still hold after a full clean.
     kpis = {k["label"]: k["value"] for k in engine.auto_kpis(cleaned)}
-    assert kpis["Total unit_price"] == "78,323.0", kpis
+    assert kpis["Revenue (quantity x unit_price)"] == "207,992.00", kpis
     assert kpis["Top category"] == "Electronics (33)", kpis
     opts = dict(fa.DEFAULT_CLEAN_OPTS)
     opts["drop_dupes"] = False

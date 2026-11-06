@@ -213,6 +213,37 @@ def test_forecast_sample():
     print("forecast sample OK: slope 0.38/day, next-day guess 1,083.28")
 
 
+def test_forecast_flat():
+    # Perfectly flat: guess is the last value, words say flat.
+    flat = pd.DataFrame({
+        "day": pd.date_range("2026-01-01", periods=5, freq="D"),
+        "sales": [3.0, 3.0, 3.0, 3.0, 3.0]})
+    out = fa.forecast_next(flat, "day", "sales")
+    assert out["slope_per_day"] == 0.0
+    assert out["forecast"] == 3.0
+    assert out["last_value"] == 3.0
+    assert "flat" in out["words"] and "no clear trend" in out["words"]
+    # Near-flat wobble: slope ~0.001/day, still flat, guess = last value.
+    wobble = pd.DataFrame({
+        "day": pd.date_range("2026-01-01", periods=5, freq="D"),
+        "sales": [3.00, 3.01, 2.99, 3.00, 3.01]})
+    out2 = fa.forecast_next(wobble, "day", "sales")
+    assert out2["slope_per_day"] == 0.0
+    assert out2["forecast"] == out2["last_value"] == 3.01
+    assert "flat" in out2["words"]
+    # Reported contradiction: 29 days at 2.69 then 3.00 — slope ~0.002,
+    # so the old line-based guess (~2.73) contradicted the last value
+    # (3.00) while the words said "rising by about 0.00 per day".
+    jumped = pd.DataFrame({
+        "day": pd.date_range("2026-01-01", periods=30, freq="D"),
+        "sales": [2.69] * 29 + [3.00]})
+    out3 = fa.forecast_next(jumped, "day", "sales")
+    assert out3["slope_per_day"] == 0.0
+    assert out3["forecast"] == out3["last_value"] == 3.00
+    assert "flat" in out3["words"] and "no clear trend" in out3["words"]
+    print("forecast flat OK")
+
+
 def test_render_what_if():
     clean = _sample_clean()
     # Total unit_price is 78,323.0 on the cleaned sample.
@@ -349,7 +380,7 @@ def test_client_mode():
     kpis = engine.auto_kpis(clean)
     summary = fa.client_summary(clean, kpis)
     assert "77 rows" in summary
-    assert "78,323.0" in summary  # Total unit_price from the KPIs
+    assert "207,992.00" in summary  # Revenue (quantity x unit_price) from the KPIs
     assert "Ananya Rao (13 rows)" in summary  # most common customer
     assert fa.client_summary(pd.DataFrame(), None) == "No data loaded yet."
     assert fa.client_summary(None, None) == "No data loaded yet."
@@ -427,11 +458,11 @@ def test_multi_file_kpis():
     small = pd.DataFrame({"qty": [1, 2, 3], "city": ["Delhi", "Delhi", "Patna"]})
     table = fa.multi_file_kpis({"jan.csv": clean, "feb.csv": small})
     assert list(table["file"]) == ["jan.csv", "feb.csv"]
-    assert table.loc[0, "Total unit_price"] == "78,323.0"
+    assert table.loc[0, "Revenue (quantity x unit_price)"] == "207,992.00"
     assert table.loc[0, "Rows"] == "77"
     assert table.loc[1, "Rows"] == "3"
-    assert table.loc[1, "Total qty"] == "6.0"
-    assert table.loc[1, "Total unit_price"] == ""  # KPI feb lacks: blank
+    assert table.loc[1, "Sum of qty"] == "6"
+    assert table.loc[1, "Revenue (quantity x unit_price)"] == ""  # KPI feb lacks: blank
     one = fa.multi_file_kpis({"only.csv": clean})
     assert len(one) == 1 and one.iloc[0]["file"] == "only.csv"
     try:
@@ -461,14 +492,16 @@ def test_render_multi_kpi():
 
 def test_answer_question_sample():
     clean = _sample_clean()
+    # "Sold the most" is a SALES question: West wins by revenue
+    # (quantity x unit_price = 52,346.00), not by its 19 rows.
     assert fa.answer_question(clean, "which region sold the most?") == (
-        "The most common Region is West (19 rows).")
+        "West sold the most, by revenue (52,346.00).")
     assert fa.answer_question(clean, "what is the most common category?") == (
         "The most common Category is Electronics (33 rows).")
     assert fa.answer_question(clean, "what is the total unit_price?") == (
         "The total Unit Price is 78,323.00.")
     assert fa.answer_question(clean, "what is the average quantity?") == (
-        "The average Quantity is 2.58.")
+        "The average Quantity is 2.70.")
     assert fa.answer_question(clean, "what is the highest unit_price?") == (
         "The highest Unit Price is 1,599.00.")
     assert fa.answer_question(clean, "what is the lowest unit_price?") == (
@@ -489,12 +522,54 @@ def test_answer_question_sample():
     print("answer_question sample OK")
 
 
+def test_answer_question_sales_measure():
+    # Row-count winner (East, 4 rows) is NOT the sales winner: West
+    # sold more units with fewer rows — the answer must say so, and
+    # name the measure.
+    qty_only = pd.DataFrame({
+        "region": ["East", "East", "East", "East", "West", "West"],
+        "quantity": [1, 1, 1, 1, 10, 10]})
+    assert fa.answer_question(qty_only, "which region sold the most?") == (
+        "West sold the most, by total quantity sold (20.00).")
+    # Quantity x price pair: revenue wins over both row count (East,
+    # 3 rows) and total quantity (East, 30 vs West, 4).
+    revenue = pd.DataFrame({
+        "region": ["East", "East", "East", "West", "West"],
+        "quantity": [10, 10, 10, 2, 2],
+        "unit_price": [1, 1, 1, 100, 100]})
+    assert fa.answer_question(revenue, "which region sold the most?") == (
+        "West sold the most, by revenue (400.00).")
+    # A named revenue column is used directly.
+    with_revenue = pd.DataFrame({
+        "region": ["East", "East", "West"],
+        "revenue": [5.0, 5.0, 50.0]})
+    assert fa.answer_question(
+        with_revenue, "which region sold the most?") == (
+        "West sold the most, by revenue (50.00).")
+    # No quantity, no price, no number column at all: say so plainly,
+    # never fall back to a row count as sales.
+    no_measure = pd.DataFrame({
+        "region": ["East", "West", "East", "West"],
+        "note": ["a", "b", "c", "d"]})
+    assert fa.answer_question(no_measure, "which region sold the most?") == (
+        "I can't measure sales from this data — there is no quantity "
+        "or price column to add up.")
+    # A plain "most common" question still answers with a row count —
+    # it is not a sales question.
+    assert fa.answer_question(
+        qty_only, "what is the most common region?") == (
+        "The most common Region is East (4 rows).")
+    print("answer_question sales measure OK")
+
+
 def test_render_ask_rule_and_no_key():
     clean = _sample_clean()
     fake = FakeSt(presets={"an_ask_q": "which region sold the most?",
                            "an_ask_run": True})
     fa.render_ask(fake, clean)
-    assert "West (19 rows)" in _called_text(fake, "success")
+    success = _called_text(fake, "success")
+    assert "West sold the most, by revenue" in success
+    assert "19 rows" not in success  # never a row count as sales
     # No pattern + no API key (real ai_settings, no key set) -> plain
     # explanation, and ask_ai is never reached.
     fake2 = FakeSt(presets={"an_ask_q": "tell me a joke",
@@ -655,6 +730,51 @@ def _test_render_whats_new_inner(tmp_seen):
     print("render whats-new OK")
 
 
+def test_whats_new_per_user_storage():
+    """Dismiss persists PER USER through storage.save_json/load_json
+    (the path the cloud mode uses) — mocked with an in-memory store,
+    so nothing touches the live Supabase project or the local
+    data/users tree."""
+    import storage
+    store = {}
+    old_save = storage.save_json
+    old_load = storage.load_json
+
+    def _fake_save(username, subfolder, filename, obj):
+        store[(username, subfolder, filename)] = obj
+        return Path("fake") / filename
+
+    def _fake_load(username, subfolder, filename):
+        return store.get((username, subfolder, filename))
+
+    storage.save_json = _fake_save
+    storage.load_json = _fake_load
+    try:
+        assert fa.should_show_whats_new(user_key="alice") is True
+        fa.mark_whats_new_seen(user_key="alice")
+        assert fa.should_show_whats_new(user_key="alice") is False
+        # Another user still sees it — the dismiss is per user.
+        assert fa.should_show_whats_new(user_key="bob") is True
+        assert store[("alice", "views", "whats_new_seen.json")] == {
+            "version": "1.3"}
+        # Render path: clicking "Got it" marks THIS user seen, and a
+        # reload (second render) shows nothing for them.
+        fake = FakeSt(presets={"an_whats_new_seen": True})
+        fa.render_whats_new(fake, user_key="bob")
+        assert _called(fake, "subheader")
+        assert "What's new in v1.3" in _called_text(fake, "subheader")
+        assert fa.should_show_whats_new(user_key="bob") is False
+        fake2 = FakeSt()
+        fa.render_whats_new(fake2, user_key="bob")
+        assert not _called(fake2, "subheader")
+        # ...while a third user still gets the box.
+        assert fa.should_show_whats_new(user_key="carol") is True
+    finally:
+        storage.save_json = old_save
+        storage.load_json = old_load
+    print("whats-new per-user storage OK")
+
+
 # --------------------------------------------------------------------------
 # runner
 # --------------------------------------------------------------------------
@@ -664,6 +784,7 @@ if __name__ == "__main__":
     test_correlations_sample()
     test_forecast_synthetic()
     test_forecast_sample()
+    test_forecast_flat()
     test_render_what_if()
     test_trust_synthetic()
     test_trust_sample()
@@ -675,6 +796,7 @@ if __name__ == "__main__":
     test_multi_file_kpis()
     test_render_multi_kpi()
     test_answer_question_sample()
+    test_answer_question_sales_measure()
     test_render_ask_rule_and_no_key()
     test_render_ask_ai_path_stubbed()
     test_morning_run_files_exist()
@@ -683,4 +805,5 @@ if __name__ == "__main__":
     test_render_morning_run()
     test_whats_new()
     test_render_whats_new()
+    test_whats_new_per_user_storage()
     print("ALL ANALYSE TESTS PASSED")

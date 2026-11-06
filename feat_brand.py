@@ -9,7 +9,7 @@ puts the plain "Data Cleaner Studio" brand back.
 
 Stored fields (brand.json):
   name   : the brand name shown in titles ("Data Cleaner Studio")
-  accent : the accent colour, a #RRGGBB hex string ("#6fff54")
+  accent : the accent colour, a #RRGGBB hex string ("#2F5D5A")
   logo   : "logo.png" once a logo has been saved, else None
 
 Contract:
@@ -36,7 +36,11 @@ BRAND_FILE = "brand.json"
 LOGO_FILE = "logo.png"
 
 DEFAULT_NAME = "Data Cleaner Studio"
-DEFAULT_ACCENT = "#6fff54"
+# Muted deep teal — the app's one accent (see feat_mobile.py for the
+# full palette). Never a bright/neon colour here: the brand default
+# must match the app theme.
+DEFAULT_ACCENT = "#2F5D5A"
+ACCENT_HOVER = "#264845"
 
 DEFAULT_BRAND = {"name": DEFAULT_NAME, "accent": DEFAULT_ACCENT, "logo": None}
 
@@ -127,16 +131,29 @@ def save_logo(uploaded_bytes, base_dir=None) -> str:
 def brand_css(accent) -> str:
     """A <style> block that recolours the app's primary buttons,
     links and headers to the accent colour. Safe to inject with
-    st.markdown(..., unsafe_allow_html=True)."""
+    st.markdown(..., unsafe_allow_html=True).
+
+    Primary buttons get white text: the default accent is a deep
+    teal, and dark text on it would be unreadable. Headings are NOT
+    recoloured here — the palette keeps them deep charcoal ink, and
+    the theme stylesheet owns them. Links and download-button borders
+    take the accent. Inject this AFTER the theme stylesheet so a
+    user-picked accent wins the tie on buttons and links; with the
+    default accent the result is identical to the theme."""
     accent = _clean_accent(accent)
+    hover = ACCENT_HOVER if accent == DEFAULT_ACCENT else accent
     return f"""<style>
 .stButton > button[kind="primary"], .stButton > button[data-testid="stBaseButton-primary"] {{
     background-color: {accent} !important;
     border-color: {accent} !important;
-    color: #121212 !important;
+    color: #FFFFFF !important;
 }}
-a {{ color: {accent} !important; }}
-h1, h2, h3 {{ color: {accent} !important; }}
+.stButton > button[kind="primary"]:hover, .stButton > button[data-testid="stBaseButton-primary"]:hover {{
+    background-color: {hover} !important;
+    border-color: {hover} !important;
+    color: #FFFFFF !important;
+}}
+.stApp a {{ color: {accent} !important; }}
 .stDownloadButton > button {{
     border-color: {accent} !important;
 }}

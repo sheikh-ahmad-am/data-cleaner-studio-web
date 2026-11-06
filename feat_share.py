@@ -68,14 +68,19 @@ Widget keys (all start with "s_", none doubles as a data key):
   s_phone_col, s_phone_apply, s_strip_col, s_strip_apply,
   s_goal_col, s_goal_agg, s_goal_target, s_goal_set, s_search_q,
   s_sort_col, s_sort_dir, s_recent_keep, s_recent_open_{i},
-  s_backup_now, s_backup_restore_{i}, s_oneclick_run,
+  <key_prefix>_now, <key_prefix>_restore_{i} (render_backups takes a
+  key_prefix so the Clean and Tools tabs can both render the backup
+  list in one run without duplicate widget keys), s_oneclick_run,
   s_html_dl, s_portfolio_dl, s_chart_png_dl, s_chart_kind,
   s_styled_xlsx_dl
 
 Local files / folders (all inside the app folder, next to this file):
   - recent.json : JSON list of the last 5 recent files
   - recent/     : local copies of files the user asked to keep
-  - backups/    : timestamped CSV copies of the raw frame
+  - backups/    : timestamped CSV copies of the raw frame (local mode).
+    In cloud mode backups live in Supabase Storage instead (see
+    backup_raw / list_backups / restore_backup) and the UI shows
+    only the file name, never a server path.
 """
 
 from __future__ import annotations
@@ -92,6 +97,8 @@ from pathlib import Path
 import pandas as pd
 
 import engine
+import privacy
+import storage
 
 __all__ = [
     "suggest_fixes", "apply_suggestion",
@@ -135,7 +142,7 @@ CLEAN_OPT_KEYS = list(OPT_KEY_MAP)
 DEFAULT_CLEAN_OPTS = {k: True for k in CLEAN_OPT_KEYS}
 
 _BG = "#121212"
-_GREEN = "#6fff54"
+_GREEN = "#2F5D5A"
 _TEXT = "#f2f2f2"
 _MUTED = "#9a9a9a"
 _GRID = "#2e2e2e"
@@ -245,8 +252,11 @@ def _is_phone_column(series: pd.Series) -> bool:
 
 
 def _mixed_case_columns(df: pd.DataFrame) -> dict:
-    """{column: n} for category columns where the same value appears in
-    more than one case (Electronics / ELECTRONICS / electronics)."""
+    """{column: (n, (example_a, example_b))} for category columns where
+    the same value appears in more than one case (Electronics /
+    ELECTRONICS / electronics). n counts the extra cases; the example
+    pair is two real values from the column itself, so a suggestion
+    about Status never shows Category's values."""
     found = {}
     for col in df.columns:
         s = df[col]
@@ -260,7 +270,13 @@ def _mixed_case_columns(df: pd.DataFrame) -> dict:
         lowered = vals.str.lower()
         for low, group in vals.groupby(lowered):
             if group.nunique() > 1:
-                found[col] = found.get(col, 0) + int(group.nunique() - 1)
+                distinct = list(dict.fromkeys(str(v) for v in group))
+                pair = (distinct[0], distinct[1])
+                if col in found:
+                    n, _pair = found[col]
+                    found[col] = (n + int(group.nunique() - 1), _pair)
+                else:
+                    found[col] = (int(group.nunique() - 1), pair)
     return found
 
 
@@ -307,10 +323,10 @@ def suggest_fixes(df: pd.DataFrame) -> list:
                  f"{engine._pretty(col)} look like dates.",
                  {"type": "parse_dates", "column": str(col)})
 
-    for col, n in _mixed_case_columns(df).items():
+    for col, (n, (ex_a, ex_b)) in _mixed_case_columns(df).items():
         _add("Set categories to one case",
              f"{engine._pretty(col)} has the same value written in "
-             f"{n + 1} different cases — e.g. Electronics and ELECTRONICS.",
+             f"{n + 1} different cases — e.g. {ex_a} and {ex_b}.",
              {"type": "set_case_title", "column": str(col)})
 
     for col in df.columns:
@@ -426,7 +442,14 @@ def apply_suggestion(df: pd.DataFrame, action: dict) -> tuple:
     if atype == "fill_missing":
         missing = int(out[col].isna().sum())
         if pd.api.types.is_numeric_dtype(out[col]):
-            out[col] = out[col].fillna(out[col].median())
+            # Same rule as engine.clean (engine._median_fill_value):
+            # the median, rounded to a whole number for integer-like
+            # columns (halves away from zero); genuinely fractional
+            # columns keep the fractional median. A column with no
+            # values at all has no median, so it stays empty.
+            if pd.notna(out[col].median()):
+                fill_value, _integer_like = engine._median_fill_value(out[col])
+                out[col] = out[col].fillna(fill_value)
             return out, (f"Fill missing: {col}", f"{missing} filled with median")
         if pd.api.types.is_datetime64_any_dtype(out[col]):
             return out, (f"Missing left blank: {col}", f"{missing} date(s) left empty")
@@ -666,18 +689,31 @@ def load_recent(name, base_dir=None) -> pd.DataFrame:
 # 9. Backup before cleaning
 # --------------------------------------------------------------------------
 
-def backup_raw(df: pd.DataFrame, source_name, base_dir=None) -> str:
-    """Save a copy of the raw frame to ``backups/`` named with a
-    timestamp, e.g. messy_sales_2026-11-06_0130.csv. Returns the path
-    as a string."""
-    base = _base_dir(base_dir)
-    folder = base / BACKUP_DIR
-    folder.mkdir(parents=True, exist_ok=True)
+def backup_raw(df: pd.DataFrame, source_name, base_dir=None,
+               storage_key=None) -> str:
+    """Save a copy of the raw frame, named with a timestamp, e.g.
+    messy_sales_2026-11-06_0130.csv. Returns the stored path as a
+    string: the local file path in local mode, the Supabase Storage
+    object path in cloud mode (when ``storage_key`` is given and the
+    app runs in Supabase mode — backups then survive a redeploy).
+    Callers must NEVER show this return value to the user: the UI
+    shows only the file name (see render_backups / render_one_click),
+    never a server path."""
     stem = Path(str(source_name or "data")).stem
     slug = _safe_filename(stem) or "data"
     stamp = datetime.now().strftime("%Y-%m-%d_%H%M")
     candidate = f"{slug}_{stamp}.csv"
     n = 2
+    if storage_key is not None and storage._is_supabase_mode():
+        while candidate in storage.list_files(storage_key, "backups"):
+            candidate = f"{slug}_{stamp}_{n}.csv"
+            n += 1
+        data = df.to_csv(index=False).encode("utf-8")
+        return str(storage.save_file(storage_key, "backups", candidate,
+                                    data))
+    base = _base_dir(base_dir)
+    folder = base / BACKUP_DIR
+    folder.mkdir(parents=True, exist_ok=True)
     while (folder / candidate).exists():
         candidate = f"{slug}_{stamp}_{n}.csv"
         n += 1
@@ -686,9 +722,18 @@ def backup_raw(df: pd.DataFrame, source_name, base_dir=None) -> str:
     return str(path)
 
 
-def list_backups(base_dir=None) -> list:
-    """Backups in ``backups/``, newest first: [{name, path, when,
-    size_bytes}]."""
+def list_backups(base_dir=None, storage_key=None) -> list:
+    """Backups, newest first: [{name, path, when, size_bytes}].
+
+    In cloud mode (``storage_key`` given and Supabase mode on) the
+    list comes from Supabase Storage; "when" and "size_bytes" are
+    not reported by a Storage listing, so they come back as "" /
+    None and the UI omits them. In local mode the entries carry the
+    local file path, mtime and size as before."""
+    if storage_key is not None and storage._is_supabase_mode():
+        return [{"name": name, "path": name, "when": "",
+                 "size_bytes": None}
+                for name in storage.list_files(storage_key, "backups")]
     folder = _base_dir(base_dir) / BACKUP_DIR
     if not folder.exists():
         return []
@@ -702,10 +747,23 @@ def list_backups(base_dir=None) -> list:
     return out
 
 
-def restore_backup(path) -> pd.DataFrame:
+def restore_backup(path, base_dir=None, storage_key=None) -> pd.DataFrame:
     """Load a backup CSV back into a DataFrame. Raises
-    FileNotFoundError when the file is gone."""
+    FileNotFoundError when the file is gone.
+
+    ``path`` is an entry's "path" from list_backups: a local file
+    path in local mode, a bare backup name in cloud mode (read back
+    from Supabase Storage when ``storage_key`` is given). A bare
+    name in local mode is resolved under ``base_dir``/backups/."""
+    if storage_key is not None and storage._is_supabase_mode():
+        name = Path(str(path)).name
+        data = storage.read_file(storage_key, "backups", name)
+        return engine.load_file(name, data)
     path = Path(path)
+    if not path.exists() and base_dir is not None:
+        candidate = _base_dir(base_dir) / BACKUP_DIR / path.name
+        if candidate.exists():
+            path = candidate
     if not path.exists():
         raise FileNotFoundError(f"No such backup file: {path}")
     return engine.load_file(path.name, path.read_bytes())
@@ -715,14 +773,14 @@ def restore_backup(path) -> pd.DataFrame:
 # 11. Standalone HTML dashboard
 # --------------------------------------------------------------------------
 
-def _svg_bar_chart(grouped_df, x_col, y_col, title, accent="#6fff54") -> str:
+def _svg_bar_chart(grouped_df, x_col, y_col, title, accent="#2F5D5A") -> str:
     """Inline SVG vertical bar chart, hand-drawn (no JS, no libraries).
-    Dark theme, bars in the accent colour (neon-green by default)."""
+    Dark theme, bars in the accent colour (deep teal by default)."""
     if grouped_df is None or len(grouped_df) == 0 or x_col not in grouped_df.columns \
             or y_col not in grouped_df.columns:
         return "<p>No chart data yet — clean the data and pick a group and a number first.</p>"
     bar_color = accent if isinstance(accent, str) and accent.startswith("#") \
-        and len(accent) == 7 else "#6fff54"
+        and len(accent) == 7 else "#2F5D5A"
     data = grouped_df.head(12).copy()
     labels = [str(v)[:18] for v in data[x_col]]
     values = [float(v) for v in pd.to_numeric(data[y_col], errors="coerce").fillna(0)]
@@ -774,7 +832,7 @@ def html_dashboard_bytes(kpis, actions, grouped_df, x_col, y_col,
     kpis = kpis or []
     actions = actions or []
     brand_name = None
-    accent = "#6fff54"
+    accent = "#2F5D5A"
     if isinstance(brand, dict):
         name = brand.get("name")
         if isinstance(name, str) and name.strip():
@@ -828,7 +886,7 @@ footer {{ color: #9a9a9a; font-size: 12px; margin-top: 28px; }}
 <div class="chart">
 {_svg_bar_chart(grouped_df, x_col, y_col, chart_title, accent=accent)}
 </div>
-<footer>Generated by {html.escape(footer_name)}. Data never leaves this computer.</footer>
+<footer>Generated by {html.escape(footer_name)}. {privacy.data_location_line()}</footer>
 </body>
 </html>
 """
@@ -867,7 +925,7 @@ def chart_png_bytes(grouped_df, x_col, y_col, title,
                     kind="bar") -> bytes:
     """Draw a clean bar or line chart with PIL and return PNG bytes.
 
-    1200x675, dark theme (#121212 background, neon-green #6fff54 bars /
+    1200x675, dark theme (#121212 background, deep-teal #2F5D5A bars /
     line), axes, labels and values. No matplotlib, no vl-convert.
     kind is "bar" or "line". Raises ValueError for an unknown kind.
     """
@@ -983,7 +1041,7 @@ def portfolio_zip_bytes(cleaned: pd.DataFrame, kpis, actions, title) -> bytes:
             lines.append(f"- **{k.get('label', '')}**: {k.get('value', '')}")
     else:
         lines.append("- No KPIs yet.")
-    lines += ["", "_Made with Data Cleaner Studio. Data never leaves this computer._"]
+    lines += ["", f"_Made with Data Cleaner Studio. {privacy.data_location_line()}_"]
     readme = "\n".join(lines)
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
@@ -1228,7 +1286,8 @@ def render_sort(st, df: pd.DataFrame):
     return out.reset_index(drop=True)
 
 
-def render_recent(st, df=None, source_name="", raw_bytes=None, base_dir=None):
+def render_recent(st, df=None, source_name="", raw_bytes=None, base_dir=None,
+                  storage_key=None):
     """Sidebar (Load section): recent files, newest first.
 
     Pass df/source_name/raw_bytes for the file just loaded: when the
@@ -1236,16 +1295,43 @@ def render_recent(st, df=None, source_name="", raw_bytes=None, base_dir=None):
     copy is saved into the app-local ``recent/`` folder and listed.
     Without that tick nothing is saved — an uploaded file cannot be
     re-opened from a browser upload, and the list says so honestly.
-    Returns the stored frame when an Open button is pressed, else None.
+    The tick itself is remembered per user (``storage_key`` ->
+    views/recent_prefs.json, the same pattern as the What's-new
+    dismiss) so it survives logout/login; without a storage key it
+    just lasts the session. Returns the stored frame when an Open
+    button is pressed, else None — and records the opened file's
+    name in session state ("s_recent_opened") so the caller can
+    restore matching cleaned state for it.
     """
     st.subheader("Recent files")
     if raw_bytes is not None:
+        stored_keep = None
+        if storage_key is not None:
+            try:
+                _prefs = storage.load_json(storage_key, "views",
+                                           "recent_prefs.json")
+                stored_keep = (bool(_prefs.get("keep_copy", False))
+                               if isinstance(_prefs, dict) else False)
+            except Exception:  # noqa: BLE001 - a lost pref is not fatal
+                stored_keep = False
+            if "s_recent_keep" not in st.session_state:
+                try:
+                    st.session_state["s_recent_keep"] = stored_keep
+                except Exception:  # noqa: BLE001 - never crash the sidebar
+                    pass
         keep = st.checkbox("Keep a copy for quick reopen",
                            key="s_recent_keep",
                            help="Saves a copy of this file in the app's "
                                 "recent folder, so you can re-open it "
                                 "later without uploading again. Off by "
                                 "default.")
+        if (storage_key is not None and stored_keep is not None
+                and bool(keep) != stored_keep):
+            try:
+                storage.save_json(storage_key, "views", "recent_prefs.json",
+                                  {"keep_copy": bool(keep)})
+            except Exception:  # noqa: BLE001 - a lost pref is not fatal
+                pass
         if keep and source_name:
             saved = st.session_state.get("s_recent_saved") or []
             if source_name not in saved:
@@ -1267,37 +1353,57 @@ def render_recent(st, df=None, source_name="", raw_bytes=None, base_dir=None):
             except Exception as e:  # noqa: BLE001 - show, don't crash
                 st.error(str(e))
                 return None
+            try:
+                st.session_state["s_recent_opened"] = entry["name"]
+            except Exception:  # noqa: BLE001 - never crash the sidebar
+                pass
             st.success(f"Opened {entry['name']} ({len(opened):,} rows).")
             return opened
     return None
 
 
-def render_backups(st, df=None, source_name="", base_dir=None):
+def render_backups(st, df=None, source_name="", base_dir=None,
+                   storage_key=None, key_prefix="s_backup"):
     """Clean tab (top, BEFORE the Clean button) and Tools tab: back up
     the raw data and restore an earlier backup.
 
     Pass df + source_name to offer "Back up the raw data now". Returns
     the restored frame when a Restore button is pressed, else None.
-    Backups live in the app-local ``backups/`` folder, named
-    <name>_YYYY-MM-DD_HHMM.csv.
+    Backups are named <name>_YYYY-MM-DD_HHMM.csv. In cloud mode
+    (``storage_key`` given and Supabase mode on) they are stored in
+    Supabase Storage under backups/ — never on the server's disk —
+    and the UI shows only the file name, never a server path. In
+    local mode they live in the app-local ``backups/`` folder and
+    the UI still shows only the file name.
+
+    ``key_prefix`` namespaces every widget key in this call: the app
+    renders the backup list twice per run (Clean tab + Tools tab),
+    so each call MUST use its own prefix or Streamlit raises
+    StreamlitDuplicateElementKey as soon as any backup exists.
     """
     st.subheader("Backups")
     st.write("A safety copy of your raw data, saved before cleaning — "
              "so you can always go back to the original file.")
     if df is not None:
-        if st.button("Back up the raw data now", key="s_backup_now"):
-            path = backup_raw(df, source_name or "data", base_dir)
-            st.success(f"Backed up to {path}.")
-    entries = list_backups(base_dir)
+        if st.button("Back up the raw data now", key=f"{key_prefix}_now"):
+            path = backup_raw(df, source_name or "data", base_dir,
+                              storage_key=storage_key)
+            st.success(f"Backed up {Path(str(path)).name}.")
+    entries = list_backups(base_dir, storage_key=storage_key)
     if not entries:
         st.info("No backups yet — back up the raw data before cleaning.")
         return None
     for i, entry in enumerate(entries):
-        st.write(f"**{entry['name']}** — {entry.get('when', '')} — "
-                 f"{entry['size_bytes']:,} bytes")
-        if st.button("Restore", key=f"s_backup_restore_{i}"):
+        _line = f"**{entry['name']}**"
+        if entry.get("when"):
+            _line += f" — {entry['when']}"
+        if entry.get("size_bytes") is not None:
+            _line += f" — {entry['size_bytes']:,} bytes"
+        st.write(_line)
+        if st.button("Restore", key=f"{key_prefix}_restore_{i}"):
             try:
-                restored = restore_backup(entry["path"])
+                restored = restore_backup(entry["path"], base_dir=base_dir,
+                                          storage_key=storage_key)
             except Exception as e:  # noqa: BLE001 - show, don't crash
                 st.error(str(e))
                 return None
@@ -1306,7 +1412,7 @@ def render_backups(st, df=None, source_name="", base_dir=None):
     return None
 
 
-def render_one_click(st, raw, opts, base_dir=None):
+def render_one_click(st, raw, opts, base_dir=None, storage_key=None):
     """Report tab: one button that runs clean (with the current ticked
     options) + recomputes KPIs + builds the report + prepares the email
     with the PDF attached.
@@ -1337,16 +1443,22 @@ def render_one_click(st, raw, opts, base_dir=None):
         source_name = st.session_state.get("source_name") or ""
     except Exception:
         source_name = ""
-    backup_path = backup_raw(raw, source_name or "data", base_dir)
-    cleaned, actions = engine.clean(raw, _to_engine_opts(opts))
-    kpis = engine.auto_kpis(cleaned)
-    report = engine.build_report(raw, cleaned, actions, kpis)
-    summary = (f"Rows: {len(raw):,} loaded -> {len(cleaned):,} after cleaning. "
-               f"Columns: {len(raw.columns)} -> {len(cleaned.columns)}.")
-    pdf_bytes = engine.to_pdf_bytes("Data Cleaner Studio — Report",
-                                    kpis, actions, summary)
+    backup_path = ""
+    cleaned = actions = kpis = report = pdf_bytes = None
+    summary = ""
+    with st.spinner("Running everything — backing up, cleaning, "
+                    "rebuilding the KPIs and the report…"):
+        backup_path = backup_raw(raw, source_name or "data", base_dir,
+                                 storage_key=storage_key)
+        cleaned, actions = engine.clean(raw, _to_engine_opts(opts))
+        kpis = engine.auto_kpis(cleaned)
+        report = engine.build_report(raw, cleaned, actions, kpis)
+        summary = (f"Rows: {len(raw):,} loaded -> {len(cleaned):,} after cleaning. "
+                   f"Columns: {len(raw.columns)} -> {len(cleaned.columns)}.")
+        pdf_bytes = engine.to_pdf_bytes("Data Cleaner Studio — Report",
+                                        kpis, actions, summary)
     st.success(f"Done: {len(raw):,} rows -> {len(cleaned):,} rows. "
-               f"Backup saved to {backup_path}.")
+               f"Backup saved as {Path(str(backup_path)).name}.")
     email_status = "pending"
     try:
         import feat_export

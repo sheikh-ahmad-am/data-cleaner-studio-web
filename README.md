@@ -195,12 +195,14 @@ login); a Phase 2 AppTest check passes (login screen shows the
 "needs Supabase" Google note, Settings shows the Supabase status
 section, unreachable URL gives the paused message verbatim); live
 `streamlit run app.py` headless: health endpoint 200, app page
-200, no errors. Full pytest: **206 passed**, 5 failed in
-`tests/test_feat_db.py`, all known non-issues for the web project:
-2 assert Windows PyInstaller wheel files (do not apply here) and
-3 need the MySQL driver, which the venv deliberately lacks — those
-3 pass in a second venv with `mysql-connector-python` installed
-(7/7 non-wheel DB tests pass there). `tests/smoke_test.py`
+200, no errors. Full pytest in that run: **206 passed**, 5 failed in
+`tests/test_feat_db.py`. Update (2026-11-06): `requirements.txt`
+now ships the DB drivers (`mysql-connector-python==26.10.0`,
+`psycopg2-binary==2.9.13`, `pymssql==2.4.6`), so the 3 driver tests
+pass in the main venv — `tests/test_feat_db.py` is now 7 passed /
+2 failed, the 2 failures being the Windows PyInstaller wheel-file
+checks, which do not apply to the web repo
+(`hidden_files/wheels/` does not exist here). `tests/smoke_test.py`
 targets the `.exe` app and is superseded by
 `test_web_smoke.py`.
 

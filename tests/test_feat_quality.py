@@ -36,9 +36,16 @@ def test_quality_score_sample():
     raw = _sample_raw()
     score, breakdown = fq.quality_score(raw)
     labels = {b["label"] for b in breakdown}
-    # 16.6% missing -> 8 pts; 3/80 dup rows -> 4 pts; Notes empty -> 5 pts.
-    assert score == 83, (score, breakdown)
+    # 53 of 720 scored cells empty (7.4%) -> 4 pts — the all-empty Notes
+    # column is NOT counted here (it costs its own 5 pts below, and an
+    # empty column is not any one row's fault); 3/80 dup rows -> 4 pts;
+    # Notes empty -> 5 pts.
+    assert score == 87, (score, breakdown)
     assert labels == {"Missing values", "Duplicate rows", "Empty columns"}, labels
+    missing = [b for b in breakdown if b["label"] == "Missing values"][0]
+    assert missing["points_lost"] == 4, missing
+    assert "53 of 720 cells" in missing["detail"], missing
+    assert "completely empty" in missing["detail"], missing
     for b in breakdown:
         assert b["points_lost"] > 0 and isinstance(b["detail"], str) \
             and len(b["detail"]) > 10
@@ -47,7 +54,7 @@ def test_quality_score_sample():
     clean = _sample_clean()
     score_c, breakdown_c = fq.quality_score(clean)
     assert score_c == 100 and breakdown_c == [], (score_c, breakdown_c)
-    print("quality_score sample OK: raw 83 -> clean 100")
+    print("quality_score sample OK: raw 87 -> clean 100")
 
 
 def test_quality_score_synthetic():
@@ -76,6 +83,30 @@ def test_quality_score_synthetic():
     # Empty frame scores 0 with an explanation.
     assert fq.quality_score(pd.DataFrame())[0] == 0
     print("quality_score synthetic OK")
+
+
+def test_quality_score_empty_column_not_double_counted():
+    """An all-empty column costs its 5 'Empty columns' points and nothing
+    else: its cells must not also inflate the 'Missing values' deduction
+    (a column with no data in any row cannot be a row's fault)."""
+    df = pd.DataFrame({"a": [1, None, 3, None],
+                       "b": ["x", "y", "z", "w"],
+                       "notes": [None, None, None, None]})
+    score, breakdown = fq.quality_score(df)
+    by_label = {b["label"]: b for b in breakdown}
+    # Missing: 2 of 8 scored cells (25%) -> 12 pts; empty column -> 5 pts.
+    assert by_label["Missing values"]["points_lost"] == 12, breakdown
+    assert "2 of 8 cells" in by_label["Missing values"]["detail"], breakdown
+    assert by_label["Empty columns"]["points_lost"] == 5, breakdown
+    assert score == 83, (score, breakdown)
+    # A frame whose ONLY data-less column is empty: no missing-values
+    # deduction at all, just the empty-column one.
+    only_empty = pd.DataFrame({"notes": [None, None, None],
+                               "id": [1, 2, 3]})
+    score2, breakdown2 = fq.quality_score(only_empty)
+    assert [b["label"] for b in breakdown2] == ["Empty columns"], breakdown2
+    assert score2 == 95, (score2, breakdown2)
+    print("quality_score empty-column OK: charged once, not twice")
 
 
 # --------------------------------------------------------------------------
@@ -414,6 +445,7 @@ def test_render_audit_with_entries():
 if __name__ == "__main__":
     test_quality_score_sample()
     test_quality_score_synthetic()
+    test_quality_score_empty_column_not_double_counted()
     test_outliers_synthetic()
     test_outliers_sample()
     test_rules()

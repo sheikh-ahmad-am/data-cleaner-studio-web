@@ -22,6 +22,7 @@ Widget keys all start with "tut_".
 from __future__ import annotations
 
 import ai_settings
+import privacy
 
 __all__ = [
     "TUTORIAL_STEPS",
@@ -113,32 +114,73 @@ def mark_tutorial_seen(settings_path=None) -> bool:
 
 def render_tutorial(st) -> None:
     """The steps as numbered sections — plain titles, one or two plain
-    sentences each. No buttons, no state: safe to show anywhere."""
+    sentences each. No buttons, no state: safe to show anywhere.
+
+    The "Load a file" step's data-location sentence comes from
+    privacy.tutorial_load_line(), so it stays the local wording in
+    local mode and says the file is uploaded to the user's private
+    cloud account in Supabase/cloud mode. TUTORIAL_STEPS itself
+    keeps the local wording verbatim."""
     st.subheader("How to use Data Cleaner Studio")
     st.write("Seven short steps, from a messy file to a finished report. "
              "Each step takes less than a minute to try.")
     for i, step in enumerate(TUTORIAL_STEPS, start=1):
         st.subheader(f"{i}. {step['title']}")
-        st.write(step["text"])
+        text = step["text"].replace(
+            privacy.LOCAL_LOAD_SENTENCE, privacy.tutorial_load_line())
+        st.write(text)
 
 
 def render_tutorial_page(st, settings_path=None) -> None:
     """The "How to use" tab: the numbered steps, plus a "Got it"
-    button that hides this guide next time (key "tut_page_seen")."""
+    button that hides this guide next time (key "tut_page_seen").
+
+    The button is always shown — even for a user who has already
+    seen the guide — so it never looks dead: pressing it always
+    answers with a confirmation, and the confirmation is repeated
+    once on the next run (session flag "tut_page_seen_done") so it
+    is still visible after the rerun the click causes. A user who
+    has already seen the guide gets a plain note instead."""
     render_tutorial(st)
-    if is_first_run(settings_path):
-        if st.button("Got it — I know how this works", key="tut_page_seen"):
-            mark_tutorial_seen(settings_path)
-            st.success("Got it — this guide will not pop up again. "
-                       "You can always find it here, in the 'How to use' tab.")
+    _just_seen = False
+    try:
+        _just_seen = bool(st.session_state.pop("tut_page_seen_done", False))
+    except Exception:  # noqa: BLE001 - a lost flag just means no repeat
+        _just_seen = False
+    if _just_seen:
+        st.success("Got it — this guide will not pop up again. "
+                   "You can always find it here, in the 'How to use' tab.")
+    elif not is_first_run(settings_path):
+        st.write("You've already seen this guide — it won't pop up "
+                 "again. It's always here, in the 'How to use' tab.")
+    if st.button("Got it — I know how this works", key="tut_page_seen"):
+        mark_tutorial_seen(settings_path)
+        try:
+            st.session_state["tut_page_seen_done"] = True
+        except Exception:  # noqa: BLE001 - a lost flag just means no repeat
+            pass
+        st.success("Got it — this guide will not pop up again. "
+                   "You can always find it here, in the 'How to use' tab.")
 
 
 def render_first_run_banner(st, settings_path=None) -> bool:
     """First-run banner: a short info box plus a "Got it" button
     (key "tut_got_it") that marks the tutorial seen.
 
+    The confirmation is repeated once on the next run (session flag
+    "tut_got_it_done") so it is still visible after the rerun the
+    click causes.
+
     Returns True when the banner was shown, False when the user has
     already seen the tutorial (nothing is drawn then)."""
+    try:
+        _just_seen = bool(st.session_state.pop("tut_got_it_done", False))
+    except Exception:  # noqa: BLE001 - a lost flag just means no repeat
+        _just_seen = False
+    if _just_seen:
+        st.success("Got it — happy cleaning. The guide stays in the "
+                   "'How to use' tab whenever you want it.")
+        return True
     if not is_first_run(settings_path):
         return False
     st.info("First time here? This app turns a messy file into clean "
@@ -147,6 +189,10 @@ def render_first_run_banner(st, settings_path=None) -> bool:
             "'Got it' and start with a file from the sidebar.")
     if st.button("Got it", key="tut_got_it"):
         mark_tutorial_seen(settings_path)
+        try:
+            st.session_state["tut_got_it_done"] = True
+        except Exception:  # noqa: BLE001 - a lost flag just means no repeat
+            pass
         st.success("Got it — happy cleaning. The guide stays in the "
                    "'How to use' tab whenever you want it.")
     return True

@@ -11,8 +11,11 @@ Cleaning steps (all reported, nothing silent):
   4. Drop columns / rows that are 100% empty
   5. Numbers: strip currency symbols, commas and % signs, then convert
   6. Dates: parse mixed formats (01/02/2024, 2024-02-01, 1 Feb 2024, ...)
-  7. Categories: one consistent case (Title Case)
-  8. Missing values: numbers -> median, text -> "Unknown", dates left blank
+  7. Categories: one consistent case (Title Case, acronyms kept: USB stays USB)
+  8. Missing values: numbers -> median (rounded to a whole number for
+     integer-like columns), text -> "Unknown", dates left blank
+  9. Dates: a column with no time component stays date-only (YYYY-MM-DD)
+     wherever the engine shows it — no midnight "00:00:00" is added.
 """
 
 import io
@@ -24,6 +27,167 @@ import numpy as np
 import pandas as pd
 
 MONEY_CHARS = re.compile(r"[^0-9.\-]")
+
+
+# ======================================================= display numbers =====
+def format_number(value, kind: str = "number") -> str:
+    """THE one number-display rule for this engine (KPIs, summaries,
+    report text): thousands separators everywhere; money 2 decimals,
+    counts / integers 0 decimals, percentages 1 decimal, other numbers
+    1 decimal. kind: "money" | "count" | "percent" | "number".
+    Non-finite values (NaN / inf) show as an em dash, never "nan"."""
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    if v != v or v in (float("inf"), float("-inf")):
+        return "—"
+    if kind == "money":
+        return f"{v:,.2f}"
+    if kind == "count":
+        return f"{v:,.0f}"
+    if kind == "percent":
+        return f"{v:,.1f}%"
+    if kind == "number":
+        return f"{v:,.1f}"
+    raise ValueError(f"Unknown number kind: {kind} "
+                     "(money / count / percent / number)")
+
+
+# ====================================================== case normalising =====
+_WORD_RE = re.compile(r"[A-Za-z]+(?:'[A-Za-z]+)?")
+
+
+# Small known-acronym set for _smart_title. A token is kept exactly
+# as written only when it is all-caps IN THE SOURCE and it is one of
+# these (USB, SKU, ID, ...). A bare "any all-caps word of <= 4 letters
+# stays" rule would also keep HOME, LOVE or SALE as separate
+# categories — the cleaner would stop unifying case (the sample's
+# HOME / Home / home would stay split, 5 categories instead of 4).
+# So the acronym behaviour is a small list, not a length rule.
+_ACRONYMS = frozenset({
+    "USB", "SKU", "ID", "TV", "PC", "CPU", "GPU", "RAM", "SSD", "HDD",
+    "LED", "LCD", "HDMI", "PDF", "URL", "API", "VAT", "GST", "MRP",
+    "SIM", "GPS", "EMI", "UPI", "PO", "DC",
+})
+
+
+def _title_match(m) -> str:
+    """One word inside _smart_title: an all-caps acronym from the small
+    set above stays exactly as written (USB Hub stays USB Hub); anything
+    else title-cases (ELECTRONICS -> Electronics, HOME -> Home, so
+    categories still unify). Only the first letter is upper-cased —
+    str.title() would turn "don't" into "Don'T", because it treats the
+    apostrophe as a word boundary."""
+    word = m.group(0)
+    if word.isupper() and word in _ACRONYMS:
+        return word
+    return word[:1].upper() + word[1:].lower()
+
+
+def _smart_title(value) -> str:
+    """Title Case that keeps acronyms: 'USB Hub' stays 'USB Hub'
+    (plain .title() would make it 'Usb Hub'), while 'ELECTRONICS'
+    still becomes 'Electronics' and 'HOME' becomes 'Home', so
+    categories unify. Only acronyms from the small _ACRONYMS set are
+    kept — see _title_match for why a bare length rule would break
+    unification. Apostrophes are kept inside the word, so "don't" ->
+    "Don't", not "Don'T"."""
+    return _WORD_RE.sub(_title_match, str(value))
+
+
+# ===================================================== integer-like fills =====
+def _is_integer_like(s: pd.Series) -> bool:
+    """True when every non-empty value in a numeric series is a whole
+    number (2.0 counts; 2.5 does not). An empty series is not
+    integer-like — there is nothing to judge by."""
+    vals = pd.to_numeric(s, errors="coerce").dropna()
+    if len(vals) == 0:
+        return False
+    return bool(((vals == np.floor(vals)) & np.isfinite(vals)).all())
+
+
+def _round_half_away(median: float) -> int:
+    """Round a median to the nearest whole number, halves away from
+    zero (2.5 -> 3, -2.5 -> -3) — the fill a person expects, not
+    banker's rounding (round(2.5) == 2 in Python)."""
+    if median >= 0:
+        return int(np.floor(median + 0.5))
+    return int(np.ceil(median - 0.5))
+
+
+def _median_fill_value(s: pd.Series):
+    """(fill_value, is_integer_like) for a numeric column: the median,
+    rounded to a whole number when the column is integer-like, so a
+    filled Quantity is 3, never 2.5 — and a column total stays whole."""
+    median = float(pd.to_numeric(s, errors="coerce").median())
+    if _is_integer_like(s):
+        return _round_half_away(median), True
+    return median, False
+
+
+def _fill_numeric_column(s: pd.Series, fill_value, integer_like: bool) -> pd.Series:
+    """Fill a numeric column's missing values, then — when the column
+    is integer-like and nothing is missing any more — store it as
+    int64, so totals and samples read as whole numbers (208, not
+    208.0). Never casts when a NaN survives the fill."""
+    out = s.fillna(fill_value)
+    if integer_like and int(out.isna().sum()) == 0:
+        try:
+            return out.astype("int64")
+        except (ValueError, OverflowError):
+            return out
+    return out
+
+
+# ======================================================= revenue finding =====
+_QTY_TOKENS = {"quantity", "qty", "units", "count"}
+_PRICE_TOKENS = {"price", "cost", "rate", "amount"}
+
+
+def _name_tokens(col) -> list:
+    return str(col).lower().replace("-", "_").split("_")
+
+
+def _is_qty_like(col) -> bool:
+    """A quantity-like column name: quantity / qty / units / count.
+    Names that already aggregate (total_quantity) do not count."""
+    toks = _name_tokens(col)
+    return "total" not in toks and any(t in _QTY_TOKENS for t in toks)
+
+
+def _is_price_like(col) -> bool:
+    """A price-like column name: price / cost / rate / amount
+    (unit_price matches on its 'price' token). Names that already
+    aggregate (total_amount) do not count."""
+    toks = _name_tokens(col)
+    return "total" not in toks and any(t in _PRICE_TOKENS for t in toks)
+
+
+def _find_revenue_pair(df: pd.DataFrame):
+    """(quantity_col, price_col) when the frame has exactly ONE
+    quantity-like numeric column AND exactly ONE price-like numeric
+    column, and they are different columns — the only case where
+    sum(quantity x price) is unambiguously revenue. Anything else
+    (no pair, two quantity columns, a total_* column) returns
+    (None, None) and the KPIs fall back to honest plain sums."""
+    num = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
+    qty = [c for c in num if _is_qty_like(c)]
+    price = [c for c in num if _is_price_like(c)]
+    if len(qty) == 1 and len(price) == 1 and qty[0] != price[0]:
+        return qty[0], price[0]
+    return None, None
+
+
+def _display_sample(value) -> str:
+    """A sample value for profile(): a date with no time component
+    shows as YYYY-MM-DD, never '2026-06-13 00:00:00'."""
+    if isinstance(value, pd.Timestamp):
+        if (value.hour, value.minute, value.second,
+                value.microsecond) == (0, 0, 0, 0):
+            return value.strftime("%Y-%m-%d")
+        return value.strftime("%Y-%m-%d %H:%M")
+    return str(value)
 
 
 # ============================================================== loading =====
@@ -129,7 +293,7 @@ def profile(df: pd.DataFrame) -> list:
             "missing": int(s.isna().sum()),
             "missing_pct": round(100 * s.isna().mean(), 1),
             "unique": int(s.nunique(dropna=True)),
-            "sample": str(s.dropna().iloc[0]) if s.notna().any() else "",
+            "sample": _display_sample(s.dropna().iloc[0]) if s.notna().any() else "",
         })
     return rows
 
@@ -207,7 +371,8 @@ def clean(df: pd.DataFrame, options: dict | None = None) -> tuple:
             if kind == "category" and col in out.columns:
                 before = out[col].astype(object).astype(str)
                 out[col] = out[col].astype(object).where(
-                    out[col].isna(), out[col].astype(object).astype(str).str.strip().str.title())
+                    out[col].isna(), out[col].astype(object).astype(str).str.strip()
+                    .str.replace(_WORD_RE, _title_match, regex=True))
                 n_fixed = int((before != out[col].astype(object).astype(str)).sum())
                 if n_fixed:
                     actions.append((f"Fix categories: {col}", f"{n_fixed} value(s) set to one case"))
@@ -224,31 +389,60 @@ def clean(df: pd.DataFrame, options: dict | None = None) -> tuple:
             if missing == 0:
                 continue
             if pd.api.types.is_numeric_dtype(out[col]):
-                out[col] = out[col].fillna(out[col].median())
-                actions.append((f"Fill missing: {col}", f"{missing} filled with median"))
+                fill_value, integer_like = _median_fill_value(out[col])
+                out[col] = _fill_numeric_column(out[col], fill_value, integer_like)
+                actions.append((f"Fill missing: {col}",
+                                f"{missing} filled with median"
+                                + (" (rounded to a whole number)"
+                                   if integer_like else "")))
             elif pd.api.types.is_datetime64_any_dtype(out[col]):
                 actions.append((f"Missing left blank: {col}", f"{missing} date(s) left empty"))
             else:
                 out[col] = out[col].fillna("Unknown")
                 actions.append((f"Fill missing: {col}", f"{missing} filled with 'Unknown'"))
 
-    actions.insert(0, ("Rows", f"{rows_before:,} -> {len(out):,} rows"))
+    actions.insert(0, ("Rows", f"{format_number(rows_before, 'count')} -> "
+                             f"{format_number(len(out), 'count')} rows"))
     return out.reset_index(drop=True), actions
 
 
 # ================================================================== KPIs =====
 def auto_kpis(df: pd.DataFrame) -> list:
-    """KPIs the app can show without asking: rows, totals, averages, top values."""
-    kpis = [{"label": "Rows", "value": f"{len(df):,}"},
-            {"label": "Columns", "value": f"{len(df.columns)}"}]
+    """KPIs the app can show without asking: rows, totals, averages, top values.
+
+    Revenue rule: when the frame has exactly one quantity-like column
+    and exactly one price-like column (see _find_revenue_pair), the
+    price column's plain sum is replaced by Revenue = sum(quantity x
+    price), labelled with both column names so nobody mistakes a plain
+    price sum for revenue. Otherwise a plain sum is labelled honestly
+    as "Sum of <column>", never as revenue. All numbers go through
+    format_number: money 2 decimals, counts 0, other numbers 1."""
+    kpis = [{"label": "Rows", "value": format_number(len(df), "count")},
+            {"label": "Columns", "value": format_number(len(df.columns), "count")}]
+    qty_col, price_col = _find_revenue_pair(df)
     for col in df.columns:
         if pd.api.types.is_numeric_dtype(df[col]):
-            kpis.append({"label": f"Total {col}", "value": f"{df[col].sum():,.1f}"})
-            kpis.append({"label": f"Average {col}", "value": f"{df[col].mean():,.1f}"})
+            if col == price_col:
+                revenue = float((df[qty_col] * df[col]).sum())
+                kpis.append({"label": f"Revenue ({qty_col} x {col})",
+                             "value": format_number(revenue, "money")})
+            elif _is_price_like(col):
+                kpis.append({"label": f"Sum of {col}",
+                             "value": format_number(df[col].sum(), "money")})
+            elif _is_qty_like(col):
+                kpis.append({"label": f"Sum of {col}",
+                             "value": format_number(df[col].sum(), "count")})
+            else:
+                kpis.append({"label": f"Sum of {col}",
+                             "value": format_number(df[col].sum(), "number")})
+            avg_kind = "money" if _is_price_like(col) else "number"
+            kpis.append({"label": f"Average {col}",
+                         "value": format_number(df[col].mean(), avg_kind)})
         elif str(df[col].dtype) in ("object", "str") and 1 < df[col].nunique(dropna=True) <= 30:
             top = df[col].value_counts(dropna=False).index[0]
             top_n = int(df[col].value_counts(dropna=False).iloc[0])
-            kpis.append({"label": f"Top {col}", "value": f"{top} ({top_n:,})"})
+            kpis.append({"label": f"Top {col}",
+                         "value": f"{top} ({format_number(top_n, 'count')})"})
     date_cols = [c for c in df.columns if pd.api.types.is_datetime64_any_dtype(df[c])]
     if date_cols:
         d = df[date_cols[0]].dropna()
@@ -294,15 +488,18 @@ def custom_kpi(df: pd.DataFrame, column: str, agg: str):
 def build_report(df_raw: pd.DataFrame, df_clean: pd.DataFrame, actions: list, kpis: list) -> str:
     """Plain-English report of what was loaded, cleaned and measured."""
     lines = ["# Data Cleaner Studio — Report", "",
-             f"Rows: {len(df_raw):,} loaded -> {len(df_clean):,} after cleaning.",
-             f"Columns: {len(df_raw.columns)} -> {len(df_clean.columns)}.", "",
+             f"Rows: {format_number(len(df_raw), 'count')} loaded -> "
+             f"{format_number(len(df_clean), 'count')} after cleaning.",
+             f"Columns: {format_number(len(df_raw.columns), 'count')} -> "
+             f"{format_number(len(df_clean.columns), 'count')}.", "",
              "## What was cleaned"]
     for step, detail in actions:
         lines.append(f"- **{step}**: {detail}")
     lines += ["", "## KPIs"]
     for k in kpis:
         lines.append(f"- **{k['label']}**: {k['value']}")
-    lines += ["", "_Generated by Data Cleaner Studio. Data never leaves this computer._"]
+    lines += ["", "_Generated by Data Cleaner Studio. "
+              + __import__("privacy").data_location_line() + "_"]
     return "\n".join(lines)
 
 
@@ -319,12 +516,29 @@ def to_excel_bytes(cleaned: pd.DataFrame, kpis: list, actions: list,
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as w:
         cleaned.to_excel(w, sheet_name="Cleaned Data", index=False)
+        _format_excel_dates(w.sheets["Cleaned Data"], cleaned)
         pd.DataFrame(kpis).to_excel(w, sheet_name="KPIs", index=False)
         pd.DataFrame(actions, columns=["Step", "Detail"]).to_excel(
             w, sheet_name="Cleaning Log", index=False)
         if formulas:
             _add_live_kpis_sheet(w, cleaned)
     return buf.getvalue()
+
+
+def _format_excel_dates(sheet, cleaned: pd.DataFrame) -> None:
+    """Date-only columns show as YYYY-MM-DD in Excel — a datetime cell
+    with no time component must not display as '2026-06-13 00:00:00'.
+    Columns that do carry times keep a date+time format."""
+    for idx, col in enumerate(cleaned.columns, start=1):
+        if not pd.api.types.is_datetime64_any_dtype(cleaned[col]):
+            continue
+        vals = cleaned[col].dropna()
+        date_only = len(vals) == 0 or bool(
+            ((vals.dt.hour == 0) & (vals.dt.minute == 0)
+             & (vals.dt.second == 0) & (vals.dt.microsecond == 0)).all())
+        fmt = "yyyy-mm-dd" if date_only else "yyyy-mm-dd hh:mm:ss"
+        for row in range(2, len(cleaned) + 2):
+            sheet.cell(row=row, column=idx).number_format = fmt
 
 
 def _add_live_kpis_sheet(writer, cleaned: pd.DataFrame) -> None:
@@ -536,7 +750,8 @@ def to_pdf_bytes(title: str, kpis: list, actions: list, summary: str,
     for step, detail in actions:
         items.append((f"- {_pdf_clean(step)}: {_pdf_clean(detail)}", 11, False))
     items.append(("", 11, False))
-    items.append((f"Generated by {footer_name}. Data never leaves this computer.",
+    items.append((f"Generated by {footer_name}. "
+                  + __import__("privacy").data_location_line(),
                   9, False))
 
     wrapped = []
@@ -705,7 +920,8 @@ def _fix_chunk_categories(df: pd.DataFrame, kinds: dict) -> dict:
         if kind == "category" and col in df.columns:
             before = df[col].astype(object).astype(str)
             df[col] = df[col].astype(object).where(
-                df[col].isna(), df[col].astype(object).astype(str).str.strip().str.title())
+                df[col].isna(), df[col].astype(object).astype(str).str.strip()
+                .str.replace(_WORD_RE, _title_match, regex=True))
             fixed[col] = int((before != df[col].astype(object).astype(str)).sum())
     return fixed
 
@@ -791,13 +1007,22 @@ def chunked_global_stats(raw: bytes, chunksize: int = 50000,
     Returns {"kinds", "medians", "modes", "empty_columns", "rows_before",
     "duplicate_rows", "empty_rows"}. Medians are exact (de-duplicated
     numeric values); modes are the most frequent value per category column
-    (ties -> first seen)."""
+    (ties -> first seen). "integer_like" maps each numeric column to
+    whether all its values are whole numbers — the chunked fill rounds
+    the median to a whole number for those columns, exactly like
+    clean(). "had_missing" maps each numeric column to whether any
+    missing value survived dedupe: clean() only casts an integer-like
+    column to int64 when it actually filled something, so the chunked
+    path must cast on the global answer, not on each chunk's own
+    missing count (a chunk with no missing values would otherwise
+    stay float and pd.concat would upcast the whole column)."""
     from collections import Counter, defaultdict
 
     opts = _default_chunk_opts(options)
     kinds = _kinds_from_sample(raw, chunksize)
     numeric_vals = defaultdict(list)
     category_counts = defaultdict(Counter)
+    had_missing = {}  # numeric col -> any missing value survived dedupe
     samples = defaultdict(list)  # raw post-strip values, for late kind fixes
     non_empty = set()
     seen_hashes = set()
@@ -834,6 +1059,8 @@ def chunked_global_stats(raw: bytes, chunksize: int = 50000,
             if col not in df.columns or len(df) == 0:
                 continue
             if kind == "number":
+                if bool(df[col].isna().any()):
+                    had_missing[col] = True
                 numeric_vals[col].extend(
                     df[col].dropna().astype(float).tolist())
             elif kind == "category":
@@ -851,13 +1078,21 @@ def chunked_global_stats(raw: bytes, chunksize: int = 50000,
             kinds[col] = detect_kind(pd.Series(samples[col]))
 
     medians = {c: float(np.median(v)) for c, v in numeric_vals.items() if v}
+    integer_like = {}
+    for c, v in numeric_vals.items():
+        if not v:
+            continue
+        arr = np.asarray(v, dtype=float)
+        integer_like[c] = bool(
+            np.isfinite(arr).all() and (arr == np.floor(arr)).all())
     modes = {}
     for c, counter in category_counts.items():
         if counter:
             modes[c] = counter.most_common(1)[0][0]
     return {"kinds": kinds, "medians": medians, "modes": modes,
             "empty_columns": empty_columns, "rows_before": rows_before,
-            "duplicate_rows": duplicate_rows, "empty_rows": empty_rows}
+            "duplicate_rows": duplicate_rows, "empty_rows": empty_rows,
+            "integer_like": integer_like, "had_missing": had_missing}
 
 
 def profile_csv_chunked(raw: bytes, chunksize: int = 50000) -> list:
@@ -920,6 +1155,8 @@ def clean_csv_chunked(raw: bytes, opts: dict | None = None,
     options = _default_chunk_opts(opts)
     stats = chunked_global_stats(raw, chunksize, options)
     kinds, medians = stats["kinds"], stats["medians"]
+    integer_like = stats.get("integer_like", {})
+    had_missing = stats.get("had_missing", {})
     empty_columns = set(stats["empty_columns"]) if options["drop_empty"] else set()
 
     out_chunks = []
@@ -959,12 +1196,31 @@ def clean_csv_chunked(raw: bytes, opts: dict | None = None,
         if options["fill_missing"] and len(df):
             for col in df.columns:
                 missing = int(df[col].isna().sum())
+                # clean() casts an integer-like column to int64 exactly
+                # when it filled something in it. The chunked path must
+                # decide that on the GLOBAL missing answer: a chunk with
+                # no missing values still needs the cast, or pd.concat
+                # upcasts the whole column back to float64.
+                casts_int = (pd.api.types.is_numeric_dtype(df[col])
+                             and bool(integer_like.get(col, False))
+                             and bool(had_missing.get(col, False)))
                 if missing == 0:
+                    if casts_int and str(df[col].dtype) != "int64":
+                        try:
+                            df[col] = df[col].astype("int64")
+                        except (ValueError, OverflowError):
+                            pass
                     continue
                 step = f"Fill missing: {col}"
                 if pd.api.types.is_numeric_dtype(df[col]):
-                    df[col] = df[col].fillna(medians.get(col, df[col].median()))
-                    filled.setdefault(step, [0, "median"])[0] += missing
+                    is_int = casts_int
+                    raw_median = medians.get(col, df[col].median())
+                    fill_value = (_round_half_away(float(raw_median))
+                                  if is_int and pd.notna(raw_median)
+                                  else raw_median)
+                    df[col] = _fill_numeric_column(df[col], fill_value, is_int)
+                    filled.setdefault(
+                        step, [0, "median_int" if is_int else "median"])[0] += missing
                 elif pd.api.types.is_datetime64_any_dtype(df[col]):
                     step = f"Missing left blank: {col}"
                     filled.setdefault(step, [0, "blank"])[0] += missing
@@ -1004,11 +1260,15 @@ def clean_csv_chunked(raw: bytes, opts: dict | None = None,
     for step, (n, kind) in filled.items():
         if kind == "median":
             actions.append((step, f"{n} filled with median"))
+        elif kind == "median_int":
+            actions.append((step,
+                            f"{n} filled with median (rounded to a whole number)"))
         elif kind == "blank":
             actions.append((step, f"{n} date(s) left empty"))
         else:
             actions.append((step, f"{n} filled with 'Unknown'"))
-    actions.insert(0, ("Rows", f"{stats['rows_before']:,} -> {len(out):,} rows"))
+    actions.insert(0, ("Rows", f"{format_number(stats['rows_before'], 'count')} -> "
+                             f"{format_number(len(out), 'count')} rows"))
     return out.reset_index(drop=True), actions
 
 

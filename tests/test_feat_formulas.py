@@ -104,7 +104,7 @@ def test_formulas_sample_data_row_count():
     assert formulas["Average unit_price"] == "=AVERAGE('Cleaned Data'!H2:H78)"
     assert len(formulas) == 4
     # Cross-check the ranges against the real totals.
-    assert clean["quantity"].sum() == 198.5, clean["quantity"].sum()
+    assert clean["quantity"].sum() == 208, clean["quantity"].sum()
     assert clean["unit_price"].sum() == 78323.0
     print("formulas sample OK: G2:G78 / H2:H78 over 77 rows")
 
