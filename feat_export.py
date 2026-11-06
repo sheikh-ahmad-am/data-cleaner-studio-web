@@ -550,19 +550,29 @@ def render_column_charts(st, df):
     """
     if df is None or len(df) == 0:
         return
+    # Chart colours follow the theme toggle (dcs_theme): the light
+    # values are the Supabase tokens; the dark ones mirror
+    # ui_design.DARK_TOKENS. A near-black axis title on a dark surface
+    # would be invisible, so this cannot stay hardcoded to light.
+    _dark = (getattr(st, "session_state", {}) or {}).get(
+        "dcs_theme") == "dark"
+    _bar = "#006338" if _dark else "#117f50"
+    _label = "#989a99" if _dark else "#696969"
+    _title = "#edefee" if _dark else "#030303"
+    _stroke = "#2e2e2e" if _dark else "#e8e8e8"
     st.subheader("Column charts")
     num_cols = engine.numeric_cols(df)[:6]
     for col in num_cols:
         st.write(f"**{engine._pretty(col)}** — distribution")
         chart = (alt.Chart(df)
-                 .mark_bar(color="#117f50")
+                 .mark_bar(color=_bar)
                  .encode(x=alt.X(col, bin=True,
                                  title=engine._pretty(col)),
                          y=alt.Y("count()", title="Rows"),
                          tooltip=["count()"])
                  .properties(height=200)
-                 .configure_axis(labelColor="#696969", titleColor="#030303")
-                 .configure_view(stroke="#e8e8e8"))
+                 .configure_axis(labelColor=_label, titleColor=_title)
+                 .configure_view(stroke=_stroke))
         st.altair_chart(chart, width="stretch")
     cat_cols = [c for c in df.columns
                 if str(df[c].dtype) in ("object", "str")
@@ -573,12 +583,12 @@ def render_column_charts(st, df):
         counts.columns = ["value", "count"]
         st.write(f"**{engine._pretty(col)}** — value counts")
         chart = (alt.Chart(counts)
-                 .mark_bar(color="#117f50")
+                 .mark_bar(color=_bar)
                  .encode(x=alt.X("value:N", title=engine._pretty(col),
                                  sort="-y"),
                          y=alt.Y("count:Q", title="Rows"),
                          tooltip=["value", "count"])
                  .properties(height=200)
-                 .configure_axis(labelColor="#696969", titleColor="#030303")
-                 .configure_view(stroke="#e8e8e8"))
+                 .configure_axis(labelColor=_label, titleColor=_title)
+                 .configure_view(stroke=_stroke))
         st.altair_chart(chart, width="stretch")

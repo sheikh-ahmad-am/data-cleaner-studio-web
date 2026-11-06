@@ -25,6 +25,11 @@ TOKENS and feat_brand.py):
   accent hover     #0E7D4E   secondary btn   #FFFFFF bg / #E5E5E5 border
   danger (sparingly) #B91C1C   warning (muted amber) #E69344
 
+  Dark theme: the same roles with dark values (DARK below) — near-black
+  green-grey surfaces, brightened green links, deepened primary fill.
+  Keep in sync with ui_design.DARK_TOKENS (asserted in
+  tests/test_feat_mobile.py).
+
 Contrast (WCAG, text on background — all pass 4.5:1):
   ink on page 20.28:1 · ink on white 20.62:1
   secondary text on page 5.40:1 · on white 5.49:1
@@ -59,15 +64,80 @@ SIDEBAR_BG = "#FDFDFD"
 DANGER = "#B91C1C"
 WARNING = "#E69344"
 
+# Both palettes as dicts, so mobile_css(theme=...) can pick one. The
+# light dict is the constants above; the dark dict mirrors
+# ui_design.DARK_TOKENS (secondary-sourced candidates from the
+# research report — never presented as official Supabase tokens).
+# tests/test_feat_mobile.py asserts the two stay in sync.
+_LIGHT = {
+    "PAGE_BG": PAGE_BG, "CARD_BG": CARD_BG, "CARD_BORDER": CARD_BORDER,
+    "INK": INK, "SECONDARY_TEXT": SECONDARY_TEXT, "ACCENT": ACCENT,
+    "ACCENT_HOVER": ACCENT_HOVER, "GRADIENT_TOP": GRADIENT_TOP,
+    "SECONDARY_BTN_BG": SECONDARY_BTN_BG,
+    "SECONDARY_BTN_BG_HOVER": SECONDARY_BTN_BG_HOVER,
+    "SECONDARY_BTN_BORDER": SECONDARY_BTN_BORDER,
+    "SIDEBAR_BG": SIDEBAR_BG, "DANGER": DANGER, "WARNING": WARNING,
+    "LINK": "#117f50",
+    "SUCCESS_BG": "rgba(17, 127, 80, 0.08)",
+    "SUCCESS_BORDER": "rgba(17, 127, 80, 0.35)",
+    "WARNING_BG": "rgba(230, 147, 68, 0.08)",
+    "WARNING_BORDER": "rgba(230, 147, 68, 0.35)",
+    "ERROR_BG": "rgba(185, 28, 28, 0.08)",
+    "ERROR_BORDER": "rgba(185, 28, 28, 0.35)",
+}
+DARK = {
+    "PAGE_BG": "#1b1d1c", "CARD_BG": "#232625", "CARD_BORDER": "#2e2e2e",
+    "INK": "#edefee", "SECONDARY_TEXT": "#989a99", "ACCENT": "#006338",
+    "ACCENT_HOVER": "#007243", "GRADIENT_TOP": "#007243",
+    "SECONDARY_BTN_BG": "#232625",
+    "SECONDARY_BTN_BG_HOVER": "#262928",
+    "SECONDARY_BTN_BORDER": "#363636",
+    "SIDEBAR_BG": "#1b1d1c", "DANGER": "#ff6369", "WARNING": "#f3ba63",
+    "LINK": "#4acd8b",
+    "SUCCESS_BG": "rgba(0, 99, 56, 0.08)",
+    "SUCCESS_BORDER": "rgba(0, 99, 56, 0.35)",
+    "WARNING_BG": "rgba(243, 186, 99, 0.08)",
+    "WARNING_BORDER": "rgba(243, 186, 99, 0.35)",
+    "ERROR_BG": "rgba(255, 99, 105, 0.08)",
+    "ERROR_BORDER": "rgba(255, 99, 105, 0.35)",
+}
 
-def mobile_css() -> str:
+
+def mobile_css(theme: str = "light") -> str:
     """The theme + mobile stylesheet as one <style> string. Inject once,
     near the top of the app (after st.set_page_config), with:
 
-        st.markdown(mobile_css(), unsafe_allow_html=True)
+        st.markdown(mobile_css(theme="dark"), unsafe_allow_html=True)
 
+    ``theme`` is "light" (default) or "dark" — the dark palette mirrors
+    ui_design.DARK_TOKENS (see DARK above; the sync is asserted in
+    tests/test_feat_mobile.py). Anything else falls back to light.
     The mobile rules sit in the @media block first; the base theme
     follows and applies on every screen."""
+    _pal = DARK if (theme or "light") == "dark" else _LIGHT
+    # Locals shadow the module-level light constants, so the f-string
+    # below needs no other changes to follow the chosen theme.
+    PAGE_BG = _pal["PAGE_BG"]
+    CARD_BG = _pal["CARD_BG"]
+    CARD_BORDER = _pal["CARD_BORDER"]
+    INK = _pal["INK"]
+    SECONDARY_TEXT = _pal["SECONDARY_TEXT"]
+    ACCENT = _pal["ACCENT"]
+    ACCENT_HOVER = _pal["ACCENT_HOVER"]
+    GRADIENT_TOP = _pal["GRADIENT_TOP"]
+    SECONDARY_BTN_BG = _pal["SECONDARY_BTN_BG"]
+    SECONDARY_BTN_BG_HOVER = _pal["SECONDARY_BTN_BG_HOVER"]
+    SECONDARY_BTN_BORDER = _pal["SECONDARY_BTN_BORDER"]
+    SIDEBAR_BG = _pal["SIDEBAR_BG"]
+    DANGER = _pal["DANGER"]
+    WARNING = _pal["WARNING"]
+    LINK = _pal["LINK"]
+    SUCCESS_BG = _pal["SUCCESS_BG"]
+    SUCCESS_BORDER = _pal["SUCCESS_BORDER"]
+    WARNING_BG = _pal["WARNING_BG"]
+    WARNING_BORDER = _pal["WARNING_BORDER"]
+    ERROR_BG = _pal["ERROR_BG"]
+    ERROR_BORDER = _pal["ERROR_BORDER"]
     return f"""<style>
 /* Data Cleaner Studio — mobile layout (phones, <= 768px wide). */
 /* Desktop is untouched: every rule below sits inside the media query. */
@@ -139,7 +209,7 @@ div[data-testid="stCaptionContainer"] {{
   color: {SECONDARY_TEXT} !important;
 }}
 .stApp a {{
-  color: {ACCENT} !important;
+  color: {LINK} !important;
 }}
 /* Comfortable, consistent page spacing; headings get breathing room. */
 .block-container {{
@@ -206,7 +276,7 @@ button[data-testid="stTab"] {{
   color: {SECONDARY_TEXT} !important;
 }}
 button[data-testid="stTab"][aria-selected="true"] {{
-  color: {ACCENT} !important;
+  color: {LINK} !important;
 }}
 div[data-testid="stTab"] {{
   color: {SECONDARY_TEXT} !important;
@@ -262,8 +332,8 @@ div[data-testid="stProgress"] > div > div {{
    errors are restrained red; warnings are amber. Text
    stays readable ink on the soft tint. */
 div[data-testid="stAlertContentSuccess"] {{
-  background-color: rgba(17, 127, 80, 0.08) !important;
-  border: 1px solid rgba(17, 127, 80, 0.35) !important;
+  background-color: {SUCCESS_BG} !important;
+  border: 1px solid {SUCCESS_BORDER} !important;
   border-radius: 10px !important;
   color: {INK} !important;
 }}
@@ -274,14 +344,14 @@ div[data-testid="stAlertContentInfo"] {{
   color: {INK} !important;
 }}
 div[data-testid="stAlertContentWarning"] {{
-  background-color: rgba(230, 147, 68, 0.08) !important;
-  border: 1px solid rgba(230, 147, 68, 0.35) !important;
+  background-color: {WARNING_BG} !important;
+  border: 1px solid {WARNING_BORDER} !important;
   border-radius: 10px !important;
   color: {INK} !important;
 }}
 div[data-testid="stAlertContentError"] {{
-  background-color: rgba(185, 28, 28, 0.08) !important;
-  border: 1px solid rgba(185, 28, 28, 0.35) !important;
+  background-color: {ERROR_BG} !important;
+  border: 1px solid {ERROR_BORDER} !important;
   border-radius: 10px !important;
   color: {INK} !important;
 }}
@@ -293,11 +363,17 @@ div[data-testid="stAlertContentError"] {{
 </style>"""
 
 
-def apply_mobile_css(st) -> None:
+def apply_mobile_css(st, theme=None) -> None:
     """Inject the theme + mobile stylesheet into a running Streamlit app.
     Call once near the top of the app, after st.set_page_config:
 
         apply_mobile_css(st)
 
-    Equivalent to st.markdown(mobile_css(), unsafe_allow_html=True)."""
-    st.markdown(mobile_css(), unsafe_allow_html=True)
+    ``theme`` defaults to the app's current theme
+    (``st.session_state["dcs_theme"]``, light when absent) — pass
+    "light" or "dark" to force one. Equivalent to
+    st.markdown(mobile_css(theme=...), unsafe_allow_html=True)."""
+    if theme is None:
+        theme = (getattr(st, "session_state", {}) or {}).get(
+            "dcs_theme") or "light"
+    st.markdown(mobile_css(theme=theme), unsafe_allow_html=True)

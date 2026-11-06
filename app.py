@@ -82,6 +82,7 @@ import feat_export
 import feat_mobile
 import feat_profile
 import feat_quality
+import feat_quickjump
 import feat_schedule
 import feat_share
 import feat_status
@@ -90,6 +91,7 @@ import scheduler
 import storage
 import turnstile_component
 import ui_design
+import ui_loading
 
 try:
     from auth import AuthServiceError
@@ -323,6 +325,9 @@ st.session_state.setdefault("dcs_theme", "light")
 DESIGN_SYSTEM_CSS = ui_design.theme_css(
     st.session_state.get("dcs_theme") or "light")
 st.markdown(DESIGN_SYSTEM_CSS, unsafe_allow_html=True)
+# Rhythm (ui_loading): 1280px container cap + section-gap helpers,
+# injected once per run right after the design system.
+ui_loading.inject_rhythm()
 _SHARES_FILENAME = "shares.json"
 _STORAGE_KEY_RE = re.compile(r"^[a-zA-Z0-9_]{3,30}$")
 
@@ -729,7 +734,8 @@ if _current_user is None:
         if _login_logo.is_file():
             st.image(str(_login_logo), width=72)
         st.title("Data Cleaner Studio")
-        st.write("Put in messy data. Get clean data, KPIs, charts and a report.")
+        st.write("Put in a messy file. Get the cleaned file back, with "
+                 "its KPIs, charts and a one-page report.")
         # Theme switch for the login screen (no sidebar here): flips the
         # same st.session_state["dcs_theme"] the sidebar toggle writes,
         # so the login screen itself restyles on the rerun.
@@ -845,8 +851,9 @@ if _current_user is None:
                         # yet ("Confirm email" is on): no auto-login and no
                         # session cookie — the user must click the link in
                         # their inbox first.
-                        st.success("Account created — check your inbox and click "
-                                   "the verification link first, then log in here.")
+                        st.success(f"Account created for {ident} — check "
+                                   "your inbox and click the verification "
+                                   "link first, then log in here.")
                     else:
                         # Confirmed account (or local mode, which has no
                         # confirmation step): log the new user straight in,
@@ -879,14 +886,15 @@ if _current_user is None:
                             st.session_state["just_signed_up"] = True
                             st.rerun()
                         elif _unconfirmed:
-                            st.success("Account created — check your inbox and click "
-                                       "the verification link first, then log in here.")
+                            st.success(f"Account created for {ident} — check "
+                                       "your inbox and click the verification "
+                                       "link first, then log in here.")
                         elif _captcha_spent:
-                            st.success("Account created — log in with your new "
-                                       "account.")
+                            st.success(f"Account created — log in with your "
+                                       f"new account. ({ident})")
                         else:
-                            st.success("Account created — switch to 'Log in' "
-                                       "above and log in with it.")
+                            st.success(f"Account created — switch to 'Log in' "
+                                       f"above and log in as {ident}.")
         google_url = None
         _google_entry = (getattr(auth, "get_google_sign_in_url", None)
                          or getattr(auth, "google_sign_in_url", None))
@@ -928,7 +936,12 @@ except Exception:  # noqa: BLE001 - a broken brand file must not stop the app
     _brand = {"name": "Data Cleaner Studio",
               "accent": feat_brand.DEFAULT_ACCENT, "logo": None}
 try:
-    st.markdown(feat_mobile.mobile_css(), unsafe_allow_html=True)
+    # Mobile stylesheet follows the theme toggle too — its base theme
+    # applies on every screen, so a light-only mobile_css() would
+    # fight the dark theme with !important rules.
+    st.markdown(feat_mobile.mobile_css(
+        theme=st.session_state.get("dcs_theme") or "light"),
+        unsafe_allow_html=True)
 except Exception:  # noqa: BLE001 - theme CSS must never stop the app
     pass
 try:
@@ -1041,7 +1054,8 @@ for _i, _label in enumerate(["Upload", "Clean", "KPIs", "Export"], start=1):
         _flow_parts.append(_label)
 st.caption("Your flow: " + " → ".join(_flow_parts))
 if st.session_state.pop("just_signed_up", False):
-    st.success("Account created — you're logged in. Welcome!")
+    st.success("Account created — you're logged in. Start with a file "
+               "from the sidebar, or try the sample data.")
 feat_tutorial.render_first_run_banner(st, settings_path=_settings_path)
 feat_analyse.render_whats_new(st, user_key=_skey)
 
@@ -1234,6 +1248,11 @@ _nav_active = next(
     (k for k, v in _nav_labels.items() if v == _top_active), "preview")
 with st.sidebar:
     ui_design.sidebar_nav(_nav_sections, active=_nav_active)
+    # Quick jump (feat_quickjump): searchable jump to any section or
+    # action — the honest Streamlit version of Supabase's Cmd+K palette
+    # (no global keyboard listener exists in Streamlit; the box is the
+    # palette, and its label says so).
+    feat_quickjump.render_quick_jump(st)
     # Quiet status pill (feat_status): the app's own health — the
     # mode in local mode, "All systems operational" only when the
     # cloud health check genuinely passed.
@@ -1254,7 +1273,7 @@ if uploaded is not None and st.session_state.get("last_upload") != uploaded.name
     try:
         storage.save_upload(_skey, uploaded.name, uploaded.getvalue())
     except Exception as e:  # noqa: BLE001 - show the error, don't crash
-        st.sidebar.error(f"Could not save that upload: {e}")
+        st.sidebar.error(f"Could not save that upload ({uploaded.name}): {e}")
     if uploaded.name.lower().endswith((".xlsx", ".xls")):
         # Excel: hold the bytes and let the user pick a sheet below.
         st.session_state["pending_excel"] = (uploaded.name, uploaded.getvalue())
@@ -1265,27 +1284,30 @@ if uploaded is not None and st.session_state.get("last_upload") != uploaded.name
                      uploaded.name)
             st.session_state["last_upload"] = uploaded.name
         except Exception as e:  # noqa: BLE001 - show the error, don't crash
-            st.sidebar.error(f"Could not read that file: {e}")
+            st.sidebar.error(f"Could not read {uploaded.name} as Parquet: {e}")
     else:
         try:
             _set_raw(engine.load_file(uploaded.name, uploaded.getvalue()),
                      uploaded.name)
             st.session_state["last_upload"] = uploaded.name
         except Exception as e:  # noqa: BLE001 - show the error, don't crash
-            st.sidebar.error(f"Could not read that file: {e}")
+            st.sidebar.error(f"Could not read {uploaded.name}: {e}")
 
 if st.session_state.get("pending_excel"):
     ex_name, ex_bytes = st.session_state["pending_excel"]
     try:
         ex_sheets = feat_combine.list_excel_sheets(ex_bytes)
     except Exception as e:  # noqa: BLE001
-        st.sidebar.error(f"Could not read that workbook: {e}")
+        st.sidebar.error(f"Could not read that workbook ({ex_name}): {e}")
         ex_sheets = []
     if ex_sheets:
         ex_choice = st.sidebar.selectbox(
             "Sheet", ex_sheets + ["All sheets combined"], key="excel_sheet_pick")
         if st.sidebar.button("Load sheet", key="excel_sheet_load"):
             try:
+                # Anti-shift skeleton: reserves the preview's space
+                # before the blocking load, exactly like st.spinner.
+                ui_loading.skeleton_table(rows=5, columns=4)
                 with st.spinner("Loading that sheet…"):
                     if ex_choice == "All sheets combined":
                         ex_df, _ = feat_combine.load_excel_all(ex_bytes)
@@ -1295,10 +1317,12 @@ if st.session_state.get("pending_excel"):
                                  f"{ex_name} : {ex_choice}")
                 st.session_state["pending_excel"] = None
             except Exception as e:  # noqa: BLE001
-                st.sidebar.error(f"Could not load that sheet: {e}")
+                st.sidebar.error(f"Could not load the '{ex_choice}' sheet "
+                                 f"from {ex_name}: {e}")
 
 if st.sidebar.button(_t("try_sample"), key="sample_btn"):
     _sample_path = _APP_DIR / "sample_data" / "messy_sales.csv"
+    ui_loading.skeleton_table(rows=5, columns=4)
     with st.spinner("Loading the sample file…"):
         _set_raw(engine.load_file("messy_sales.csv",
                                   _sample_path.read_bytes()),
@@ -1319,20 +1343,24 @@ if _saved_uploads:
         if _c1.button("Open", key="saved_upload_open",
                       disabled=not _saved_pick) and _saved_pick:
             try:
+                ui_loading.skeleton_table(rows=5, columns=4)
                 with st.spinner("Opening that file…"):
                     _saved_bytes = storage.read_file(_skey, "uploads", _saved_pick)
                     _set_raw(engine.load_file(_saved_pick, _saved_bytes),
                              _saved_pick, kind="upload")
                 st.session_state["last_upload"] = None
+                _opened_rows = len(st.session_state.raw)
                 if _restore_cleaned_state(_saved_pick):
                     st.sidebar.success(
-                        f"Opened {_saved_pick} — cleaned data restored too.")
+                        f"Opened {_saved_pick} ({_opened_rows:,} rows) — "
+                        "cleaned data restored too.")
                 else:
                     st.sidebar.success(
-                        f"Opened {_saved_pick}. Clean it in the Clean tab "
-                        "to rebuild the KPIs and the report.")
+                        f"Opened {_saved_pick} ({_opened_rows:,} rows). Clean "
+                        "it in the Clean tab to rebuild the KPIs and the "
+                        "report.")
             except Exception as e:  # noqa: BLE001
-                st.sidebar.error(f"Could not open that file: {e}")
+                st.sidebar.error(f"Could not open {_saved_pick}: {e}")
         if _c2.button("Delete", key="saved_upload_delete",
                       type="secondary",
                       disabled=not _saved_pick) and _saved_pick:
@@ -1354,12 +1382,14 @@ with st.sidebar.expander("More ways to load"):
                      "paste the link here.")
         else:
             try:
+                ui_loading.skeleton_table(rows=5, columns=4)
                 with st.spinner("Loading that sheet…"):
                     _set_raw(engine.load_sheets_url(sheet_url.strip()), "Google Sheet",
                              kind="sheets", url=sheet_url.strip())
                 st.session_state["last_upload"] = None
             except Exception as e:  # noqa: BLE001
-                st.error(f"Could not load that sheet: {e}")
+                st.error(f"Could not load that Google Sheet — check the "
+                         "link and sharing settings: {e}")
 
     st.write("... or a database file")
     db_file = st.file_uploader(
@@ -1369,18 +1399,20 @@ with st.sidebar.expander("More ways to load"):
         try:
             tables = engine.list_sqlite_tables(db_file.getvalue())
         except Exception as e:  # noqa: BLE001
-            st.error(f"Could not read that database: {e}")
+            st.error(f"Could not read that database file ({db_file.name}): {e}")
             tables = []
         if tables:
             table = st.selectbox("Table", tables, key="db_table")
             if st.button("Load table", key="db_load"):
                 try:
+                    ui_loading.skeleton_table(rows=5, columns=4)
                     with st.spinner("Loading that table…"):
                         _set_raw(engine.load_sqlite(db_file.getvalue(), table),
                                  f"{db_file.name} : {table}")
                     st.session_state["last_upload"] = None
                 except Exception as e:  # noqa: BLE001
-                    st.error(f"Could not load that table: {e}")
+                    st.error(f"Could not load the '{table}' table from "
+                             f"{db_file.name}: {e}")
 
 _last_raw_bytes = uploaded.getvalue() if uploaded is not None else None
 _reopened = feat_share.render_recent(
@@ -1687,7 +1719,7 @@ if "join" in tab:
             try:
                 right = engine.load_file(joined_file.name, joined_file.getvalue())
             except Exception as e:  # noqa: BLE001
-                st.error(f"Could not read that file: {e}")
+                st.error(f"Could not read {joined_file.name}: {e}")
                 right = None
             if right is not None:
                 c1, c2, c3 = st.columns(3)
@@ -2194,6 +2226,10 @@ if _active_tab == "report":
             st.session_state["pending_tab"] = "clean"
             st.rerun()
     else:
+        # Section rhythm: a generous gap before the report, the way
+        # the research's 128px marketing rhythm works at dashboard
+        # scale.
+        ui_loading.section_gap(px=64)
         ui_design.section_heading("Report")
         report = engine.build_report(raw, clean, st.session_state.actions,
                                      st.session_state.kpis)
@@ -2245,6 +2281,7 @@ if _active_tab == "report":
             clean = _oc["cleaned"]
             filtered = clean
         feat_enrich.render_versioned_download(st, clean)
+        ui_loading.section_gap()
         with st.expander("More export formats & sharing"):
             _num = engine.numeric_cols(clean)
             _cat = [c for c in clean.columns

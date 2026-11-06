@@ -143,6 +143,66 @@ def test_app_renders_with_css_injected():
     print("AppTest render OK: app runs with mobile CSS injected, no exception")
 
 
+def test_dark_theme():
+    """mobile_css(theme="dark") uses the dark palette — near-black
+    surfaces, brightened green — and no light-only hex survives.
+    Unknown themes fall back to light."""
+    css = fm.mobile_css(theme="dark")
+    for token in ("#1b1d1c", "#232625", "#edefee", "#989a99",
+                  "#006338", "#007243", "#4acd8b", "#ff6369"):
+        assert token in css.lower(), f"{token} missing from dark CSS"
+    for light_only in ("#FDFDFD", "#030303", "#117F50", "#E8E8E8",
+                       "#696969", "#0E7D4E"):
+        assert light_only not in css, \
+            f"light hex {light_only} survived in dark CSS"
+    assert fm.mobile_css(theme="nope") == fm.mobile_css(theme="light")
+    assert fm.mobile_css() == fm.mobile_css(theme="light")
+    print("dark theme OK: dark palette, light hexes absent, fallback light")
+
+
+def test_dark_palette_matches_ui_design():
+    """The dark palette stays in sync with ui_design.DARK_TOKENS —
+    one source of truth, asserted here so a drift fails loudly."""
+    import ui_design
+    dark = ui_design.DARK_TOKENS
+    pairs = (("PAGE_BG", "bg"), ("CARD_BG", "card"),
+             ("CARD_BORDER", "border"), ("INK", "ink"),
+             ("SECONDARY_TEXT", "muted"), ("ACCENT", "primary"),
+             ("ACCENT_HOVER", "primary_hover"),
+             ("GRADIENT_TOP", "gradient_top"),
+             ("SECONDARY_BTN_BG", "card"),
+             ("SECONDARY_BTN_BG_HOVER", "hover"),
+             ("SECONDARY_BTN_BORDER", "button_border"),
+             ("SIDEBAR_BG", "bg"), ("DANGER", "danger"),
+             ("WARNING", "amber_text"), ("LINK", "link"))
+    for mobile_key, design_key in pairs:
+        assert fm.DARK[mobile_key].lower() == dark[design_key], (
+            f"DARK[{mobile_key}]={fm.DARK[mobile_key]} != "
+            f"DARK_TOKENS[{design_key}]={dark[design_key]}")
+    print("dark sync OK: feat_mobile DARK == ui_design.DARK_TOKENS")
+
+
+def test_apply_mobile_css_follows_session_theme():
+    """apply_mobile_css(st) reads dcs_theme from session state and
+    defaults to light when the key is absent."""
+    class FakeSt:
+        def __init__(self, theme=None):
+            self.session_state = (
+                {"dcs_theme": theme} if theme else {})
+            self.calls = []
+
+        def markdown(self, text, unsafe_allow_html=False):
+            self.calls.append((text, unsafe_allow_html))
+
+    st = FakeSt("dark")
+    fm.apply_mobile_css(st)
+    assert st.calls[0][0] == fm.mobile_css(theme="dark")
+    st2 = FakeSt()
+    fm.apply_mobile_css(st2)
+    assert st2.calls[0][0] == fm.mobile_css(theme="light")
+    print("apply_mobile_css OK: follows dcs_theme, defaults light")
+
+
 if __name__ == "__main__":
     test_css_is_a_style_block()
     test_media_query_present()
@@ -151,4 +211,7 @@ if __name__ == "__main__":
     test_supabase_palette()
     test_apply_mobile_css_uses_markdown()
     test_app_renders_with_css_injected()
+    test_dark_theme()
+    test_dark_palette_matches_ui_design()
+    test_apply_mobile_css_follows_session_theme()
     print("ALL MOBILE TESTS PASSED")
