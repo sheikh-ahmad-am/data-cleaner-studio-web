@@ -110,7 +110,7 @@ QUICK_ACTIONS = [
      "keywords": "download export cleaned csv excel pdf"},
     {"key": "ask", "label": "Ask a question", "section": "dashboard",
      "hint": "Ask the data in plain words",
-     "keywords": "ask question query ai answer"},
+     "keywords": "ask question query answer"},
     {"key": "backup", "label": "Back up the raw data", "section": "tools",
      "hint": "A safety copy before cleaning",
      "keywords": "backup restore safety copy raw"},
