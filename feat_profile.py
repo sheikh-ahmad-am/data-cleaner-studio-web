@@ -139,6 +139,19 @@ def _member_since_text(created_at):
         return str(created_at)[:10] or "?"
 
 
+def _format_bytes(n) -> str:
+    """A byte count as a short human size (0 B, 1.2 KB, 3.4 MB, 1.0 GB)."""
+    try:
+        _n = float(n or 0)
+    except (TypeError, ValueError):
+        return "0 B"
+    for _unit in ("B", "KB", "MB", "GB"):
+        if _n < 1024 or _unit == "GB":
+            return f"{_n:.1f} {_unit}" if _unit != "B" else f"{int(_n)} B"
+        _n /= 1024
+    return f"{_n:.1f} GB"
+
+
 def render_profile_view(st, user, storage_key, on_logout=None):
     """The Profile section, in order: account info, change password,
     download my data, storage usage, log out, danger zone — one
@@ -242,11 +255,17 @@ def render_profile_view(st, user, storage_key, on_logout=None):
                 data=json.dumps(_export, indent=2).encode("utf-8"),
                 file_name="my-data-export.json",
                 mime="application/json",
+                icon=ui_design.icon_for("download"),
                 key="profile_export_download")
         except Exception as exc:  # noqa: BLE001 - show the error, don't crash
             st.error(f"Could not build your data export: {exc}")
 
     # (4) Storage usage -----------------------------------------------------
+    # A proper card like the others, not a half-empty one: total + the
+    # bar, then a per-folder breakdown (files and bytes each, so an
+    # empty folder still reads as a line, not a blank), then the
+    # free-tier limit. Every number comes from storage_usage /
+    # list_all_files — nothing invented.
     _st_left, _st_right, _st_card = ui_design.settings_card(
         "Storage usage", "How much of your 1 GB free-tier storage is used.")
     with _st_right:
@@ -255,7 +274,7 @@ def render_profile_view(st, user, storage_key, on_logout=None):
             _files = storage.list_all_files(storage_key)
         except Exception as exc:  # noqa: BLE001 - show the error, don't crash
             st.error(f"Could not read your storage usage: {exc}")
-            _total_bytes, _files = 0, {}
+            _total_bytes, _per_folder, _files = 0, {}, {}
         st.write(f"Total storage used: **{_total_bytes / (1024 * 1024):.1f} MB**")
         # Supabase profile pattern: storage as one thin hairline, green fill.
         _used_pct = _total_bytes / _FREE_TIER_BYTES * 100
@@ -266,12 +285,26 @@ def render_profile_view(st, user, storage_key, on_logout=None):
         if _storage_bar is not None:
             _storage_bar(_used_pct,
                          f"{_total_bytes / (1024 * 1024):.1f} MB of 1 GB used")
+        _folder_notes = {
+            "uploads": "files you uploaded",
+            "cleaned": "cleaned copies saved after each clean",
+            "recipes": "saved cleaning recipes",
+            "views": "saved views",
+            "workspaces": "auto-saved workspaces",
+            "backups": "backups",
+        }
         for _sub in storage.SUBFOLDERS:
             _names = _files.get(_sub, []) if isinstance(_files, dict) else []
-            st.write(f"{_sub}: {len(_names)} file(s)")
+            _bytes = (_per_folder.get(_sub, 0)
+                      if isinstance(_per_folder, dict) else 0)
+            _note = _folder_notes.get(_sub, "")
+            st.write(f"**{_sub}** — {len(_names)} file(s), "
+                     f"{_format_bytes(_bytes)}"
+                     + (f" ({_note})" if _note else ""))
         st.caption(
             "Free-tier storage limit: 1 GB "
-            f"({(_total_bytes / _FREE_TIER_BYTES * 100):.1f}% used).")
+            f"({_used_pct:.1f}% used). Only your own files count — "
+            "nothing is shared.")
 
     # (5) Log out -----------------------------------------------------------
     _lo_left, _lo_right, _lo_card = ui_design.settings_card(

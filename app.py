@@ -146,6 +146,13 @@ div[data-testid="stExpander"] { background-color: #ffffff;
 div[data-testid="stExpander"]:hover { border-color: #d0d0d0; }
 /* ---- spacing: consistent gaps between sections ---- */
 div[data-testid="stVerticalBlock"] > div { gap: 0.75rem; }
+/* Settings cards (Profile/Settings) sit closer together — the
+   dashboard's settings pages are dense, one card after another, not
+   separated by wide blank gaps. This is the space BETWEEN the cards
+   (the rule above is the space INSIDE each block); scoped to the main
+   area so the sidebar's own rhythm is untouched. */
+section[data-testid="stMain"] div[data-testid="stVerticalBlock"] {
+  gap: 0.75rem; }
 /* ---- buttons: primary deep green, subtle vertical gradient ---- */
 .stApp .stButton > button[kind="primary"],
 div[data-testid="stButton"] > button[kind="primary"] {
@@ -178,6 +185,56 @@ div[data-testid="stDownloadButton"] > button {
   border-radius: 6px; }
 div[data-testid="stDownloadButton"] > button:hover {
   background-color: #f8f8f8; color: #030303; border-color: #e5e5e5; }
+/* ---- button colours, testid-anchored (fix-up 2026-11-07) ----
+   Streamlit 1.66 does not put a `kind` attribute on the rendered
+   <button> (emotion filters the prop), so the [kind="secondary"] /
+   [kind="primary"] rules above never match in the browser — every
+   button fell back to Streamlit's native light-theme white, which is
+   why dark mode showed white pills with pale-grey text. These rules
+   anchor on the testids Streamlit DOES put in the DOM
+   (div[data-testid="stButton"] on the wrapper,
+   button[data-testid="stBaseButton-secondary|primary"] on the button
+   itself), carry !important, and out-specify the mobile stylesheet's
+   blanket `.stButton > button` rule, so they win even when that sheet
+   is a theme behind. The `*` rules pin the label + icon colour too —
+   a pale icon on a white pill reads as "no icon". */
+div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"],
+div[data-testid="stDownloadButton"] > button {
+  background-color: #ffffff !important; color: #030303 !important;
+  border: 1px solid #e5e5e5 !important; border-radius: 6px;
+  font-weight: 500; }
+div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"] *,
+div[data-testid="stDownloadButton"] > button * {
+  color: #030303 !important; }
+div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"]:hover,
+div[data-testid="stDownloadButton"] > button:hover {
+  background-color: #f3f3f3 !important; color: #030303 !important;
+  border-color: #d4d4d4 !important; }
+div[data-testid="stButton"] > button[data-testid="stBaseButton-primary"] {
+  background-color: #117f50 !important;
+  background: linear-gradient(180deg, #118050 0%, #0e7d4e 100%) !important;
+  color: #ffffff !important; border: 1px solid #117f50 !important;
+  border-radius: 999px; font-weight: 500; }
+div[data-testid="stButton"] > button[data-testid="stBaseButton-primary"] * {
+  color: #ffffff !important; }
+/* Sidebar nav rows + the active (disabled) pill, same anchoring. */
+section[data-testid="stSidebar"] div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"] {
+  background-color: #ffffff !important; color: #030303 !important;
+  border: 1px solid #e5e5e5 !important; }
+section[data-testid="stSidebar"] div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"] * {
+  color: #030303 !important; }
+section[data-testid="stSidebar"] div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"]:disabled {
+  background-color: #f3f3f3 !important; color: #030303 !important;
+  border: 1px solid #e5e5e5 !important; opacity: 1 !important; }
+section[data-testid="stSidebar"] div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"]:disabled * {
+  color: #030303 !important; }
+/* Danger-zone buttons (the .dcs-danger-zone marker icon_button emits
+   before a destructive button): red text + border on the secondary
+   panel, testid-anchored the same way. */
+div[data-testid="stVerticalBlock"] > div:has(.dcs-danger-zone) ~ div div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"] {
+  color: #b91c1c !important; border-color: #b91c1c !important; }
+div[data-testid="stVerticalBlock"] > div:has(.dcs-danger-zone) ~ div div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"] * {
+  color: #b91c1c !important; }
 /* ---- inputs: white, 6px radius, hairline border ---- */
 .stApp input, .stApp textarea, .stApp select {
   background-color: #ffffff; color: #030303;
@@ -1624,24 +1681,25 @@ elif _top_actions["avatar"] == "previews":
     st.toast("No feature previews running right now.")
 elif _top_actions["avatar"] == "logout":
     _do_logout()
-st.caption("Put in messy data. Get clean data, KPIs, charts and a report.")
-# The main flow, at a glance: upload -> clean -> KPIs -> export.
-# One step is "you are here"; finished steps get a tick.
-_flow_current = 2 if st.session_state.clean is None else 3
-_flow_parts = []
-for _i, _label in enumerate(["Upload", "Clean", "KPIs", "Export"], start=1):
-    if _i < _flow_current:
-        _flow_parts.append(f"{_label} ✓")
-    elif _i == _flow_current:
-        _flow_parts.append(f"**{_label}** — you are here")
-    else:
-        _flow_parts.append(_label)
-st.caption("Your flow: " + " → ".join(_flow_parts))
-if st.session_state.pop("just_signed_up", False):
-    st.success("Account created — you're logged in. Start with a file "
-               "from the sidebar, or try the sample data.")
-feat_tutorial.render_first_run_banner(st, settings_path=_settings_path)
-feat_analyse.render_whats_new(st, user_key=_skey)
+if _top_active == _nav_labels["preview"]:
+    st.caption("Put in messy data. Get clean data, KPIs, charts and a report.")
+    # The main flow, at a glance: upload -> clean -> KPIs -> export.
+    # One step is "you are here"; finished steps get a tick.
+    _flow_current = 2 if st.session_state.clean is None else 3
+    _flow_parts = []
+    for _i, _label in enumerate(["Upload", "Clean", "KPIs", "Export"], start=1):
+        if _i < _flow_current:
+            _flow_parts.append(f"{_label} ✓")
+        elif _i == _flow_current:
+            _flow_parts.append(f"**{_label}** — you are here")
+        else:
+            _flow_parts.append(_label)
+    st.caption("Your flow: " + " → ".join(_flow_parts))
+    if st.session_state.pop("just_signed_up", False):
+        st.success("Account created — you're logged in. Start with a file "
+                   "from the sidebar, or try the sample data.")
+    feat_tutorial.render_first_run_banner(st, settings_path=_settings_path)
+    feat_analyse.render_whats_new(st, user_key=_skey)
 
 # ------------------------------------------- workspace restore (startup) ---
 _ws_marker = _ws_dir / "autosave.txt"
@@ -2011,8 +2069,22 @@ with st.sidebar.expander("Settings (API key)"):
 # Supabase stylesheets. .streamlit/config.toml stays base="light":
 # it is only the first-paint base; the runtime CSS overrides do the
 # switching, since Streamlit's native theme is static.
-feat_enrich.render_language_picker(st)
-_ws_on = feat_enrich.render_workspace_toggle(st)
+# The language picker and the auto-save toggle render in the MAIN
+# area (their docstrings say "Sidebar" but the code uses plain st.*,
+# not st.sidebar.*) — so they belong to the Preview home, not to
+# every tab: on Profile / Dashboard / any other tab they used to sit
+# above that tab's own content. Guarded to Preview like the intro
+# above; the setting is still one click away on the home tab.
+if _top_active == _nav_labels["preview"]:
+    feat_enrich.render_language_picker(st)
+    _ws_on = feat_enrich.render_workspace_toggle(st)
+else:
+    # The toggle is not rendered on this tab, so read the mirrored data
+    # key (the widget key is dropped by Streamlit when the widget is
+    # not rendered) — auto-save stays on across tab switches.
+    _ws_on = bool(st.session_state.get(
+        "n_workspace_on",
+        st.session_state.get("n_workspace_toggle", False)))
 
 # ---------------------------------------------------------- auto-refresh ---
 raw = st.session_state.raw
@@ -2044,6 +2116,150 @@ if raw is not None and st.session_state.source_kind == "sheets":
             except Exception as e:  # noqa: BLE001
                 st.error(f"Refresh failed: {e}")
 
+# ------------------------------------------------------- dashboard strips ---
+# Defined up here (before the `if raw is None:` empty-state block
+# below): the Dashboard tab renders its strips even with no data
+# loaded, and that branch stops the script before the old definition
+# point — so the function has to exist by then.
+def _render_dashboard_strips(st, clean, raw, storage_key):
+    """The Supabase Overview, mapped to this app's own data (never
+    Supabase's): a six-tile status strip, the "Get connected" action
+    strip, service metric cards with warning/error dots, and the
+    Advisor line. Pure presentation + navigation — every number comes
+    from the loaded file, the storage backend, or the app's own
+    health check, and every strip action is a pending_tab jump.
+
+    Empty state (``clean`` / ``raw`` None): the strips still render.
+    Data-dependent tiles show "—" with "No data yet" (no numbers are
+    invented), the metric cards show "—" with a "load a file" sub, and
+    the Advisor points at loading a file instead of at cleaning.
+    """
+    _status = feat_status.get_status()
+    _state = _status.get("state")
+    _status_value = ("Healthy" if _state == "operational" else
+                     "Cloud down" if _state == "unavailable" else
+                     "Local mode")
+    _status_sub = ("Supabase answered just now" if _state == "operational"
+                   else "Cloud backend unreachable" if _state == "unavailable"
+                   else "Accounts and files on this server")
+    try:
+        _used_bytes, _ = storage.storage_usage(storage_key)
+        _storage_value = f"{_used_bytes / (1024 * 1024):.1f} MB of 1 GB"
+    except Exception:  # noqa: BLE001 - storage is best-effort here
+        _storage_value = "—"
+    _kpis = st.session_state.get("kpis") or []
+    if clean is not None:
+        _rows_value, _rows_sub = f"{len(clean):,}", "Cleaned rows"
+        _cols_value, _cols_sub = f"{len(clean.columns)}", "In this file"
+        _kpis_value, _kpis_sub = f"{len(_kpis)}", "Auto KPIs"
+        _file_value = str(st.session_state.get("source_name") or "—")[:24]
+        _file_sub = str(st.session_state.get("source_kind") or "")
+    else:
+        _rows_value, _rows_sub = "—", "No data yet"
+        _cols_value, _cols_sub = "—", "No data yet"
+        _kpis_value, _kpis_sub = "—", "No data yet"
+        _file_value, _file_sub = "—", "No data yet"
+    _tiles = [
+        ("Status", _status_value, _status_sub, "check"),
+        ("Storage", _storage_value, "Free-tier bucket", "database"),
+        ("Rows", _rows_value, _rows_sub, "table"),
+        ("Columns", _cols_value, _cols_sub, "grid"),
+        ("KPIs", _kpis_value, _kpis_sub, "chart"),
+        ("File", _file_value, _file_sub, "file"),
+    ]
+    _row_a, _row_b = _tiles[:3], _tiles[3:]
+    for _row in (_row_a, _row_b):
+        _cols = st.columns(3)
+        for _col, (_label, _value, _sub, _icon) in zip(_cols, _row):
+            with _col:
+                ui_design.kpi_tile(_label, _value, sub=_sub, icon=_icon)
+    # "Get connected", for this app: the six ways in, as one strip.
+    _cell = ui_design.connect_strip([
+        {"key": "preview", "icon": "upload", "title": "Upload",
+         "subtitle": "Load a file"},
+        {"key": "clean", "icon": "clean", "title": "Clean",
+         "subtitle": "Fix the messy bits"},
+        {"key": "kpis", "icon": "kpis", "title": "KPIs",
+         "subtitle": "See the numbers"},
+        {"key": "dashboard", "icon": "chart", "title": "Charts",
+         "subtitle": "Visualise it"},
+        {"key": "report", "icon": "report", "title": "Report",
+         "subtitle": "One-page export"},
+        {"key": "tools", "icon": "tools", "title": "Tools",
+         "subtitle": "Backups and more"},
+    ])
+    if _cell is not None:
+        st.session_state["pending_tab"] = _cell
+        st.rerun()
+    # Service metric cards: the file's own data quality — or, with no
+    # file loaded, the same cards empty (no numbers invented).
+    if raw is not None:
+        _missing = raw.isna().sum()
+        _missing_total = int(_missing.sum())
+        _cols_affected = int((_missing > 0).sum())
+        _max_missing = int(_missing.max()) if len(_missing) else 0
+        _bars = []
+        for _c in list(raw.columns)[:24]:
+            _n = int(_missing.get(_c, 0))
+            _bars.append((_n / _max_missing * 100 if _max_missing else 0,
+                          "warn" if _n > 0 else "ok"))
+        _dups = int(raw.duplicated().sum())
+        _m1, _m2 = st.columns(2)
+        with _m1:
+            ui_design.metric_card(
+                "Missing cells", f"{_missing_total:,}",
+                warnings=_cols_affected, errors=0, bars=_bars,
+                sub=f"{_cols_affected} of {len(raw.columns)} columns affected")
+        with _m2:
+            ui_design.metric_card(
+                "Duplicate rows", f"{_dups:,}",
+                warnings=0, errors=_dups,
+                sub="Exact duplicate rows in the file")
+        _issues = _missing_total + _dups
+    else:
+        _m1, _m2 = st.columns(2)
+        with _m1:
+            ui_design.metric_card(
+                "Missing cells", "—",
+                warnings=0, errors=0, bars=[],
+                sub="Load a file to check data quality")
+        with _m2:
+            ui_design.metric_card(
+                "Duplicate rows", "—",
+                warnings=0, errors=0,
+                sub="Load a file to check data quality")
+        _issues = None
+    # Advisor line: what the check found, and the next step.
+    if _issues is None:
+        _adv_text, _adv_go = "No data loaded yet", "preview"
+        _adv_label, _adv_icon = "Load a file", "upload"
+        _adv_detail = (" — upload a file and the Advisor will check it "
+                       "for missing cells and duplicate rows.")
+        _adv_help = "Load a file."
+    elif _issues == 0:
+        _adv_text, _adv_go = "Advisor found no issues", "tutorial"
+        _adv_label, _adv_icon = "How to use", "book"
+        _adv_detail = " — no missing cells, no duplicate rows."
+        _adv_help = "Open the guide."
+    else:
+        _adv_text = (f"Advisor found {_issues:,} issue"
+                     f"{'s' if _issues != 1 else ''}")
+        _adv_go, _adv_label, _adv_icon = "clean", "Go to Clean", "play"
+        _adv_detail = " — missing cells and duplicate rows to fix."
+        _adv_help = "Open the Clean tab."
+    _t, _b = st.columns([3, 1])
+    with _t:
+        st.write(f"**{_adv_text}**{_adv_detail}")
+    with _b:
+        if ui_design.icon_button(
+                _adv_label, _adv_icon,
+                kind="secondary" if _issues == 0 else "primary",
+                key="dashboard_advisor_go",
+                help=_adv_help):
+            st.session_state["pending_tab"] = _adv_go
+            st.rerun()
+
+
 if raw is None:
     # The Profile view needs no data: when the user asked for it
     # (sidebar Profile button, or already on the Profile tab), render
@@ -2055,23 +2271,37 @@ if raw is None:
         st.session_state.get("pending_tab") == "profile"
         or st.session_state.get("active_tab") == "Profile")
     if _heading_to_profile:
-        if st.button("← Back to data", key="profile_empty_back"):
-            st.session_state.pop("pending_tab", None)
-            st.session_state.pop("active_tab", None)
-            st.rerun()
         _profile_result = feat_profile.render_profile_view(
             st, _user, _skey, on_logout=_do_logout)
         if _profile_result in ("deleted", "logout"):
             _do_logout()
+        # Back sits BELOW the Profile content, not above the heading:
+        # the sidebar nav is the primary way back, and this is the
+        # explicit return to the empty state. (It used to sit above
+        # the heading, one more thing crowding the top of the page.)
+        if st.button("← Back to data", key="profile_empty_back"):
+            st.session_state.pop("pending_tab", None)
+            st.session_state.pop("active_tab", None)
+            st.rerun()
         st.stop()
     # The Status tab needs no data either (it reports the app's own
     # health and history): render it here too, same as Profile above.
     if st.session_state.get("active_tab") == "Status":
+        feat_status.render_status_section(st)
         if st.button("← Back to data", key="status_empty_back"):
             st.session_state.pop("pending_tab", None)
             st.session_state.pop("active_tab", None)
             st.rerun()
-        feat_status.render_status_section(st)
+        st.stop()
+    # The Dashboard tab needs no data either: its strips are the
+    # app's own health + the ways in, so render them (empty-state
+    # values) instead of the generic "Nothing loaded yet" card —
+    # otherwise the Dashboard is unreachable until a file is loaded,
+    # and its strips never show.
+    if _top_active == _nav_labels["dashboard"]:
+        ui_design.section_heading(
+            "Dashboard", sub="Your data's health, at a glance.")
+        _render_dashboard_strips(st, None, None, _skey)
         st.stop()
     # Guided empty state: what to do first, plus a one-click way to try
     # the sample — the same loader the sidebar "Try the messy sample"
@@ -2597,127 +2827,23 @@ if _active_tab == "kpis":
         feat_analyse.render_what_if(st, filtered)
         feat_enrich.render_ai_insights(st, filtered, st.session_state.kpis)
 
-# -------------------------------------------------------------- dashboard ---
-def _render_dashboard_strips(st, clean, raw, storage_key):
-    """The Supabase Overview, mapped to this app's own data (never
-    Supabase's): a six-tile status strip, the "Get connected" action
-    strip, service metric cards with warning/error dots, and the
-    Advisor line. Pure presentation + navigation — every number comes
-    from the loaded file, the storage backend, or the app's own
-    health check, and every strip action is a pending_tab jump."""
-    _status = feat_status.get_status()
-    _state = _status.get("state")
-    _status_value = ("Healthy" if _state == "operational" else
-                     "Cloud down" if _state == "unavailable" else
-                     "Local mode")
-    _status_sub = ("Supabase answered just now" if _state == "operational"
-                   else "Cloud backend unreachable" if _state == "unavailable"
-                   else "Accounts and files on this server")
-    try:
-        _used_bytes, _ = storage.storage_usage(storage_key)
-        _storage_value = f"{_used_bytes / (1024 * 1024):.1f} MB of 1 GB"
-    except Exception:  # noqa: BLE001 - storage is best-effort here
-        _storage_value = "—"
-    _kpis = st.session_state.get("kpis") or []
-    _tiles = [
-        ("Status", _status_value, _status_sub, "check"),
-        ("Storage", _storage_value, "Free-tier bucket", "database"),
-        ("Rows", f"{len(clean):,}", "Cleaned rows", "table"),
-        ("Columns", f"{len(clean.columns)}", "In this file", "grid"),
-        ("KPIs", f"{len(_kpis)}", "Auto KPIs", "chart"),
-        ("File", str(st.session_state.get("source_name") or "—")[:24],
-         str(st.session_state.get("source_kind") or ""), "file"),
-    ]
-    _row_a, _row_b = _tiles[:3], _tiles[3:]
-    for _row in (_row_a, _row_b):
-        _cols = st.columns(3)
-        for _col, (_label, _value, _sub, _icon) in zip(_cols, _row):
-            with _col:
-                ui_design.kpi_tile(_label, _value, sub=_sub, icon=_icon)
-    # "Get connected", for this app: the six ways in, as one strip.
-    _cell = ui_design.connect_strip([
-        {"key": "preview", "icon": "upload", "title": "Upload",
-         "subtitle": "Load a file"},
-        {"key": "clean", "icon": "clean", "title": "Clean",
-         "subtitle": "Fix the messy bits"},
-        {"key": "kpis", "icon": "kpis", "title": "KPIs",
-         "subtitle": "See the numbers"},
-        {"key": "dashboard", "icon": "chart", "title": "Charts",
-         "subtitle": "Visualise it"},
-        {"key": "report", "icon": "report", "title": "Report",
-         "subtitle": "One-page export"},
-        {"key": "tools", "icon": "tools", "title": "Tools",
-         "subtitle": "Backups and more"},
-    ])
-    if _cell is not None:
-        st.session_state["pending_tab"] = _cell
-        st.rerun()
-    # Service metric cards: the file's own data quality.
-    _missing = raw.isna().sum()
-    _missing_total = int(_missing.sum())
-    _cols_affected = int((_missing > 0).sum())
-    _max_missing = int(_missing.max()) if len(_missing) else 0
-    _bars = []
-    for _c in list(raw.columns)[:24]:
-        _n = int(_missing.get(_c, 0))
-        _bars.append((_n / _max_missing * 100 if _max_missing else 0,
-                      "warn" if _n > 0 else "ok"))
-    _dups = int(raw.duplicated().sum())
-    _m1, _m2 = st.columns(2)
-    with _m1:
-        ui_design.metric_card(
-            "Missing cells", f"{_missing_total:,}",
-            warnings=_cols_affected, errors=0, bars=_bars,
-            sub=f"{_cols_affected} of {len(raw.columns)} columns affected")
-    with _m2:
-        ui_design.metric_card(
-            "Duplicate rows", f"{_dups:,}",
-            warnings=0, errors=_dups,
-            sub="Exact duplicate rows in the file")
-    # Advisor line: what the check found, and the next step.
-    _issues = _missing_total + _dups
-    _adv_text, _adv_go = (
-        ("Advisor found no issues", "tutorial")
-        if _issues == 0 else
-        (f"Advisor found {_issues:,} issue"
-         f"{'s' if _issues != 1 else ''}", "clean"))
-    _adv_label = ("How to use" if _issues == 0 else "Go to Clean")
-    _t, _b = st.columns([3, 1])
-    with _t:
-        st.write(f"**{_adv_text}**"
-                 + (" — no missing cells, no duplicate rows."
-                    if _issues == 0 else
-                    " — missing cells and duplicate rows to fix."))
-    with _b:
-        if ui_design.icon_button(
-                _adv_label, "book" if _issues == 0 else "play",
-                kind="secondary" if _issues == 0 else "primary",
-                key="dashboard_advisor_go",
-                help="Open the guide." if _issues == 0 else
-                     "Open the Clean tab."):
-            st.session_state["pending_tab"] = _adv_go
-            st.rerun()
 
 
 if _active_tab == "dashboard":
-    if clean is None:
-        if ui_design.empty_state(
-                "No charts yet",
-                "Your file is loaded — now clean it and the charts will "
-                "appear here. Go to the Clean tab, tick what to fix, and "
-                "press the clean button.",
-                cta_label="Go to the Clean tab"):
-            # Via pending_tab, not a direct active_tab write: the Section
-            # radio is already instantiated by the time this button runs.
-            st.session_state["pending_tab"] = "clean"
-            st.rerun()
-    else:
+    # The strips always render — including the empty state, where they
+    # show "—" / "No data yet" instead of invented numbers (see
+    # _render_dashboard_strips). The old "No charts yet" empty-state
+    # card hid the strips entirely, so it is gone; the Advisor line
+    # above is the next step now.
+    ui_design.section_heading(
+        "Dashboard",
+        sub=("Your data's health, at a glance."
+             if clean is None else
+             "The slicers on the left filter every chart and KPI here."))
+    _render_dashboard_strips(st, clean, raw, _skey)
+    if clean is not None:
         import altair as alt
 
-        ui_design.section_heading(
-            "Dashboard",
-            sub="The slicers on the left filter every chart and KPI here.")
-        _render_dashboard_strips(st, clean, raw, _skey)
         df = filtered
         num_cols = engine.numeric_cols(clean)
         cat_cols = [c for c in clean.columns

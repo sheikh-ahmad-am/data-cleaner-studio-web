@@ -441,6 +441,13 @@ div[data-testid="stExpander"] { background-color: #ffffff;
 div[data-testid="stExpander"]:hover { border-color: #d0d0d0; }
 /* ---- spacing: consistent gaps between sections ---- */
 div[data-testid="stVerticalBlock"] > div { gap: 0.75rem; }
+/* Settings cards (Profile/Settings) sit closer together — the
+   dashboard's settings pages are dense, one card after another, not
+   separated by wide blank gaps. This is the space BETWEEN the cards
+   (the rule above is the space INSIDE each block); scoped to the main
+   area so the sidebar's own rhythm is untouched. */
+section[data-testid="stMain"] div[data-testid="stVerticalBlock"] {
+  gap: 0.75rem; }
 /* ---- buttons: primary deep green, subtle vertical gradient ---- */
 .stApp .stButton > button[kind="primary"],
 div[data-testid="stButton"] > button[kind="primary"] {
@@ -473,6 +480,56 @@ div[data-testid="stDownloadButton"] > button {
   border-radius: 6px; }
 div[data-testid="stDownloadButton"] > button:hover {
   background-color: #f8f8f8; color: #030303; border-color: #e5e5e5; }
+/* ---- button colours, testid-anchored (fix-up 2026-11-07) ----
+   Streamlit 1.66 does not put a `kind` attribute on the rendered
+   <button> (emotion filters the prop), so the [kind="secondary"] /
+   [kind="primary"] rules above never match in the browser — every
+   button fell back to Streamlit's native light-theme white, which is
+   why dark mode showed white pills with pale-grey text. These rules
+   anchor on the testids Streamlit DOES put in the DOM
+   (div[data-testid="stButton"] on the wrapper,
+   button[data-testid="stBaseButton-secondary|primary"] on the button
+   itself), carry !important, and out-specify the mobile stylesheet's
+   blanket `.stButton > button` rule, so they win even when that sheet
+   is a theme behind. The `*` rules pin the label + icon colour too —
+   a pale icon on a white pill reads as "no icon". */
+div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"],
+div[data-testid="stDownloadButton"] > button {
+  background-color: #ffffff !important; color: #030303 !important;
+  border: 1px solid #e5e5e5 !important; border-radius: 6px;
+  font-weight: 500; }
+div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"] *,
+div[data-testid="stDownloadButton"] > button * {
+  color: #030303 !important; }
+div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"]:hover,
+div[data-testid="stDownloadButton"] > button:hover {
+  background-color: #f3f3f3 !important; color: #030303 !important;
+  border-color: #d4d4d4 !important; }
+div[data-testid="stButton"] > button[data-testid="stBaseButton-primary"] {
+  background-color: #117f50 !important;
+  background: linear-gradient(180deg, #118050 0%, #0e7d4e 100%) !important;
+  color: #ffffff !important; border: 1px solid #117f50 !important;
+  border-radius: 999px; font-weight: 500; }
+div[data-testid="stButton"] > button[data-testid="stBaseButton-primary"] * {
+  color: #ffffff !important; }
+/* Sidebar nav rows + the active (disabled) pill, same anchoring. */
+section[data-testid="stSidebar"] div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"] {
+  background-color: #ffffff !important; color: #030303 !important;
+  border: 1px solid #e5e5e5 !important; }
+section[data-testid="stSidebar"] div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"] * {
+  color: #030303 !important; }
+section[data-testid="stSidebar"] div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"]:disabled {
+  background-color: #f3f3f3 !important; color: #030303 !important;
+  border: 1px solid #e5e5e5 !important; opacity: 1 !important; }
+section[data-testid="stSidebar"] div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"]:disabled * {
+  color: #030303 !important; }
+/* Danger-zone buttons (the .dcs-danger-zone marker icon_button emits
+   before a destructive button): red text + border on the secondary
+   panel, testid-anchored the same way. */
+div[data-testid="stVerticalBlock"] > div:has(.dcs-danger-zone) ~ div div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"] {
+  color: #b91c1c !important; border-color: #b91c1c !important; }
+div[data-testid="stVerticalBlock"] > div:has(.dcs-danger-zone) ~ div div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"] * {
+  color: #b91c1c !important; }
 /* ---- inputs: white, 6px radius, hairline border ---- */
 .stApp input, .stApp textarea, .stApp select {
   background-color: #ffffff; color: #030303;
@@ -910,6 +967,10 @@ div[data-testid="stExpander"] { background-color: #232625;
 div[data-testid="stExpander"]:hover { border-color: #4a4d4c; }
 /* ---- spacing: consistent gaps between sections ---- */
 div[data-testid="stVerticalBlock"] > div { gap: 0.75rem; }
+/* Settings cards sit closer together in dark mode too (same rule as
+   the light stylesheet — the gap is not a colour). */
+section[data-testid="stMain"] div[data-testid="stVerticalBlock"] {
+  gap: 0.75rem; }
 /* ---- buttons: primary deepened green, subtle vertical gradient ---- */
 .stApp .stButton > button[kind="primary"],
 div[data-testid="stButton"] > button[kind="primary"] {
@@ -940,6 +1001,45 @@ div[data-testid="stDownloadButton"] > button {
   border-radius: 6px; }
 div[data-testid="stDownloadButton"] > button:hover {
   background-color: #2a2d2c; color: #edefee; border-color: #363636; }
+/* ---- button colours, testid-anchored (fix-up 2026-11-07) ----
+   Dark twin of the light block above: same anchoring, dark tokens.
+   Without it every button falls back to Streamlit's native
+   light-theme white in dark mode (white pills, pale-grey text). */
+div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"],
+div[data-testid="stDownloadButton"] > button {
+  background-color: #232625 !important; color: #edefee !important;
+  border: 1px solid #363636 !important; border-radius: 6px;
+  font-weight: 500; }
+div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"] *,
+div[data-testid="stDownloadButton"] > button * {
+  color: #edefee !important; }
+div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"]:hover,
+div[data-testid="stDownloadButton"] > button:hover {
+  background-color: #2a2d2c !important; color: #edefee !important;
+  border-color: #363636 !important; }
+div[data-testid="stButton"] > button[data-testid="stBaseButton-primary"] {
+  background-color: #006338 !important;
+  background: linear-gradient(180deg, #007243 0%, #006338 100%) !important;
+  color: #ffffff !important; border: 1px solid #006338 !important;
+  border-radius: 999px; font-weight: 500; }
+div[data-testid="stButton"] > button[data-testid="stBaseButton-primary"] * {
+  color: #ffffff !important; }
+/* Sidebar nav rows + the active (disabled) pill, same anchoring. */
+section[data-testid="stSidebar"] div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"] {
+  background-color: #232625 !important; color: #edefee !important;
+  border: 1px solid #363636 !important; }
+section[data-testid="stSidebar"] div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"] * {
+  color: #edefee !important; }
+section[data-testid="stSidebar"] div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"]:disabled {
+  background-color: #2a2d2c !important; color: #edefee !important;
+  border: 1px solid #363636 !important; opacity: 1 !important; }
+section[data-testid="stSidebar"] div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"]:disabled * {
+  color: #edefee !important; }
+/* Danger-zone buttons: red text + border on the dark secondary panel. */
+div[data-testid="stVerticalBlock"] > div:has(.dcs-danger-zone) ~ div div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"] {
+  color: #ff6369 !important; border-color: #ff6369 !important; }
+div[data-testid="stVerticalBlock"] > div:has(.dcs-danger-zone) ~ div div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"] * {
+  color: #ff6369 !important; }
 /* ---- inputs: dark panel, 6px radius, hairline border ---- */
 .stApp input, .stApp textarea, .stApp select {
   background-color: #232625; color: #edefee;
@@ -1870,10 +1970,14 @@ def pill(text: str, kind: str = "mint") -> str:
 
 
 def empty_state(title: str, body: str = "",
-                cta_label: str | None = None) -> bool:
+                cta_label: str | None = None,
+                cta_icon: str = "play") -> bool:
     """Render a guided empty state: centred title + muted body inside a
     white bordered card, with an optional CTA button underneath.
 
+    The CTA is an icon button (``cta_icon``, default "play" — every
+    empty-state CTA is a "go / start" action), so it carries the small
+    line icon left of its label like every other action button.
     Returns True when the CTA button is clicked (False when there is no
     CTA, or it was not clicked), so the caller can act on it.
     """
@@ -1886,8 +1990,9 @@ def empty_state(title: str, body: str = "",
     if cta_label:
         slug = "".join(ch if ch.isalnum() else "-"
                        for ch in cta_label.lower())[:24] or "cta"
-        return bool(st.button(cta_label, type="primary",
-                              key=f"dcs-empty-{slug}"))
+        return bool(icon_button(
+            cta_label, cta_icon, kind="primary",
+            key=f"dcs-empty-{slug}"))
     return False
 
 

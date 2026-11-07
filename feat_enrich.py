@@ -1152,15 +1152,28 @@ def render_workspace_toggle(st) -> bool:
     is on. The coordinator wires the calls: after each change, when this
     is on, call save_workspace(raw, clean, source_name, actions, kpis);
     on startup, call load_workspace() to restore. The toggle itself saves
-    nothing — it only reports the choice."""
+    nothing — it only reports the choice.
+
+    The checkbox only renders on the Preview tab (the app guards the
+    call), so its widget value would vanish on other tabs — Streamlit
+    drops a widget's state when the widget is not rendered. Mirror the
+    choice into the data key "n_workspace_on" every render, and start
+    the checkbox from that key (falling back to the widget key the app
+    sets from the autosave marker on startup), so auto-save survives a
+    tab switch and the checkbox still shows the real state on return.
+    """
+    _initial = bool(st.session_state.get(
+        "n_workspace_on",
+        st.session_state.get("n_workspace_toggle", False)))
     st.subheader("Auto-save workspace")
     st.write("When on, your loaded file and cleaned data are saved on "
              "this computer (app folder, workspace/) after each change, "
              "so closing the app does not lose your work.")
-    on = st.checkbox("Auto-save my workspace", value=False,
+    on = st.checkbox("Auto-save my workspace", value=_initial,
                      key="n_workspace_toggle",
                      help="Saves raw.csv, clean.csv and state.json in the "
                           "app's workspace folder.")
+    st.session_state["n_workspace_on"] = bool(on)
     return bool(on)
 
 

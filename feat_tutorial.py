@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import ai_settings
 import privacy
+import ui_design
 
 __all__ = [
     "TUTORIAL_STEPS",
@@ -187,7 +188,8 @@ def render_first_run_banner(st, settings_path=None) -> bool:
             "data, KPIs, charts and a report in seven short steps. "
             "Open the 'How to use' tab for the full guide, or press "
             "'Got it' and start with a file from the sidebar.")
-    if st.button("Got it", key="tut_got_it"):
+    if ui_design.icon_button("Got it", "check", key="tut_got_it",
+                             help="Dismiss this banner.", st_module=st):
         mark_tutorial_seen(settings_path)
         try:
             st.session_state["tut_got_it_done"] = True
