@@ -546,6 +546,45 @@ def test_brevo_client_payload():
     print("Brevo client payload OK")
 
 
+def test_login_code_email_carries_site_design():
+    """The login-code email looks like the website: the logo, a
+    short welcome note, the code in a green-bordered box, and the
+    site's light-theme colours — in both the HTML and the plain-text
+    fallback (mocked transport — no real email ever leaves)."""
+    payload = brevo_email.build_login_code_email(
+        "sender@example.com", "user@example.com", "123456")
+    html = payload["htmlContent"]
+    text = payload["textContent"]
+    # Logo: the repo-hosted PNG (email clients do not render SVG),
+    # with alt text for blocked images.
+    assert brevo_email.LOGO_EMAIL_URL in html
+    assert "assets/logo-email.png" in brevo_email.LOGO_EMAIL_URL
+    assert 'alt="Data Cleaner Studio"' in html
+    # The logo file itself exists and is a real PNG at email size.
+    logo_path = PROJECT_ROOT / "assets" / "logo-email.png"
+    assert logo_path.is_file(), "assets/logo-email.png is missing"
+    from PIL import Image
+    with Image.open(logo_path) as im:
+        assert im.format == "PNG"
+        assert im.size == (240, 240)
+    # Welcome note + code + expiry in both bodies.
+    assert brevo_email.WELCOME_LINE in html
+    assert brevo_email.WELCOME_LINE in text
+    assert "123456" in html
+    assert "123456" in text
+    assert "10 minutes" in html
+    assert "10 minutes" in text
+    # Site theme: near-white page, white card, one green accent,
+    # hairline borders, ink + muted text, tagline in the footer.
+    for token in ("#fdfdfd", "#ffffff", "#117f50", "#e8e8e8",
+                  "#030303", "#696969"):
+        assert token in html, f"theme token {token} missing from email"
+    assert brevo_email.TAGLINE in html
+    assert brevo_email.TAGLINE in text
+    assert "monospace" in html
+    print("Login-code email carries the site design OK")
+
+
 def test_brevo_missing_blocks_login():
     """With Brevo unconfigured: get_brevo_config() is None,
     request_login_code refuses with 'not_configured', the setup
@@ -789,6 +828,7 @@ def main():
     test_hourly_cap_enforced()
     test_send_failure_invalidates_code()
     test_brevo_client_payload()
+    test_login_code_email_carries_site_design()
     test_brevo_missing_blocks_login()
     test_supabase_mode_code_flow_via_fake_rpc()
     test_turnstile_fully_gone()

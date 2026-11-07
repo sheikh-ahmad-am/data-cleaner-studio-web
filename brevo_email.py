@@ -24,6 +24,28 @@ import httpx
 
 BREVO_API_URL = "https://api.brevo.com/v3/smtp/email"
 
+# The email logo: a PNG rendered from assets/logo.svg (email clients
+# do not reliably render SVG). The file is committed in the public
+# repo, so the email links to it by its raw URL; alt text keeps the
+# email readable when images are blocked. Rendered at 240px and
+# displayed at 120px for retina sharpness.
+LOGO_EMAIL_URL = (
+    "https://raw.githubusercontent.com/sheikh-ahmad-am/"
+    "data-cleaner-studio-web/main/assets/logo-email.png"
+)
+
+# Welcome line (neutral on purpose: the same email goes out on every
+# password login, first or returning).
+WELCOME_LINE = (
+    "Welcome to Data Cleaner Studio — here's your code to finish "
+    "signing in."
+)
+
+TAGLINE = (
+    "Put in a messy file. Get the cleaned file back, with its KPIs, "
+    "charts and a one-page report."
+)
+
 
 class BrevoNotConfiguredError(Exception):
     """BREVO_API_KEY or BREVO_SENDER_EMAIL is missing."""
@@ -55,23 +77,96 @@ def get_brevo_config() -> tuple[str, str] | None:
 
 
 def build_login_code_email(sender: str, recipient: str, code: str) -> dict:
-    """The Brevo API payload for one login-code email."""
+    """The Brevo API payload for one login-code email.
+
+    The email carries the website's look: near-white background,
+    white card, one green accent (#117f50), hairline borders
+    (#e8e8e8), Inter with a system-sans fallback — the same tokens
+    as ui_design.py's light theme. Table layout + inline styles
+    only, so it renders in plain email clients too (no dark theme
+    in email — light and clean). The plain-text version says the
+    same things, so nothing is lost when HTML is off.
+    """
     subject = "Your Data Cleaner Studio login code"
     text = (
-        f"Your Data Cleaner Studio login code is: {code}\n\n"
+        f"{WELCOME_LINE}\n\n"
+        f"Your login code is: {code}\n\n"
         "It expires in 10 minutes. Enter it on the login screen to "
         "finish signing in.\n\n"
         "If you didn't request this code, ignore this email — no one "
-        "can sign in without it.\n"
+        "can sign in without it.\n\n"
+        "—\n"
+        f"Data Cleaner Studio\n{TAGLINE}\n"
+    )
+    font = (
+        "Inter, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, "
+        "sans-serif"
     )
     html = (
-        "<p>Your Data Cleaner Studio login code is:</p>"
-        f"<p style=\"font-size: 28px; font-weight: bold; "
-        f"letter-spacing: 4px;\">{code}</p>"
-        "<p>It expires in 10 minutes. Enter it on the login screen to "
-        "finish signing in.</p>"
-        "<p>If you didn't request this code, ignore this email — no one "
-        "can sign in without it.</p>"
+        "<!DOCTYPE html>"
+        "<html><head><meta charset=\"utf-8\">"
+        "<meta name=\"viewport\" content=\"width=device-width,"
+        " initial-scale=1\"></head>"
+        f"<body style=\"margin: 0; padding: 0; background-color: #fdfdfd; "
+        f"font-family: {font};\">"
+        "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" "
+        "cellpadding=\"0\" style=\"background-color: #fdfdfd;\">"
+        "<tr><td align=\"center\" style=\"padding: 32px 16px;\">"
+        "<table role=\"presentation\" width=\"480\" cellspacing=\"0\" "
+        "cellpadding=\"0\" style=\"background-color: #ffffff; "
+        "border: 1px solid #e8e8e8; border-radius: 12px;\">"
+        "<tr><td align=\"center\" "
+        "style=\"padding: 32px 32px 8px 32px;\">"
+        f"<img src=\"{LOGO_EMAIL_URL}\" width=\"120\" height=\"120\" "
+        "alt=\"Data Cleaner Studio\" "
+        "style=\"display: block; border: 0;\">"
+        "</td></tr>"
+        "<tr><td align=\"center\" "
+        "style=\"padding: 16px 32px 0 32px; font-size: 22px; "
+        "font-weight: 600; color: #030303;\">"
+        "Data Cleaner Studio"
+        "</td></tr>"
+        "<tr><td align=\"center\" "
+        "style=\"padding: 12px 32px 0 32px; font-size: 15px; "
+        "line-height: 1.6; color: #4d4d4d;\">"
+        f"{WELCOME_LINE}"
+        "</td></tr>"
+        "<tr><td align=\"center\" style=\"padding: 24px 32px 0 32px;\">"
+        "<table role=\"presentation\" cellspacing=\"0\" cellpadding=\"0\">"
+        "<tr><td align=\"center\" "
+        "style=\"padding: 16px 28px; font-family: ui-monospace, "
+        "'SF Mono', Menlo, Consolas, monospace; font-size: 32px; "
+        "font-weight: 700; letter-spacing: 8px; color: #030303; "
+        "background-color: #ffffff; border: 1px solid #117f50; "
+        "border-radius: 6px;\">"
+        f"{code}"
+        "</td></tr></table>"
+        "</td></tr>"
+        "<tr><td align=\"center\" "
+        "style=\"padding: 20px 32px 0 32px; font-size: 14px; "
+        "line-height: 1.6; color: #4d4d4d;\">"
+        "It expires in 10 minutes. Enter it on the login screen to "
+        "finish signing in."
+        "</td></tr>"
+        "<tr><td align=\"center\" "
+        "style=\"padding: 12px 32px 32px 32px; font-size: 13px; "
+        "line-height: 1.6; color: #696969;\">"
+        "If you didn't request this code, ignore this email — no one "
+        "can sign in without it."
+        "</td></tr>"
+        "<tr><td style=\"padding: 0 32px 24px 32px;\">"
+        "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" "
+        "cellpadding=\"0\"><tr><td "
+        "style=\"border-top: 1px solid #e8e8e8; padding-top: 16px; "
+        "font-size: 12px; line-height: 1.6; color: #696969; "
+        "text-align: center;\">"
+        "Data Cleaner Studio<br>"
+        f"{TAGLINE}"
+        "</td></tr></table>"
+        "</td></tr>"
+        "</table>"
+        "</td></tr></table>"
+        "</body></html>"
     )
     return {
         "sender": {"name": "Data Cleaner Studio", "email": sender},
