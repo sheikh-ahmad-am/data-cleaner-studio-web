@@ -515,7 +515,11 @@ div[data-testid="stHorizontalBlock"] div[data-testid="column"]:last-child
 .dcs-loader-mark { position: relative; margin: 0 auto 16px;
   animation: dcs-lm-breathe 1.8s ease-in-out 1.15s infinite alternate; }
 .dcs-loader--large .dcs-loader-mark { width: 96px; height: 96px; }
-.dcs-loader--compact { text-align: left; padding: 0.5rem 0; }
+.dcs-loader--compact { text-align: left; padding: 0.75rem 1rem;
+  position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  z-index: 1000001; pointer-events: none; max-width: 90vw;
+  background: #ffffff; border: 1px solid #e8e8e8; border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(3, 3, 3, 0.16); }
 .dcs-loader--compact .dcs-loader-row { display: flex; align-items: center;
   gap: 12px; }
 .dcs-loader--compact .dcs-loader-mark { width: 40px; height: 40px;
