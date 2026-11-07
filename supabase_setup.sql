@@ -254,7 +254,12 @@ create or replace function public.app_verify_login_code(p_email text, p_code tex
 returns text
 language plpgsql
 security definer
-set search_path = public
+-- extensions is on the path on purpose: the digest() call below comes
+-- from pgcrypto, which Supabase installs in the extensions schema —
+-- with search_path = public alone the call fails with 42883
+-- ("function digest(text, unknown) does not exist") and every real
+-- code verify breaks, while a missing code still returns not_found.
+set search_path = public, extensions
 as $$
 declare
   v_row public.email_login_codes%rowtype;
