@@ -123,24 +123,24 @@ def goto_section(at, label):
     assert not at.exception, f"exception going to {label}: {at.exception}"
 
 
-def sidebar_nav_markdown(at):
-    """The sidebar nav's HTML (one markdown element, all rows).
+def sidebar_nav_labels(at):
+    """The sidebar nav's row labels (clickable icon buttons, keyed
+    dcs_nav_<section>).
 
-    Match the rendered rows, not the stylesheet — the injected CSS
-    also mentions dcs-nav-row."""
-    for m in at.markdown:
-        if '<div class="dcs-nav-row' in m.value:
-            return m.value
-    raise AssertionError("sidebar nav markdown missing")
+    Match the rendered buttons, not the stylesheet — the injected CSS
+    also mentions dcs-nav rows."""
+    return [b.label for b in at.button
+            if (b.key or "").startswith("dcs_nav_")]
 
 
 def topbar_markdown(at):
-    """The top bar's HTML (breadcrumb + current-section title).
+    """The top bar's left block (logo + workspace + current-section
+    title).
 
     Match the rendered bar, not the stylesheet — the injected CSS
     also mentions dcs-topbar."""
     for m in at.markdown:
-        if '<div class="dcs-topbar">' in m.value:
+        if '<div class="dcs-topbar-left">' in m.value:
             return m.value
     raise AssertionError("top bar markdown missing")
 
@@ -349,24 +349,24 @@ def test_client_mode_toggle_nav_same_run(_tmp_env):
     toggle = next(c for c in at.checkbox
                   if c.label == "Client mode (simple view)")
     assert toggle.value is False
-    nav_before = sidebar_nav_markdown(at)
-    assert ">Join</div>" in nav_before and ">Tools</div>" in nav_before, \
+    nav_before = sidebar_nav_labels(at)
+    assert "Join" in nav_before and "Tools" in nav_before, \
         "full mode nav should list the advanced tabs"
 
     # Flip the toggle: the nav on THIS run must already show the
     # client set — before the fix it lagged one run behind.
     toggle.check().run()
     assert not at.exception, f"exception on toggle: {at.exception}"
-    nav_client = sidebar_nav_markdown(at)
-    assert ">Join</div>" not in nav_client, \
+    nav_client = sidebar_nav_labels(at)
+    assert "Join" not in nav_client, \
         "client-mode nav must hide Join on the same run as the flip"
-    assert ">Tools</div>" not in nav_client, \
+    assert "Tools" not in nav_client, \
         "client-mode nav must hide Tools on the same run as the flip"
-    assert ">Compare</div>" not in nav_client, \
+    assert "Compare" not in nav_client, \
         "client-mode nav must hide Compare on the same run as the flip"
-    assert ">Status</div>" in nav_client, \
+    assert "Status" in nav_client, \
         "client-mode nav must still list Status"
-    assert ">Preview</div>" in nav_client, \
+    assert "Preview" in nav_client, \
         "client-mode nav must still list Preview"
 
     # Flip it back: the full nav returns on the same run too.
@@ -375,8 +375,8 @@ def test_client_mode_toggle_nav_same_run(_tmp_env):
                   if c.label == "Client mode (simple view)")
     toggle.uncheck().run()
     assert not at.exception, f"exception on untoggle: {at.exception}"
-    nav_back = sidebar_nav_markdown(at)
-    assert ">Join</div>" in nav_back and ">Tools</div>" in nav_back, \
+    nav_back = sidebar_nav_labels(at)
+    assert "Join" in nav_back and "Tools" in nav_back, \
         "untoggling must restore the full nav on the same run"
 
 
@@ -403,8 +403,8 @@ def test_language_switch_topbar_same_run(_tmp_env):
         f"top bar should read Hindi on the switch run, got {topbar!r}"
     assert "Preview</span>" not in topbar, \
         "top bar must not keep the English title on the switch run"
-    nav = sidebar_nav_markdown(at)
-    assert ">साफ़ करें</div>" in nav, \
+    nav = sidebar_nav_labels(at)
+    assert "साफ़ करें" in nav, \
         "sidebar nav should also relabel on the switch run"
     # The choice is saved, so a later run stays in Hindi.
     assert ai_settings.load_settings().get("language") == "hi", \

@@ -635,7 +635,7 @@ def test_reopen_restores_cleaned_state():
     _signup_and_login(at)
     _load_sample(at)
     _clean_sample(at)
-    _find_button(at, "Log out").click().run()
+    _find_button(at, "Sign out").click().run()
     assert not at.exception, f"exception on logout: {at.exception}"
     _login(at)
     assert at.session_state.get("clean") is None, \
@@ -689,7 +689,7 @@ def test_keep_copy_pref_persists_across_login():
                 if c.label == "Keep a copy for quick reopen")
     keep.check().run()
     assert not at.exception
-    _find_button(at, "Log out").click().run()
+    _find_button(at, "Sign out").click().run()
     assert not at.exception
     # A FRESH AppTest instance: new session state, same stored backend.
     at2 = AppTest.from_file(APP)

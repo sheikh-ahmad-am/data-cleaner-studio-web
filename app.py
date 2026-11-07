@@ -151,7 +151,7 @@ div[data-testid="stVerticalBlock"] > div { gap: 0.75rem; }
 div[data-testid="stButton"] > button[kind="primary"] {
   background-color: #117f50;
   background: linear-gradient(180deg, #118050 0%, #0e7d4e 100%);
-  color: #ffffff; border: 1px solid #117f50; border-radius: 6px;
+  color: #ffffff; border: 1px solid #117f50; border-radius: 999px;
   font-weight: 500; }
 .stApp .stButton > button[kind="primary"]:hover,
 div[data-testid="stButton"] > button[kind="primary"]:hover {
@@ -341,8 +341,9 @@ div[data-testid="stDataFrame"], div[data-testid="stTable"] {
 div[data-testid="stDataFrame"] table, div[data-testid="stTable"] table {
   background-color: #ffffff; }
 div[data-testid="stDataFrame"] th, div[data-testid="stTable"] th {
-  background-color: #ffffff; color: #030303; font-weight: 600;
-  border-bottom: 1px solid #e8e8e8; font-size: 13px; }
+  background-color: #ffffff; color: #696969; font-weight: 600;
+  border-bottom: 1px solid #e8e8e8; font-size: 11px;
+  text-transform: uppercase; letter-spacing: 0.08em; }
 div[data-testid="stDataFrame"] td, div[data-testid="stTable"] td {
   background-color: #ffffff; color: #030303;
   border-bottom: 1px solid #e8e8e8; font-size: 13px; }
@@ -365,7 +366,7 @@ section[data-testid="stSidebar"] button[kind="header"],
 div[data-baseweb="menu"] li[role="option"] {
   transition: background-color 0.2s cubic-bezier(0.22, 1, 0.36, 1),
     border-color 0.2s cubic-bezier(0.22, 1, 0.36, 1),
-    color 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+    color 0.2s cubic-bezier(0.22, 1, 0.36, 1); }
 /* ---- focus: one shared ring — 2px gap + 4px translucent green halo ---- */
 .stApp .stButton > button:focus-visible,
 div[data-testid="stDownloadButton"] > button:focus-visible,
@@ -478,6 +479,91 @@ div[data-testid="stHorizontalBlock"] div[data-testid="column"]:last-child
 @media (prefers-reduced-motion: reduce) {
   .dcs-loader-mark, .dcs-loader-mark > div, .dcs-loader-shimmer i {
     animation: none !important; } }
+/* ---- Supabase faithful rebuild (2026-11-07, page-by-page study) ----
+   Primary buttons are pills (New / Connect / Run are fully rounded in
+   the dashboard; secondary stays 6px). Dataframe headers are the
+   dashboard's uppercase micro-labels (see the th rule above). The
+   rules below are the rebuild's own pieces: the top bar row, the
+   avatar menu rows, the nav active pill, the danger marker, the
+   settings cards, the KPI icon box and the metric cards. */
+.dcs-topbar-left { display: flex; align-items: center; gap: 8px;
+  min-width: 0; }
+.dcs-topbar-logo { width: 24px; height: 24px; flex: none; }
+.dcs-topbar-brand { font-size: 17px; font-weight: 500; color: #030303;
+  white-space: nowrap; }
+.dcs-topbar-rule { border-top: 1px solid #e8e8e8; margin: 0.25rem 0 1rem; }
+/* ---- avatar menu rows: bold email, micro section label, timezone row ---- */
+.dcs-menu-email { font-size: 14px; font-weight: 700; color: #030303;
+  padding: 0.35rem 0.75rem; overflow-wrap: anywhere; }
+.dcs-menu-label { font-size: 11px; font-weight: 600; letter-spacing: 0.08em;
+  text-transform: uppercase; color: #696969;
+  padding: 0.35rem 0.75rem 0.1rem; }
+.dcs-menu-row { display: flex; align-items: center;
+  justify-content: space-between; gap: 0.75rem; font-size: 13px;
+  color: #030303; padding: 0.35rem 0.75rem; }
+.dcs-menu-value { color: #696969; font-size: 13px; }
+/* ---- avatar menu theme radio: plain rows, not the tab-bar pills ----
+   (the global radio rules style options as pills; inside the menu
+   the theme rows are plain, with the native radio dot marking the
+   selected one — the dashboard's System / Dark / Light rows). */
+div[data-testid="stPopoverBody"] div[data-testid="stRadio"] div[role="radiogroup"] {
+  gap: 0 !important; }
+div[data-testid="stPopoverBody"] div[data-testid="stRadio"] div[role="radiogroup"] label {
+  background-color: transparent !important; border: none !important;
+  border-radius: 6px !important; padding: 0.35rem 0.75rem !important;
+  color: #030303 !important; font-weight: 400 !important; }
+div[data-testid="stPopoverBody"] div[data-testid="stRadio"] div[role="radiogroup"] label:hover {
+  background-color: #f8f8f8 !important; }
+div[data-testid="stPopoverBody"] div[data-testid="stRadio"] div[role="radiogroup"] label:has(input:checked) {
+  background-color: #f3f3f3 !important; font-weight: 600 !important; }
+/* ---- sidebar nav: the active row is a DISABLED secondary button
+   (you are already there) — it renders as the active pill: pale
+   fill, semibold ink, dark left edge, full opacity. No other
+   disabled sidebar button exists, so this rule only ever hits nav. */
+section[data-testid="stSidebar"] div[data-testid="stButton"] > button[kind="secondary"]:disabled {
+  background-color: #f3f3f3; color: #030303; font-weight: 600;
+  border-left: 2px solid #030303; opacity: 1; }
+/* ---- danger zone: a .dcs-danger-zone marker colours every secondary
+   button after it red (the Delete buttons). The marker only ever
+   appears inside a danger zone, whose buttons are all destructive. */
+div[data-testid="stVerticalBlock"] > div:has(.dcs-danger-zone) ~ div div[data-testid="stButton"] > button[kind="secondary"] {
+  color: #b91c1c !important; border-color: #b91c1c !important; }
+/* ---- headings / cards: colours in the stylesheet, never inline hex,
+   so they read in both themes (the old inline #030303 / #696969
+   rendered near-black on dark). */
+.dcs-section-heading { font-size: 17px; font-weight: 500; color: #030303; }
+.dcs-section-sub { font-size: 13px; color: #696969; }
+.dcs-card-title { font-size: 16px; font-weight: 600; color: #030303;
+  margin-bottom: 0.5rem; }
+.dcs-card-footer { font-size: 13px; color: #696969; margin-top: 0.75rem; }
+.dcs-settings-title { font-size: 16px; font-weight: 600; color: #030303; }
+.dcs-settings-desc { font-size: 13px; color: #696969; margin-top: 0.25rem; }
+/* ---- KPI icon box: the dashboard's 48px icon box at the tile's left ---- */
+.dcs-kpi { display: flex; gap: 0.75rem; align-items: flex-start; }
+.dcs-kpi-icon { width: 48px; height: 48px; flex: none; display: flex;
+  align-items: center; justify-content: center; border: 1px solid #e8e8e8;
+  border-radius: 8px; background-color: #ffffff; color: #117f50; }
+.dcs-kpi-text { flex: 1; min-width: 0; }
+.dcs-dot--danger { background: #b91c1c; }
+/* ---- metric cards: label + warning/error dots, large count, bars ---- */
+.dcs-metric-card { background-color: #ffffff; border: 1px solid #e8e8e8;
+  border-radius: 12px; padding: 0.9rem 1rem; margin-bottom: 1rem; }
+.dcs-metric-card:hover { border-color: #d0d0d0; }
+.dcs-metric-head { display: flex; align-items: center;
+  justify-content: space-between; gap: 0.75rem; }
+.dcs-metric-dots { display: flex; gap: 0.75rem; align-items: center; }
+.dcs-metric-count { font-size: 11px; font-weight: 600;
+  letter-spacing: 0.06em; color: #696969; display: inline-flex;
+  align-items: center; gap: 4px; }
+.dcs-metric-value { font-size: 28px; font-weight: 500; color: #030303;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace; margin-top: 0.25rem; }
+.dcs-metric-bars { display: flex; align-items: flex-end; gap: 2px;
+  height: 40px; margin-top: 0.75rem; }
+.dcs-metric-bars i { flex: 1; border-radius: 1px; min-height: 2px;
+  display: block; }
+.dcs-bar-ok { background: #117f50; }
+.dcs-bar-warn { background: #e69344; }
+.dcs-bar-error { background: #b91c1c; }
 </style>"""
 
 st.set_page_config(page_title="Data Cleaner Studio", layout="wide",
@@ -492,6 +578,12 @@ st.set_page_config(page_title="Data Cleaner Studio", layout="wide",
 # value; the .streamlit/config.toml [theme] base="light" stays as the
 # first-paint base only, since Streamlit's native theme is static.
 st.session_state.setdefault("dcs_theme", "light")
+# Sync the theme widgets to the theme in effect BEFORE any theme
+# widget is created this run (top-bar avatar radio, sidebar
+# selectbox) — see ui_design.sync_theme_widgets: without this, a
+# theme flipped from the login link or the avatar menu leaves the
+# sidebar dropdown showing the old theme.
+ui_design.sync_theme_widgets()
 DESIGN_SYSTEM_CSS = ui_design.theme_css(
     st.session_state.get("dcs_theme") or "light")
 st.markdown(DESIGN_SYSTEM_CSS, unsafe_allow_html=True)
@@ -1504,7 +1596,34 @@ if _top_active not in _nav_labels.values():
 _top_crumb = _title
 if st.session_state.get("source_name"):
     _top_crumb = f"{_title} / {st.session_state['source_name']}"
-ui_design.topbar(_top_active, breadcrumb=_top_crumb)
+# Real top bar (Supabase shell): the logo at the far left, the
+# workspace + screen, a search column, a green Upload pill, Help,
+# and the avatar at the far right. The avatar menu lives here now,
+# not in the sidebar (the dashboard puts it in the top bar).
+_top_actions = ui_design.topbar(
+    _top_active, breadcrumb=_top_crumb, user=_user,
+    logo_path=_loader_logo_path())
+# Quick jump fills the top bar's search column (the dashboard's
+# Search / Cmd+K pill — the box itself, not an overlay, because
+# Streamlit has no global key listener).
+feat_quickjump.render_quick_jump(
+    st, container=_top_actions["search_col"], compact=True)
+if _top_actions["upload"]:
+    st.session_state["pending_tab"] = "preview"
+    st.rerun()
+if _top_actions["help"]:
+    st.session_state["pending_tab"] = "tutorial"
+    st.rerun()
+if _top_actions["avatar"] == "profile":
+    st.session_state["pending_tab"] = "profile"
+    st.rerun()
+elif _top_actions["avatar"] == "status":
+    st.session_state["pending_tab"] = "status"
+    st.rerun()
+elif _top_actions["avatar"] == "previews":
+    st.toast("No feature previews running right now.")
+elif _top_actions["avatar"] == "logout":
+    _do_logout()
 st.caption("Put in messy data. Get clean data, KPIs, charts and a report.")
 # The main flow, at a glance: upload -> clean -> KPIs -> export.
 # One step is "you are here"; finished steps get a tick.
@@ -1656,27 +1775,12 @@ def _restore_cleaned_state(source_name):
 
 
 # ------------------------------------------------------------------ load ---
-# Sidebar avatar (Supabase shell: a single green circle with the
-# user's initial — the only profile element in the sidebar) + grouped
-# nav below it. The nav is display-only — the section radio further
-# down is the selection control; this mirrors it via the shared
-# _nav_labels mapping.
-_logo = feat_brand.brand_for_exports(base_dir=_user_root).get("logo")
-if _logo:
-    try:
-        st.sidebar.image(_logo, width=140)
-    except Exception:  # noqa: BLE001 - a bad logo must not stop the app
-        pass
-# The email, Profile, and Log out live ONLY inside the avatar menu
-# (ui_design.render_sidebar_avatar); the old card + standalone
-# buttons are gone. The Profile tab keeps its full account info and
-# its own Log out unchanged.
-_avatar_action = ui_design.render_sidebar_avatar(user=_user)
-if _avatar_action == "profile":
-    st.session_state["pending_tab"] = "profile"
-    st.rerun()
-elif _avatar_action == "logout":
-    _do_logout()
+# Sidebar: grouped nav (clickable icon rows — the dashboard's icon +
+# label nav) + the quiet status pill below it. The brand logo and the
+# avatar menu live in the top bar now (see the topbar() call above),
+# not here. The nav rows navigate via pending_tab + rerun; the
+# section radio further down is the authority, and pending_tab is
+# how every programmatic switch reaches it.
 # Theme toggle (sidebar): Light/Dark switch writing
 # st.session_state["dcs_theme"]; the stylesheet injected at the top of
 # this file follows it on the next rerun.
@@ -1706,12 +1810,11 @@ _nav_sections = [(label, items) for label, items in _nav_sections if items]
 _nav_active = next(
     (k for k, v in _nav_labels.items() if v == _top_active), "preview")
 with st.sidebar:
-    ui_design.sidebar_nav(_nav_sections, active=_nav_active)
-    # Quick jump (feat_quickjump): searchable jump to any section or
-    # action — the honest Streamlit version of Supabase's Cmd+K palette
-    # (no global keyboard listener exists in Streamlit; the box is the
-    # palette, and its label says so).
-    feat_quickjump.render_quick_jump(st)
+    _nav_clicked = ui_design.sidebar_nav(_nav_sections,
+                                         active=_nav_active)
+    if _nav_clicked is not None:
+        st.session_state["pending_tab"] = _nav_clicked
+        st.rerun()
     # Quiet status pill (feat_status): the app's own health — the
     # mode in local mode, "All systems operational" only when the
     # cloud health check genuinely passed.
@@ -1874,10 +1977,16 @@ with st.sidebar.expander("More ways to load"):
                              f"{db_file.name}: {e}")
 
 _last_raw_bytes = uploaded.getvalue() if uploaded is not None else None
-_reopened = feat_share.render_recent(
-    st, df=st.session_state.raw,
-    source_name=st.session_state.source_name, raw_bytes=_last_raw_bytes,
-    base_dir=_user_root, storage_key=_skey)
+# Recent files belongs to the Preview tab only: it used to render on
+# every tab, so the Profile (and Settings, and every other) page
+# showed Preview content above its own content. The reopen flow
+# below only matters on Preview anyway.
+_reopened = None
+if _top_active == _nav_labels["preview"]:
+    _reopened = feat_share.render_recent(
+        st, df=st.session_state.raw,
+        source_name=st.session_state.source_name, raw_bytes=_last_raw_bytes,
+        base_dir=_user_root, storage_key=_skey)
 if _reopened is not None:
     _reopened_name = st.session_state.pop("s_recent_opened", None)
     _set_raw(_reopened, "Recent file (reopened)", kind="recent")
@@ -2130,7 +2239,34 @@ if _active_tab == "preview":
         clean = None
         filtered = None
     shown = feat_share.render_sort(st, raw)
-    st.dataframe(shown.head(100), width="stretch")
+    # Supabase-style toolbar above the table: search the preview, a
+    # rows-per-page pick, and the green primary action (Clean now).
+    # (The sort controls above and the whole-file search below stay —
+    # this row is the table's own toolbar, the way the dashboard's
+    # Tables list carries search + filter + a green New button.)
+    _tb_search, _tb_rows, _tb_go = st.columns([2.2, 0.8, 1.0])
+    with _tb_search:
+        _preview_q = st.text_input(
+            "Search the preview", key="preview_toolbar_search",
+            placeholder="Filter these rows…", label_visibility="collapsed")
+    with _tb_rows:
+        _preview_n = st.selectbox(
+            "Rows", [50, 100, 200], index=1, key="preview_toolbar_rows",
+            label_visibility="collapsed")
+    with _tb_go:
+        if ui_design.icon_button(
+                "Clean now", "play", kind="primary",
+                key="preview_clean_now",
+                help="Go to the Clean tab for this file.",
+                use_container_width=True):
+            st.session_state["pending_tab"] = "clean"
+            st.rerun()
+    if _preview_q and str(_preview_q).strip():
+        shown = feat_share.search_rows(shown, str(_preview_q).strip())
+    st.dataframe(shown.head(int(_preview_n)), width="stretch")
+    # The "N tables" footer, for our table: how many rows are shown.
+    st.caption(f"Showing {min(len(shown), int(_preview_n)):,} of "
+               f"{len(shown):,} rows · {len(raw.columns)} columns")
     feat_share.render_search(st, raw)
     with st.expander("Search, filter & suggested fixes"):
         feat_enrich.render_filter_builder(st, raw)
@@ -2462,6 +2598,107 @@ if _active_tab == "kpis":
         feat_enrich.render_ai_insights(st, filtered, st.session_state.kpis)
 
 # -------------------------------------------------------------- dashboard ---
+def _render_dashboard_strips(st, clean, raw, storage_key):
+    """The Supabase Overview, mapped to this app's own data (never
+    Supabase's): a six-tile status strip, the "Get connected" action
+    strip, service metric cards with warning/error dots, and the
+    Advisor line. Pure presentation + navigation — every number comes
+    from the loaded file, the storage backend, or the app's own
+    health check, and every strip action is a pending_tab jump."""
+    _status = feat_status.get_status()
+    _state = _status.get("state")
+    _status_value = ("Healthy" if _state == "operational" else
+                     "Cloud down" if _state == "unavailable" else
+                     "Local mode")
+    _status_sub = ("Supabase answered just now" if _state == "operational"
+                   else "Cloud backend unreachable" if _state == "unavailable"
+                   else "Accounts and files on this server")
+    try:
+        _used_bytes, _ = storage.storage_usage(storage_key)
+        _storage_value = f"{_used_bytes / (1024 * 1024):.1f} MB of 1 GB"
+    except Exception:  # noqa: BLE001 - storage is best-effort here
+        _storage_value = "—"
+    _kpis = st.session_state.get("kpis") or []
+    _tiles = [
+        ("Status", _status_value, _status_sub, "check"),
+        ("Storage", _storage_value, "Free-tier bucket", "database"),
+        ("Rows", f"{len(clean):,}", "Cleaned rows", "table"),
+        ("Columns", f"{len(clean.columns)}", "In this file", "grid"),
+        ("KPIs", f"{len(_kpis)}", "Auto KPIs", "chart"),
+        ("File", str(st.session_state.get("source_name") or "—")[:24],
+         str(st.session_state.get("source_kind") or ""), "file"),
+    ]
+    _row_a, _row_b = _tiles[:3], _tiles[3:]
+    for _row in (_row_a, _row_b):
+        _cols = st.columns(3)
+        for _col, (_label, _value, _sub, _icon) in zip(_cols, _row):
+            with _col:
+                ui_design.kpi_tile(_label, _value, sub=_sub, icon=_icon)
+    # "Get connected", for this app: the six ways in, as one strip.
+    _cell = ui_design.connect_strip([
+        {"key": "preview", "icon": "upload", "title": "Upload",
+         "subtitle": "Load a file"},
+        {"key": "clean", "icon": "clean", "title": "Clean",
+         "subtitle": "Fix the messy bits"},
+        {"key": "kpis", "icon": "kpis", "title": "KPIs",
+         "subtitle": "See the numbers"},
+        {"key": "dashboard", "icon": "chart", "title": "Charts",
+         "subtitle": "Visualise it"},
+        {"key": "report", "icon": "report", "title": "Report",
+         "subtitle": "One-page export"},
+        {"key": "tools", "icon": "tools", "title": "Tools",
+         "subtitle": "Backups and more"},
+    ])
+    if _cell is not None:
+        st.session_state["pending_tab"] = _cell
+        st.rerun()
+    # Service metric cards: the file's own data quality.
+    _missing = raw.isna().sum()
+    _missing_total = int(_missing.sum())
+    _cols_affected = int((_missing > 0).sum())
+    _max_missing = int(_missing.max()) if len(_missing) else 0
+    _bars = []
+    for _c in list(raw.columns)[:24]:
+        _n = int(_missing.get(_c, 0))
+        _bars.append((_n / _max_missing * 100 if _max_missing else 0,
+                      "warn" if _n > 0 else "ok"))
+    _dups = int(raw.duplicated().sum())
+    _m1, _m2 = st.columns(2)
+    with _m1:
+        ui_design.metric_card(
+            "Missing cells", f"{_missing_total:,}",
+            warnings=_cols_affected, errors=0, bars=_bars,
+            sub=f"{_cols_affected} of {len(raw.columns)} columns affected")
+    with _m2:
+        ui_design.metric_card(
+            "Duplicate rows", f"{_dups:,}",
+            warnings=0, errors=_dups,
+            sub="Exact duplicate rows in the file")
+    # Advisor line: what the check found, and the next step.
+    _issues = _missing_total + _dups
+    _adv_text, _adv_go = (
+        ("Advisor found no issues", "tutorial")
+        if _issues == 0 else
+        (f"Advisor found {_issues:,} issue"
+         f"{'s' if _issues != 1 else ''}", "clean"))
+    _adv_label = ("How to use" if _issues == 0 else "Go to Clean")
+    _t, _b = st.columns([3, 1])
+    with _t:
+        st.write(f"**{_adv_text}**"
+                 + (" — no missing cells, no duplicate rows."
+                    if _issues == 0 else
+                    " — missing cells and duplicate rows to fix."))
+    with _b:
+        if ui_design.icon_button(
+                _adv_label, "book" if _issues == 0 else "play",
+                kind="secondary" if _issues == 0 else "primary",
+                key="dashboard_advisor_go",
+                help="Open the guide." if _issues == 0 else
+                     "Open the Clean tab."):
+            st.session_state["pending_tab"] = _adv_go
+            st.rerun()
+
+
 if _active_tab == "dashboard":
     if clean is None:
         if ui_design.empty_state(
@@ -2480,6 +2717,7 @@ if _active_tab == "dashboard":
         ui_design.section_heading(
             "Dashboard",
             sub="The slicers on the left filter every chart and KPI here.")
+        _render_dashboard_strips(st, clean, raw, _skey)
         df = filtered
         num_cols = engine.numeric_cols(clean)
         cat_cols = [c for c in clean.columns
@@ -2816,7 +3054,9 @@ if "settings" in tab:
     if _active_tab == "settings":
         ui_design.section_heading("Settings")
 
-        ui_design.section_heading("Account")
+        # Account — one bordered card: label + description left, the
+        # account + Open Profile action right, the backend detail
+        # underneath inside the same card.
         # Supabase connection status (Phase 2, wired in): backend from
         # auth.get_auth_backend(), problem text from
         # auth.get_backend_warning() — shown verbatim, so a paused
@@ -2825,45 +3065,56 @@ if "settings" in tab:
         _backend = auth.get_auth_backend()
         _backend_label = ("Local (this server)" if _backend == "local"
                           else "Cloud (Supabase)")
-        st.write(f"Signed in as **{_user.get('display_name') or _user.get('username') or _user.get('email') or '?'}** "
-                 f"(account backend: **{_backend_label}**).")
-        if st.button("Open Profile", key="settings_open_profile"):
-            st.session_state["pending_tab"] = "profile"
-            st.rerun()
-        _config_exists = auth.SUPABASE_CONFIG_PATH.is_file()
-        _env_configured = bool((os.environ.get("SUPABASE_URL") or "").strip()
-                               and (os.environ.get("SUPABASE_ANON_KEY") or "").strip())
-        _cloud_ready = _config_exists or _env_configured
-        st.write("Cloud setup: "
-                 f"{'connected ✓' if _cloud_ready else 'not set up yet'}")
-        _warn = auth.get_backend_warning()
-        if _warn:
-            st.warning(_warn)
-        if _backend == "local":
-            st.info("Local mode — accounts live in a file on this "
-                    "server, and your files live in your folder on this "
-                    "server. That means: your data leaves your computer — "
-                    "it lives on the server. Cloud accounts (including "
-                    "Google sign-in) need a Supabase project: create the "
-                    "free project, add its URL and anon key to the app's "
-                    "secrets, and run the setup SQL in the Supabase SQL "
-                    "editor. Full steps: "
-                    "[README.md — Auth: Supabase](README.md) and "
-                    "[DEPLOY.md — section 0](DEPLOY.md). "
-                    "Local accounts and Supabase accounts are different "
-                    "users — switching backends means re-registering.")
-        else:
-            st.success("Cloud accounts are active (Supabase). Sign in "
-                       "with your email and password, or with Google if "
-                       "it is enabled in the Supabase dashboard. Your "
-                       "local-mode account (if you had one) is a "
-                       "different user — it does not carry over.")
+        _acct_left, _acct_right, _acct_card = ui_design.settings_card(
+            "Account",
+            "Who is signed in, and which backend holds the account.")
+        with _acct_right:
+            st.write(f"Signed in as **{_user.get('display_name') or _user.get('username') or _user.get('email') or '?'}** "
+                     f"(account backend: **{_backend_label}**).")
+            if ui_design.icon_button(
+                    "Open Profile", "profile",
+                    key="settings_open_profile",
+                    help="Open the Profile tab."):
+                st.session_state["pending_tab"] = "profile"
+                st.rerun()
+        with _acct_card:
+            _config_exists = auth.SUPABASE_CONFIG_PATH.is_file()
+            _env_configured = bool((os.environ.get("SUPABASE_URL") or "").strip()
+                                   and (os.environ.get("SUPABASE_ANON_KEY") or "").strip())
+            _cloud_ready = _config_exists or _env_configured
+            st.write("Cloud setup: "
+                     f"{'connected ✓' if _cloud_ready else 'not set up yet'}")
+            _warn = auth.get_backend_warning()
+            if _warn:
+                st.warning(_warn)
+            if _backend == "local":
+                st.info("Local mode — accounts live in a file on this "
+                        "server, and your files live in your folder on this "
+                        "server. That means: your data leaves your computer — "
+                        "it lives on the server. Cloud accounts (including "
+                        "Google sign-in) need a Supabase project: create the "
+                        "free project, add its URL and anon key to the app's "
+                        "secrets, and run the setup SQL in the Supabase SQL "
+                        "editor. Full steps: "
+                        "[README.md — Auth: Supabase](README.md) and "
+                        "[DEPLOY.md — section 0](DEPLOY.md). "
+                        "Local accounts and Supabase accounts are different "
+                        "users — switching backends means re-registering.")
+            else:
+                st.success("Cloud accounts are active (Supabase). Sign in "
+                           "with your email and password, or with Google if "
+                           "it is enabled in the Supabase dashboard. Your "
+                           "local-mode account (if you had one) is a "
+                           "different user — it does not carry over.")
 
-        ui_design.section_heading("AI keys (yours, stored per user)")
-        st.write("AI insights and natural-language questions use your own "
-                 "key. It is saved in your folder only, and is never baked "
-                 "into the code or the repo. Leave a field empty to turn "
-                 "that provider off.")
+        # AI keys — one bordered card: label + description left, the
+        # two key inputs right, Save at the card's bottom-right.
+        _keys_left, _keys_right, _keys_card = ui_design.settings_card(
+            "AI keys",
+            "Your own keys, stored per user. AI insights and "
+            "natural-language questions use them; they are saved in "
+            "your folder only, never baked into the code or the repo. "
+            "Leave a field empty to turn that provider off.")
         _cur_settings = ai_settings.load_settings()
         _groq_set = bool((_cur_settings.get("groq_api_key") or "").strip())
         _gemini_saved = ""
@@ -2873,32 +3124,39 @@ if "settings" in tab:
                 _gemini_saved = str(_stored_settings.get("gemini_api_key") or "")
         except Exception:  # noqa: BLE001
             _stored_settings = None
-        st.write(f"Groq key: {'set ✓' if _groq_set else 'not set'}  ·  "
-                 f"Gemini key: {'set ✓' if _gemini_saved.strip() else 'not set'}")
-        _new_groq = st.text_input("Groq API key", type="password",
-                                  key="settings_groq_key",
-                                  help="Starts with gsk_ — get one free at console.groq.com. "
-                                       "Leave empty to keep the saved key.")
-        _new_gemini = st.text_input("Gemini API key", type="password",
-                                    key="settings_gemini_key",
-                                    help="Google AI Studio key. The app stores it; "
-                                         "the Groq endpoint is used first when both are set. "
-                                         "Leave empty to keep the saved key.")
-        if st.button("Save API keys", key="settings_keys_save"):
-            _merged = dict(ai_settings.load_settings())
-            if isinstance(_stored_settings, dict):
-                for _k, _v in _stored_settings.items():
-                    if _k not in _merged:
-                        _merged[_k] = _v
-            if _new_groq.strip():
-                _merged["groq_api_key"] = _new_groq.strip()
-            if _new_gemini.strip():
-                _merged["gemini_api_key"] = _new_gemini.strip()
-            try:
-                storage.save_json(_skey, "views", "settings.json", _merged)
-                st.success("API keys saved in your folder.")
-            except Exception as e:  # noqa: BLE001
-                st.error(f"Could not save the keys: {e}")
+        with _keys_right:
+            st.write(f"Groq key: {'set ✓' if _groq_set else 'not set'}  ·  "
+                     f"Gemini key: {'set ✓' if _gemini_saved.strip() else 'not set'}")
+            _new_groq = st.text_input("Groq API key", type="password",
+                                      key="settings_groq_key",
+                                      help="Starts with gsk_ — get one free at console.groq.com. "
+                                           "Leave empty to keep the saved key.")
+            _new_gemini = st.text_input("Gemini API key", type="password",
+                                        key="settings_gemini_key",
+                                        help="Google AI Studio key. The app stores it; "
+                                             "the Groq endpoint is used first when both are set. "
+                                             "Leave empty to keep the saved key.")
+        with _keys_card:
+            _sp, _save_col = st.columns([3, 1])
+            with _save_col:
+                if ui_design.icon_button(
+                        "Save API keys", "check", kind="primary",
+                        key="settings_keys_save", use_container_width=True,
+                        help="Save the keys you typed."):
+                    _merged = dict(ai_settings.load_settings())
+                    if isinstance(_stored_settings, dict):
+                        for _k, _v in _stored_settings.items():
+                            if _k not in _merged:
+                                _merged[_k] = _v
+                    if _new_groq.strip():
+                        _merged["groq_api_key"] = _new_groq.strip()
+                    if _new_gemini.strip():
+                        _merged["gemini_api_key"] = _new_gemini.strip()
+                    try:
+                        storage.save_json(_skey, "views", "settings.json", _merged)
+                        st.success("API keys saved in your folder.")
+                    except Exception as e:  # noqa: BLE001
+                        st.error(f"Could not save the keys: {e}")
 
         # One "Your brand" heading only: render_brand_section prints its own.
         feat_brand.render_brand_section(st, base_dir=_user_root)

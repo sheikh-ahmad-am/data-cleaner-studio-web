@@ -167,21 +167,29 @@ def resolve_section(action_key):
     return None
 
 
-def render_quick_jump(st, actions=None):
-    """Draw the sidebar Quick jump box. Returns the section key jumped
-    to, or None when the user did not pick anything this run.
+def render_quick_jump(st, actions=None, container=None, compact=False):
+    """Draw the Quick jump box. Returns the section key jumped to, or
+    None when the user did not pick anything this run.
 
     The box is a text input (labelled with the ⌘K hint) plus one
     button per matching action. Clicking a button sets
     ``pending_tab`` and reruns — the same mechanism the sidebar
     Profile button and every "Go to the Clean tab" button already use,
     so the jump lands exactly where the section radio expects it.
+
+    ``container`` is where the box renders (``st.sidebar`` by
+    default). The app passes the top bar's search column, so the box
+    sits in the top bar like the dashboard's Search pill; ``compact``
+    then hides the input's label (the placeholder already says what
+    it is) so the bar stays one row tall.
     """
+    box = container if container is not None else st.sidebar
     items = list(QUICK_ACTIONS if actions is None else actions)
-    query = st.sidebar.text_input(
+    query = box.text_input(
         "Quick jump ⌘K",
         key="quickjump_query",
         placeholder="Search sections and actions…",
+        label_visibility="collapsed" if compact else "visible",
         help=("Type to filter the sections and actions below, then pick "
               "one to jump there. Streamlit cannot capture the Cmd+K / "
               "Ctrl+K shortcut itself, so this search box is the jump — "
@@ -190,15 +198,15 @@ def render_quick_jump(st, actions=None):
     if query and query.strip() and not matches:
         # Supabase empty-state pattern: a dead end always offers the
         # next step — here, the words that do match something.
-        st.sidebar.info("No matching section or action — "
-                        "try 'clean', 'export' or 'profile'.")
+        box.info("No matching section or action — "
+                 "try 'clean', 'export' or 'profile'.")
         return None
     if not query or not str(query).strip():
-        st.sidebar.caption("Type to filter — pick a result to jump there.")
+        box.caption("Type to filter — pick a result to jump there.")
         return None
     for action in matches[:_MAX_SHOWN]:
         label = f"{action['label']} — {action['hint']}"
-        if st.sidebar.button(label, key=f"quickjump_go_{action['key']}"):
+        if box.button(label, key=f"quickjump_go_{action['key']}"):
             section = resolve_section(action["key"])
             if section is not None:
                 st.session_state["pending_tab"] = section
@@ -206,7 +214,7 @@ def render_quick_jump(st, actions=None):
                 # below only runs for fakes/tests.
                 return section
     if len(matches) > _MAX_SHOWN:
-        st.sidebar.caption(
+        box.caption(
             f"…and {len(matches) - _MAX_SHOWN} more — "
             "narrow the search to see them.")
     return None

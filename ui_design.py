@@ -47,16 +47,47 @@ Public API (presentation only — no behaviour changes):
     does the same name check without returning CSS.
   * ``inject_design_system(st=None, theme="light")`` — inject the
     stylesheet for the given theme.
+  * ``MATERIAL_ICONS`` / ``icon_for(name)`` — the Material shortcode
+    for a semantic icon name; ``icon_button(label, icon, kind, ...)``
+    is a Supabase-style icon button (16px line icon left of the
+    label, tooltip via ``help``); ``svg_icon(name, size)`` is the
+    inline-SVG twin for HTML the widgets cannot reach.
+  * ``THEME_SELECT_KEY`` / ``THEME_RADIO_KEY`` — the theme controls'
+    widget keys (never ``"dcs_theme"`` itself, which is the plain
+    session key the stylesheet follows); ``sync_theme_widgets`` syncs
+    them to the theme in effect before any theme widget is created,
+    so the sidebar dropdown can never show "Light" while the page is
+    dark.
   * ``render_theme_toggle(st=None)`` — the sidebar Light/Dark switch
-    (writes ``st.session_state["dcs_theme"]``); ``render_login_theme_toggle``
-    is the same switch as a button for the login screen, which has no
-    sidebar.
-  * ``topbar(title, breadcrumb="")`` — 48px top bar with breadcrumb.
-  * ``sidebar_nav(sections, active=None)`` — grouped nav rows.
-  * ``section_heading(text, sub=None)`` — 16-18px section heading.
-  * ``kpi_tile(label, value, sub=None)`` — status tile (icon box +
-    uppercase micro-label + value).
+    (writes ``st.session_state["dcs_theme"]`` via ``on_change``);
+    ``render_login_theme_toggle`` is the same switch as a button for
+    the login screen, which has no sidebar.
+  * ``topbar(title, breadcrumb="", user=None, logo_path=None)`` — the
+    real top bar: logo + workspace + screen, search column, green
+    ``Upload`` pill, Help icon button, avatar; returns the actions
+    (``avatar`` / ``upload`` / ``help`` / ``search_col``).
+  * ``sidebar_nav(sections, active=None)`` — grouped nav rows as
+    clickable icon buttons (the active row is a disabled button
+    styled as the active pill); returns the clicked key or None.
+  * ``render_avatar_menu(st=None, user=None, container=None)`` — the
+    avatar + Supabase-style account menu (email bold, Account,
+    Feature previews, Changelog, Theme Dark/Light radio, Timezone,
+    Sign out; no Upgrade — no paid tier); ``render_sidebar_avatar``
+    is the sidebar-placement wrapper kept for old call sites.
+  * ``section_heading(text, sub=None)`` — 16-18px section heading
+    (colours in the stylesheet, never inline hex).
+  * ``kpi_tile(label, value, sub=None, icon=None)`` — status tile
+    (icon box + uppercase micro-label + value).
   * ``card(title=None, body="", footer=None)`` — white bordered card.
+  * ``settings_card(title, desc=None)`` — one Supabase-style settings
+    card (label + description left, controls right; returns
+    ``(left, right, card)`` so the caller can add a Save row at the
+    card's bottom-right).
+  * ``metric_card(label, value, warnings=0, errors=0, bars=None)`` —
+    a service metric card (label + warning/error dots, large count,
+    bar sparkline).
+  * ``connect_strip(cells)`` — the "Get connected" six-cell strip,
+    mapped to the app's own actions; returns the clicked cell key.
   * ``pill(text, kind="mint")`` — status pill; returns an HTML string.
   * ``empty_state(title, body="", cta_label=None)`` — guided empty
     state; returns True when its CTA button is clicked.
@@ -192,6 +223,189 @@ def normalize_theme(value) -> str:
     the light default, so a stale value can never strand the app."""
     return value if value in THEMES else THEME_DEFAULT
 
+
+# ---------------------------------------------------------------------------
+# Icons — the "button logo" (page-by-page study §10).
+#
+# Supabase's dashboard puts a small 16px line icon immediately left of
+# every action button's label (plus on New, play on Run, plug on
+# Connect, book on Docs, sparkle on Ask Assistant, copy on Copy) and
+# on every nav row. Our 93 buttons were all text-only because
+# ``st.button`` has no icon slot — but Streamlit 1.32+ accepts an
+# ``icon=`` shortcode (``:material/<name>:``), which renders a real
+# outline glyph left of the label. That is what this module uses:
+# one semantic name per action, mapped to a Material Symbols name.
+# Every name here was verified to render (AppTest: no exception, icon
+# set on the button) against streamlit 1.66.1 — an invalid name raises
+# StreamlitAPIException at render time, so a bad name can never ship
+# silently; the rebuild tests pin the whole map. ``power_plug`` is
+# NOT a valid Material name — Connect uses ``link`` (Supabase's
+# Connect icon reads as a plug/link either way).
+# ---------------------------------------------------------------------------
+MATERIAL_ICONS = {
+    # Actions
+    "add": ":material/add:",
+    "play": ":material/play_arrow:",
+    "upload": ":material/upload:",
+    "download": ":material/download:",
+    "search": ":material/search:",
+    "connect": ":material/link:",
+    "book": ":material/menu_book:",
+    "sparkle": ":material/auto_awesome:",
+    "copy": ":material/content_copy:",
+    "save": ":material/save:",
+    "refresh": ":material/refresh:",
+    "filter": ":material/filter_alt:",
+    "sort": ":material/sort:",
+    "edit": ":material/edit:",
+    "delete": ":material/delete:",
+    "check": ":material/check:",
+    "close": ":material/close:",
+    "help": ":material/help:",
+    "info": ":material/info:",
+    "warning": ":material/warning:",
+    "more": ":material/more_vert:",
+    "chevron_right": ":material/chevron_right:",
+    "open": ":material/open_in_new:",
+    "undo": ":material/undo:",
+    "bolt": ":material/electric_bolt:",
+    "fix": ":material/auto_fix_high:",
+    # Nav / sections
+    "preview": ":material/preview:",
+    "clean": ":material/cleaning_services:",
+    "join": ":material/join_inner:",
+    "kpis": ":material/analytics:",
+    "dashboard": ":material/dashboard:",
+    "compare": ":material/compare_arrows:",
+    "report": ":material/assessment:",
+    "tools": ":material/build:",
+    "tutorial": ":material/school:",
+    "settings": ":material/settings:",
+    "profile": ":material/person:",
+    "status": ":material/monitor_heart:",
+    # Objects
+    "home": ":material/home:",
+    "table": ":material/table_chart:",
+    "database": ":material/database:",
+    "lock": ":material/lock:",
+    "folder": ":material/folder:",
+    "code": ":material/code:",
+    "chart": ":material/bar_chart:",
+    "doc": ":material/description:",
+    "account": ":material/person:",
+    "flask": ":material/science:",
+    "changelog": ":material/list_alt:",
+    "logout": ":material/logout:",
+    "grid": ":material/grid_view:",
+    "storage": ":material/storage:",
+    "functions": ":material/functions:",
+    "terminal": ":material/terminal:",
+    "history": ":material/history:",
+    "lightbulb": ":material/lightbulb:",
+    "image": ":material/image:",
+    "diamond": ":material/diamond:",
+    "clock": ":material/schedule:",
+}
+
+#: Nav key -> icon name, so the sidebar rows and the top bar share one
+#: mapping (a nav item never has two different icons).
+NAV_ICONS = {
+    "preview": "preview", "clean": "clean", "join": "join",
+    "kpis": "kpis", "dashboard": "dashboard", "compare": "compare",
+    "report": "report", "tools": "tools", "tutorial": "tutorial",
+    "settings": "settings", "profile": "profile", "status": "status",
+}
+
+
+def icon_for(name: str) -> str:
+    """The Material shortcode for a semantic icon name (``":material/…"``).
+
+    Unknown names fall back to ``"diamond"`` — a visible glyph, never
+    a crash and never a silent missing icon."""
+    return MATERIAL_ICONS.get(str(name), MATERIAL_ICONS["diamond"])
+
+
+def icon_button(label: str, icon: str, kind: str = "secondary",
+                key=None, help: str | None = None,
+                disabled: bool = False, use_container_width: bool = False,
+                st_module=None) -> bool:
+    """A Supabase-style icon button: a small line icon immediately left
+    of the label (the "button logo" the dashboard has and we lacked).
+
+    ``kind`` is ``"primary"`` (green pill — New / Connect / Run /
+    the one primary action), ``"secondary"`` (white, hairline border)
+    or ``"danger"`` (secondary + the red danger treatment: a
+    ``dcs-danger-zone`` marker is emitted just before the button and
+    the stylesheet colours every secondary button after that marker
+    red — the marker only ever appears in a danger zone, whose
+    buttons are all destructive, so nothing else turns red).
+    ``help`` is the hover tooltip — every icon-only or icon button
+    carries one, the way the dashboard's tooltips name each control.
+    Returns True when clicked. ``st_module`` defaults to the imported
+    ``streamlit``; pass the app's ``st`` when testing with a fake."""
+    st_mod = st_module or st
+    if kind == "danger":
+        st_mod.markdown('<div class="dcs-danger-zone"></div>',
+                        unsafe_allow_html=True)
+    return bool(st_mod.button(
+        label, icon=icon_for(icon),
+        type="primary" if kind == "primary" else "secondary",
+        key=key, help=help, disabled=disabled,
+        use_container_width=use_container_width))
+
+
+# ---------------------------------------------------------------------------
+# Inline SVG line icons — for HTML the widgets cannot reach (KPI icon
+# boxes, the "Get connected" strip, the active nav pill). Same 24x24
+# Lucide-style language as the Material glyphs above (1px-ish stroke,
+# round caps): a tiny hand-checked set, one path per icon, so a wrong
+# path is obvious on sight. ``size`` is the rendered pixel size.
+# ---------------------------------------------------------------------------
+_SVG_PATHS = {
+    # 3x3 grid of dots (the dashboard's STATUS tile icon).
+    "dots": ('<circle cx="5" cy="5" r="1.6"/><circle cx="12" cy="5" r="1.6"/>'
+             '<circle cx="19" cy="5" r="1.6"/><circle cx="5" cy="12" r="1.6"/>'
+             '<circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>'
+             '<circle cx="5" cy="19" r="1.6"/><circle cx="12" cy="19" r="1.6"/>'
+             '<circle cx="19" cy="19" r="1.6"/>'),
+    "database": ('<ellipse cx="12" cy="5" rx="9" ry="3"/>'
+                 '<path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>'
+                 '<path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3"/>'),
+    "file": ('<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 '
+             '0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/>'),
+    "clock": ('<circle cx="12" cy="12" r="10"/>'
+              '<path d="M12 6v6l4 2"/>'),
+    "check": '<path d="M20 6 9 17l-5-5"/>',
+    "alert": ('<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 '
+              '21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4M12 17h.01"/>'),
+    "chart": ('<path d="M3 3v18h18"/><path d="M18 17V9M13 17V5M8 17v-3"/>'),
+    "upload": ('<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>'
+               '<path d="m17 8-5-5-5 5"/><path d="M12 3v12"/>'),
+    "link": ('<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07'
+             'l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 '
+             '0 0 0 7.07 7.07l1.71-1.71"/>'),
+    "table": ('<rect x="3" y="3" width="18" height="18" rx="2"/>'
+              '<path d="M3 9h18M3 15h18M9 3v18M15 3v18"/>'),
+    "eye": ('<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>'
+            '<circle cx="12" cy="12" r="3"/>'),
+    "grid": ('<rect x="3" y="3" width="7" height="7" rx="1"/>'
+             '<rect x="14" y="3" width="7" height="7" rx="1"/>'
+             '<rect x="3" y="14" width="7" height="7" rx="1"/>'
+             '<rect x="14" y="14" width="7" height="7" rx="1"/>'),
+}
+
+
+def svg_icon(name: str, size: int = 16) -> str:
+    """An inline SVG line icon (``name`` from ``_SVG_PATHS``) as an
+    HTML string, ``size`` px square, stroke ``currentColor`` so it
+    follows the surrounding text colour. Unknown names render the
+    dots grid — a visible glyph, never an empty box."""
+    paths = _SVG_PATHS.get(str(name), _SVG_PATHS["dots"])
+    return (f'<svg width="{int(size)}" height="{int(size)}" '
+            f'viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+            f'stroke-width="2" stroke-linecap="round" '
+            f'stroke-linejoin="round" aria-hidden="true">{paths}</svg>')
+
 # ---------------------------------------------------------------------------
 # Consolidated stylesheet. Worker B: paste this whole block verbatim into
 # app.py as its literal DESIGN_SYSTEM_CSS assignment — do not retype it,
@@ -232,7 +446,7 @@ div[data-testid="stVerticalBlock"] > div { gap: 0.75rem; }
 div[data-testid="stButton"] > button[kind="primary"] {
   background-color: #117f50;
   background: linear-gradient(180deg, #118050 0%, #0e7d4e 100%);
-  color: #ffffff; border: 1px solid #117f50; border-radius: 6px;
+  color: #ffffff; border: 1px solid #117f50; border-radius: 999px;
   font-weight: 500; }
 .stApp .stButton > button[kind="primary"]:hover,
 div[data-testid="stButton"] > button[kind="primary"]:hover {
@@ -422,8 +636,9 @@ div[data-testid="stDataFrame"], div[data-testid="stTable"] {
 div[data-testid="stDataFrame"] table, div[data-testid="stTable"] table {
   background-color: #ffffff; }
 div[data-testid="stDataFrame"] th, div[data-testid="stTable"] th {
-  background-color: #ffffff; color: #030303; font-weight: 600;
-  border-bottom: 1px solid #e8e8e8; font-size: 13px; }
+  background-color: #ffffff; color: #696969; font-weight: 600;
+  border-bottom: 1px solid #e8e8e8; font-size: 11px;
+  text-transform: uppercase; letter-spacing: 0.08em; }
 div[data-testid="stDataFrame"] td, div[data-testid="stTable"] td {
   background-color: #ffffff; color: #030303;
   border-bottom: 1px solid #e8e8e8; font-size: 13px; }
@@ -446,7 +661,7 @@ section[data-testid="stSidebar"] button[kind="header"],
 div[data-baseweb="menu"] li[role="option"] {
   transition: background-color 0.2s cubic-bezier(0.22, 1, 0.36, 1),
     border-color 0.2s cubic-bezier(0.22, 1, 0.36, 1),
-    color 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+    color 0.2s cubic-bezier(0.22, 1, 0.36, 1); }
 /* ---- focus: one shared ring — 2px gap + 4px translucent green halo ---- */
 .stApp .stButton > button:focus-visible,
 div[data-testid="stDownloadButton"] > button:focus-visible,
@@ -559,6 +774,91 @@ div[data-testid="stHorizontalBlock"] div[data-testid="column"]:last-child
 @media (prefers-reduced-motion: reduce) {
   .dcs-loader-mark, .dcs-loader-mark > div, .dcs-loader-shimmer i {
     animation: none !important; } }
+/* ---- Supabase faithful rebuild (2026-11-07, page-by-page study) ----
+   Primary buttons are pills (New / Connect / Run are fully rounded in
+   the dashboard; secondary stays 6px). Dataframe headers are the
+   dashboard's uppercase micro-labels (see the th rule above). The
+   rules below are the rebuild's own pieces: the top bar row, the
+   avatar menu rows, the nav active pill, the danger marker, the
+   settings cards, the KPI icon box and the metric cards. */
+.dcs-topbar-left { display: flex; align-items: center; gap: 8px;
+  min-width: 0; }
+.dcs-topbar-logo { width: 24px; height: 24px; flex: none; }
+.dcs-topbar-brand { font-size: 17px; font-weight: 500; color: #030303;
+  white-space: nowrap; }
+.dcs-topbar-rule { border-top: 1px solid #e8e8e8; margin: 0.25rem 0 1rem; }
+/* ---- avatar menu rows: bold email, micro section label, timezone row ---- */
+.dcs-menu-email { font-size: 14px; font-weight: 700; color: #030303;
+  padding: 0.35rem 0.75rem; overflow-wrap: anywhere; }
+.dcs-menu-label { font-size: 11px; font-weight: 600; letter-spacing: 0.08em;
+  text-transform: uppercase; color: #696969;
+  padding: 0.35rem 0.75rem 0.1rem; }
+.dcs-menu-row { display: flex; align-items: center;
+  justify-content: space-between; gap: 0.75rem; font-size: 13px;
+  color: #030303; padding: 0.35rem 0.75rem; }
+.dcs-menu-value { color: #696969; font-size: 13px; }
+/* ---- avatar menu theme radio: plain rows, not the tab-bar pills ----
+   (the global radio rules style options as pills; inside the menu
+   the theme rows are plain, with the native radio dot marking the
+   selected one — the dashboard's System / Dark / Light rows). */
+div[data-testid="stPopoverBody"] div[data-testid="stRadio"] div[role="radiogroup"] {
+  gap: 0 !important; }
+div[data-testid="stPopoverBody"] div[data-testid="stRadio"] div[role="radiogroup"] label {
+  background-color: transparent !important; border: none !important;
+  border-radius: 6px !important; padding: 0.35rem 0.75rem !important;
+  color: #030303 !important; font-weight: 400 !important; }
+div[data-testid="stPopoverBody"] div[data-testid="stRadio"] div[role="radiogroup"] label:hover {
+  background-color: #f8f8f8 !important; }
+div[data-testid="stPopoverBody"] div[data-testid="stRadio"] div[role="radiogroup"] label:has(input:checked) {
+  background-color: #f3f3f3 !important; font-weight: 600 !important; }
+/* ---- sidebar nav: the active row is a DISABLED secondary button
+   (you are already there) — it renders as the active pill: pale
+   fill, semibold ink, dark left edge, full opacity. No other
+   disabled sidebar button exists, so this rule only ever hits nav. */
+section[data-testid="stSidebar"] div[data-testid="stButton"] > button[kind="secondary"]:disabled {
+  background-color: #f3f3f3; color: #030303; font-weight: 600;
+  border-left: 2px solid #030303; opacity: 1; }
+/* ---- danger zone: a .dcs-danger-zone marker colours every secondary
+   button after it red (the Delete buttons). The marker only ever
+   appears inside a danger zone, whose buttons are all destructive. */
+div[data-testid="stVerticalBlock"] > div:has(.dcs-danger-zone) ~ div div[data-testid="stButton"] > button[kind="secondary"] {
+  color: #b91c1c !important; border-color: #b91c1c !important; }
+/* ---- headings / cards: colours in the stylesheet, never inline hex,
+   so they read in both themes (the old inline #030303 / #696969
+   rendered near-black on dark). */
+.dcs-section-heading { font-size: 17px; font-weight: 500; color: #030303; }
+.dcs-section-sub { font-size: 13px; color: #696969; }
+.dcs-card-title { font-size: 16px; font-weight: 600; color: #030303;
+  margin-bottom: 0.5rem; }
+.dcs-card-footer { font-size: 13px; color: #696969; margin-top: 0.75rem; }
+.dcs-settings-title { font-size: 16px; font-weight: 600; color: #030303; }
+.dcs-settings-desc { font-size: 13px; color: #696969; margin-top: 0.25rem; }
+/* ---- KPI icon box: the dashboard's 48px icon box at the tile's left ---- */
+.dcs-kpi { display: flex; gap: 0.75rem; align-items: flex-start; }
+.dcs-kpi-icon { width: 48px; height: 48px; flex: none; display: flex;
+  align-items: center; justify-content: center; border: 1px solid #e8e8e8;
+  border-radius: 8px; background-color: #ffffff; color: #117f50; }
+.dcs-kpi-text { flex: 1; min-width: 0; }
+.dcs-dot--danger { background: #b91c1c; }
+/* ---- metric cards: label + warning/error dots, large count, bars ---- */
+.dcs-metric-card { background-color: #ffffff; border: 1px solid #e8e8e8;
+  border-radius: 12px; padding: 0.9rem 1rem; margin-bottom: 1rem; }
+.dcs-metric-card:hover { border-color: #d0d0d0; }
+.dcs-metric-head { display: flex; align-items: center;
+  justify-content: space-between; gap: 0.75rem; }
+.dcs-metric-dots { display: flex; gap: 0.75rem; align-items: center; }
+.dcs-metric-count { font-size: 11px; font-weight: 600;
+  letter-spacing: 0.06em; color: #696969; display: inline-flex;
+  align-items: center; gap: 4px; }
+.dcs-metric-value { font-size: 28px; font-weight: 500; color: #030303;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace; margin-top: 0.25rem; }
+.dcs-metric-bars { display: flex; align-items: flex-end; gap: 2px;
+  height: 40px; margin-top: 0.75rem; }
+.dcs-metric-bars i { flex: 1; border-radius: 1px; min-height: 2px;
+  display: block; }
+.dcs-bar-ok { background: #117f50; }
+.dcs-bar-warn { background: #e69344; }
+.dcs-bar-error { background: #b91c1c; }
 </style>"""
 
 
@@ -615,7 +915,7 @@ div[data-testid="stVerticalBlock"] > div { gap: 0.75rem; }
 div[data-testid="stButton"] > button[kind="primary"] {
   background-color: #006338;
   background: linear-gradient(180deg, #007243 0%, #006338 100%);
-  color: #ffffff; border: 1px solid #006338; border-radius: 6px;
+  color: #ffffff; border: 1px solid #006338; border-radius: 999px;
   font-weight: 500; }
 .stApp .stButton > button[kind="primary"]:hover,
 div[data-testid="stButton"] > button[kind="primary"]:hover {
@@ -804,8 +1104,9 @@ div[data-testid="stDataFrame"], div[data-testid="stTable"] {
 div[data-testid="stDataFrame"] table, div[data-testid="stTable"] table {
   background-color: #232625; }
 div[data-testid="stDataFrame"] th, div[data-testid="stTable"] th {
-  background-color: #262928; color: #edefee; font-weight: 600;
-  border-bottom: 1px solid #2e2e2e; font-size: 13px; }
+  background-color: #262928; color: #989a99; font-weight: 600;
+  border-bottom: 1px solid #2e2e2e; font-size: 11px;
+  text-transform: uppercase; letter-spacing: 0.08em; }
 div[data-testid="stDataFrame"] td, div[data-testid="stTable"] td {
   background-color: #232625; color: #edefee;
   border-bottom: 1px solid #2e2e2e; font-size: 13px; }
@@ -828,7 +1129,7 @@ section[data-testid="stSidebar"] button[kind="header"],
 div[data-baseweb="menu"] li[role="option"] {
   transition: background-color 0.2s cubic-bezier(0.22, 1, 0.36, 1),
     border-color 0.2s cubic-bezier(0.22, 1, 0.36, 1),
-    color 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+    color 0.2s cubic-bezier(0.22, 1, 0.36, 1); }
 /* ---- focus: one shared ring — 2px dark gap + 4px translucent green halo ---- */
 .stApp .stButton > button:focus-visible,
 div[data-testid="stDownloadButton"] > button:focus-visible,
@@ -937,6 +1238,82 @@ div[data-testid="stHorizontalBlock"] div[data-testid="column"]:last-child
 @media (prefers-reduced-motion: reduce) {
   .dcs-loader-mark, .dcs-loader-mark > div, .dcs-loader-shimmer i {
     animation: none !important; } }
+/* ---- Supabase faithful rebuild (2026-11-07, page-by-page study) ----
+   Dark twin of the light rebuild block above: same structure, dark
+   tokens only. Primary buttons are pills; dataframe headers are the
+   dashboard's uppercase micro-labels; the top bar, avatar menu rows,
+   nav active pill, danger marker, settings cards, KPI icon box and
+   metric cards follow the dark tokens. */
+.dcs-topbar-left { display: flex; align-items: center; gap: 8px;
+  min-width: 0; }
+.dcs-topbar-logo { width: 24px; height: 24px; flex: none; }
+.dcs-topbar-brand { font-size: 17px; font-weight: 500; color: #edefee;
+  white-space: nowrap; }
+.dcs-topbar-rule { border-top: 1px solid #2e2e2e; margin: 0.25rem 0 1rem; }
+/* ---- avatar menu rows: bold email, micro section label, timezone row ---- */
+.dcs-menu-email { font-size: 14px; font-weight: 700; color: #edefee;
+  padding: 0.35rem 0.75rem; overflow-wrap: anywhere; }
+.dcs-menu-label { font-size: 11px; font-weight: 600; letter-spacing: 0.08em;
+  text-transform: uppercase; color: #989a99;
+  padding: 0.35rem 0.75rem 0.1rem; }
+.dcs-menu-row { display: flex; align-items: center;
+  justify-content: space-between; gap: 0.75rem; font-size: 13px;
+  color: #edefee; padding: 0.35rem 0.75rem; }
+.dcs-menu-value { color: #989a99; font-size: 13px; }
+/* ---- avatar menu theme radio: plain rows, not the tab-bar pills ---- */
+div[data-testid="stPopoverBody"] div[data-testid="stRadio"] div[role="radiogroup"] {
+  gap: 0 !important; }
+div[data-testid="stPopoverBody"] div[data-testid="stRadio"] div[role="radiogroup"] label {
+  background-color: transparent !important; border: none !important;
+  border-radius: 6px !important; padding: 0.35rem 0.75rem !important;
+  color: #edefee !important; font-weight: 400 !important; }
+div[data-testid="stPopoverBody"] div[data-testid="stRadio"] div[role="radiogroup"] label:hover {
+  background-color: #262928 !important; }
+div[data-testid="stPopoverBody"] div[data-testid="stRadio"] div[role="radiogroup"] label:has(input:checked) {
+  background-color: #2a2d2c !important; font-weight: 600 !important; }
+/* ---- sidebar nav: the active row is a DISABLED secondary button — it
+   renders as the active pill (see the light stylesheet for why). */
+section[data-testid="stSidebar"] div[data-testid="stButton"] > button[kind="secondary"]:disabled {
+  background-color: #2a2d2c; color: #edefee; font-weight: 600;
+  border-left: 2px solid #edefee; opacity: 1; }
+/* ---- danger zone: a .dcs-danger-zone marker colours every secondary
+   button after it red (the Delete buttons). */
+div[data-testid="stVerticalBlock"] > div:has(.dcs-danger-zone) ~ div div[data-testid="stButton"] > button[kind="secondary"] {
+  color: #ff6369 !important; border-color: #ff6369 !important; }
+/* ---- headings / cards: colours in the stylesheet, never inline hex ---- */
+.dcs-section-heading { font-size: 17px; font-weight: 500; color: #edefee; }
+.dcs-section-sub { font-size: 13px; color: #989a99; }
+.dcs-card-title { font-size: 16px; font-weight: 600; color: #edefee;
+  margin-bottom: 0.5rem; }
+.dcs-card-footer { font-size: 13px; color: #989a99; margin-top: 0.75rem; }
+.dcs-settings-title { font-size: 16px; font-weight: 600; color: #edefee; }
+.dcs-settings-desc { font-size: 13px; color: #989a99; margin-top: 0.25rem; }
+/* ---- KPI icon box: the dashboard's 48px icon box at the tile's left ---- */
+.dcs-kpi { display: flex; gap: 0.75rem; align-items: flex-start; }
+.dcs-kpi-icon { width: 48px; height: 48px; flex: none; display: flex;
+  align-items: center; justify-content: center; border: 1px solid #2e2e2e;
+  border-radius: 8px; background-color: #232625; color: #4acd8b; }
+.dcs-kpi-text { flex: 1; min-width: 0; }
+.dcs-dot--danger { background: #ff6369; }
+/* ---- metric cards: label + warning/error dots, large count, bars ---- */
+.dcs-metric-card { background-color: #232625; border: 1px solid #2e2e2e;
+  border-radius: 12px; padding: 0.9rem 1rem; margin-bottom: 1rem; }
+.dcs-metric-card:hover { border-color: #4a4d4c; }
+.dcs-metric-head { display: flex; align-items: center;
+  justify-content: space-between; gap: 0.75rem; }
+.dcs-metric-dots { display: flex; gap: 0.75rem; align-items: center; }
+.dcs-metric-count { font-size: 11px; font-weight: 600;
+  letter-spacing: 0.06em; color: #989a99; display: inline-flex;
+  align-items: center; gap: 4px; }
+.dcs-metric-value { font-size: 28px; font-weight: 500; color: #edefee;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace; margin-top: 0.25rem; }
+.dcs-metric-bars { display: flex; align-items: flex-end; gap: 2px;
+  height: 40px; margin-top: 0.75rem; }
+.dcs-metric-bars i { flex: 1; border-radius: 1px; min-height: 2px;
+  display: block; }
+.dcs-bar-ok { background: #4acd8b; }
+.dcs-bar-warn { background: #f3ba63; }
+.dcs-bar-error { background: #ff6369; }
 </style>"""
 
 
@@ -959,21 +1336,63 @@ def inject_design_system(st_module=None, theme: str = "light") -> None:
     (st_module or st).markdown(theme_css(theme), unsafe_allow_html=True)
 
 
-def render_theme_toggle(st_module=None) -> str:
-    """Render the Light/Dark switch in the sidebar and return the
-    theme now in effect. The switch is a selectbox whose widget key
-    *is* ``st.session_state["dcs_theme"]`` ("light" by default), so
-    picking a theme persists for the session and the stylesheet
-    injected at the top of the app follows it on the next rerun —
-    login screen included. No behaviour change: the toggle only
-    swaps the stylesheet."""
+#: Widget keys for the two theme controls. They are deliberately NOT
+#: ``"dcs_theme"``: ``dcs_theme`` is the plain session key the
+#: stylesheet follows, and every control writes it — while a widget
+#: that OWNS the ``dcs_theme`` key keeps its own stored value and
+#: ignores a direct write to it. That is exactly the live bug the
+#: user saw: flip the theme from the login link (or the avatar menu)
+#: and the sidebar selectbox still showed "Light" while the page
+#: went dark, because the selectbox owned the key. The controls
+#: below own their own keys (``dcs_theme_select``,
+#: ``avatar_theme_radio``) and sync both ways through
+#: ``sync_theme_widgets`` + ``on_change`` callbacks.
+THEME_SELECT_KEY = "dcs_theme_select"
+THEME_RADIO_KEY = "avatar_theme_radio"
+
+
+def sync_theme_widgets(st_module=None) -> None:
+    """Sync the theme widgets to the theme in effect — call once per
+    run, BEFORE any theme widget is created (the app calls it right
+    after the ``dcs_theme`` setdefault, before the top bar).
+
+    Writing a widget's session key is only allowed before that widget
+    is instantiated in the run, which is exactly where this runs — so
+    a theme flipped from anywhere (login link, avatar menu, sidebar
+    selectbox) is reflected in every control on the next run, and the
+    sidebar dropdown can never again show "Light" while the page is
+    dark. The widgets' ``on_change`` callbacks write back the other
+    way (widget -> ``dcs_theme``), so the two directions agree."""
     st_mod = st_module or st
     current = normalize_theme(
         st_mod.session_state.get("dcs_theme", THEME_DEFAULT))
+    st_mod.session_state[THEME_SELECT_KEY] = current
+    st_mod.session_state[THEME_RADIO_KEY] = current
+
+
+def render_theme_toggle(st_module=None) -> str:
+    """Render the Light/Dark switch in the sidebar and return the
+    theme now in effect. The switch is a selectbox whose widget key
+    is ``dcs_theme_select`` (NOT ``dcs_theme`` — see the note above
+    ``THEME_SELECT_KEY``): its ``on_change`` writes the shared
+    ``dcs_theme`` key, and ``sync_theme_widgets`` (called at the top
+    of the app, before this widget exists in the run) keeps the
+    selectbox showing the theme in effect even when it was flipped
+    from the login link or the avatar menu. No behaviour change: the
+    toggle only swaps the stylesheet."""
+    st_mod = st_module or st
+    current = normalize_theme(
+        st_mod.session_state.get("dcs_theme", THEME_DEFAULT))
+
+    def _on_change():
+        st_mod.session_state["dcs_theme"] = normalize_theme(
+            st_mod.session_state.get(THEME_SELECT_KEY, current))
+
     st_mod.sidebar.selectbox(
         "Theme", options=list(THEMES),
         format_func=lambda t: "Dark" if t == "dark" else "Light",
-        key="dcs_theme",
+        key=THEME_SELECT_KEY,
+        on_change=_on_change,
         help="Switch the whole app between the light and dark "
              "Supabase look.")
     return normalize_theme(
@@ -1075,52 +1494,93 @@ def loader_block_html(logo_path, status, size="large") -> str:
             _body + "</div>")
 
 
-def topbar(title: str, breadcrumb: str = "") -> None:
-    """Render the 48px top bar: breadcrumb (muted, left) + page title.
+def topbar(title: str, breadcrumb: str = "", user=None,
+           logo_path=None, st_module=None) -> dict:
+    """Render the real top bar (Supabase shell, ~48px): the app logo
+    at the far left (the user's bars-and-checkmark mark — the Supabase
+    bolt's placement, his logo, never the Supabase mark) + the
+    workspace name + the current screen, then a search column, a green
+    ``Upload`` pill (the Connect-style primary action), a Help
+    icon-only button, and the avatar at the far right.
 
-    Presentation only — the bar is a visual shell; navigation stays
-    with the app's own controls.
+    The search column is returned empty for the caller to fill with
+    the Quick jump box (the honest Streamlit version of Supabase's
+    Search / Cmd+K pill) — the caller keeps owning the search, this
+    bar only owns its place. Returns a dict: ``"avatar"`` is the
+    avatar-menu action (``"profile"`` / ``"logout"`` / ``"status"`` /
+    ``"previews"`` / None), ``"upload"`` / ``"help"`` are True when
+    those buttons were clicked, and ``"search_col"`` is the column
+    to render the Quick jump input in. Presentation + navigation
+    only — the caller acts on the returned actions (pending_tab +
+    rerun, the same mechanism the sidebar Profile button uses).
     """
-    crumb = (f'<span class="dcs-topbar-crumb">{html.escape(breadcrumb)}'
-             f"</span><span class=\"dcs-topbar-crumb\"> / </span>"
-             if breadcrumb else "")
-    st.markdown(
-        f'<div class="dcs-topbar">{crumb}'
-        f'<span class="dcs-topbar-title">{html.escape(title)}</span>'
-        f"</div>",
-        unsafe_allow_html=True,
-    )
+    st_mod = st_module or st
+    _uri = _logo_data_uri(logo_path) if logo_path else None
+    _logo = (f'<img src="{_uri}" alt="" class="dcs-topbar-logo">'
+             if _uri else "")
+    _crumb = (f'<span class="dcs-topbar-crumb"> / '
+              f"{html.escape(breadcrumb)}</span>" if breadcrumb else "")
+    _title = (f'<span class="dcs-topbar-title">'
+              f"{html.escape(title)}</span>")
+    _brand = ('<span class="dcs-topbar-brand">Data Cleaner Studio</span>')
+    _left = (f'<div class="dcs-topbar-left">{_logo}{_brand}{_crumb}'
+             f"{_title}</div>")
+    cols = st_mod.columns([2.6, 2.0, 0.85, 0.4, 0.5], gap="small",
+                          vertical_alignment="center")
+    with cols[0]:
+        st_mod.markdown(_left, unsafe_allow_html=True)
+    with cols[2]:
+        _upload = icon_button(
+            "Upload", "upload", kind="primary", key="topbar_upload",
+            help="Go to Preview to upload a file.", st_module=st_mod)
+    with cols[3]:
+        _help = bool(st_mod.button(
+            "", icon=icon_for("help"), key="topbar_help",
+            help="How to use — open the guide."))
+    with cols[4]:
+        _avatar_action = render_avatar_menu(st_module=st_mod, user=user,
+                                            container=cols[4])
+    st_mod.markdown('<div class="dcs-topbar-rule"></div>',
+                    unsafe_allow_html=True)
+    return {"avatar": _avatar_action, "upload": bool(_upload),
+            "help": bool(_help), "search_col": cols[1]}
 
 
-def sidebar_nav(sections, active: str | None = None) -> None:
-    """Render grouped sidebar nav rows.
+def sidebar_nav(sections, active: str | None = None,
+                st_module=None):
+    """Render grouped sidebar nav rows as clickable icon buttons.
 
     ``sections`` is a list of ``(label, items)`` where ``label`` is the
-    tiny uppercase section heading (e.g. "Manage") and ``items`` is a
+    tiny uppercase section heading (e.g. "Data") and ``items`` is a
     list of ``(key, label)`` pairs — or plain label strings, in which
-    case the label itself is the key. The row whose key equals
-    ``active`` gets the active pill (``#f3f3f3`` + semibold + dark left
-    edge); the rest get the subtle hover wash.
-
-    Display-only: this helper draws the rows, it does not navigate.
-    The caller keeps its own selection control (e.g. the tab-bar radio)
-    and passes the current key back in as ``active``. Each row carries
-    a ``title`` tooltip (its own label) — the Supabase hover hint for
-    a nav item, free in plain HTML.
+    case the label itself is the key. Every row carries the section's
+    line icon left of its label (the dashboard's icon + label rows)
+    and a ``help`` tooltip naming it. The row for ``active`` is a
+    DISABLED button — you are already there, so it cannot be clicked
+    — and the stylesheet renders a disabled sidebar button as the
+    active pill (pale fill, semibold ink, dark left edge). Clicking
+    any other row returns its key; the caller sets ``pending_tab``
+    and reruns (the radio below is the authority, and pending_tab is
+    how every programmatic switch reaches it). Returns the clicked
+    key, or None when nothing was clicked. Call inside
+    ``with st.sidebar:`` — the buttons render wherever the caller
+    puts them.
     """
-    parts: list[str] = []
+    st_mod = st_module or st
+    clicked = None
     for section_label, items in sections:
-        parts.append(
+        st_mod.markdown(
             f'<div class="dcs-section-label">{html.escape(section_label)}'
-            f"</div>")
+            f"</div>",
+            unsafe_allow_html=True)
         for item in items:
             key, label = item if isinstance(item, tuple) else (item, item)
-            cls = "dcs-nav-row dcs-nav-active" if key == active \
-                else "dcs-nav-row"
-            parts.append(
-                f'<div class="{cls}" title="{html.escape(str(label))}">'
-                f"{html.escape(str(label))}</div>")
-    st.markdown("\n".join(parts), unsafe_allow_html=True)
+            if st_mod.button(
+                    str(label), icon=icon_for(NAV_ICONS.get(key, "diamond")),
+                    key=f"dcs_nav_{key}", help=str(label),
+                    type="secondary", disabled=(key == active)):
+                clicked = key
+    return clicked
 
 
 def avatar_initial(user) -> str:
@@ -1133,77 +1593,142 @@ def avatar_initial(user) -> str:
     return (str(name).strip()[:1].upper() or "?")
 
 
-def render_sidebar_avatar(st_module=None, user=None):
-    """Render the sidebar avatar: a single green circle with the
-    user's initial (see ``avatar_initial``), the only profile element
-    in the sidebar. Clicking it opens a Supabase-style account menu:
-    the email at the top (shown here, and only here, in the sidebar),
-    then Profile, then the theme switch (Light/Dark — the same switch
-    as the sidebar selectbox and the login-screen link, all writing
-    the shared ``dcs_theme`` key), then Log out, with hairline
-    dividers grouping them. No "Upgrade to Pro", Changelog or Feature
-    previews: the app has no paid tier and none of those exist.
-    Returns ``"profile"`` when Profile was clicked, ``"logout"``
-    when Log out was clicked, else ``None`` — the caller acts on it
-    (open the Profile tab / log out). The theme switch flips the
-    theme and reruns itself (like render_login_theme_toggle), so it
-    returns no action. The circle itself is styled by the design
-    system CSS (``stPopoverButton`` rules); the popover is the honest
-    Streamlit menu — no overlay palette exists in Streamlit, and the
-    trigger button is the avatar."""
+def render_avatar_menu(st_module=None, user=None, container=None):
+    """Render the avatar (a single green circle with the user's
+    initial) and the Supabase-style account menu that opens from it.
+
+    The menu is the dashboard's real one, page-by-page study §8 and
+    the live-walk appendix: the email in bold at the top (plain text,
+    never a link), then icon rows — Account, Feature previews,
+    Changelog — a hairline, a "Theme" section with a Dark/Light radio
+    (the selected row carries the filled dot, the way Supabase's
+    System/Dark/Light rows do), a hairline, a Timezone row
+    ("Auto (Asia/Calcutta)" — display-only; the app runs on IST),
+    a hairline, then Sign out. No "Upgrade to Pro", no paid-tier
+    anything: the app has no paid tier and none is invented.
+
+    ``container`` is where the avatar lives — a top-bar column (the
+    dashboard puts the avatar at the top bar's far right) or
+    ``st.sidebar``; None means the sidebar. Returns ``"profile"``
+    when Account was clicked (the caller opens the Profile tab),
+    ``"status"`` for Changelog (the caller opens the Status tab,
+    which holds the "What's new" changelog), ``"previews"`` for
+    Feature previews (the caller says plainly there are none running),
+    ``"logout"`` for Sign out, else None. The theme radio writes the
+    shared ``dcs_theme`` key itself (via ``on_change``) and
+    ``sync_theme_widgets`` keeps it showing the theme in effect.
+
+    Why a radio, not the old theme button: the old "Switch to dark
+    theme" button existed in code but did not render on screen in the
+    live check — and a radio is what Supabase actually shows (one
+    widget, one selected row, no stack of buttons to lose).
+    The circle itself is styled by the design system CSS
+    (``stPopoverButton`` rules); the popover is the honest Streamlit
+    menu — no overlay palette exists in Streamlit, and the trigger
+    button is the avatar."""
     st_mod = st_module or st
     email = str((user or {}).get("email") or "")
     current = normalize_theme(
         st_mod.session_state.get("dcs_theme", THEME_DEFAULT))
     # All buttons are always created, every run: returning early on
-    # the Profile click would skip the Log out button for that run,
+    # the Account click would skip the Sign out button for that run,
     # leaving the menu half-built. Collect the action, return after
-    # the menu. (The theme switch reruns instead of returning — the
-    # rerun rebuilds the whole menu, so it stays whole too.)
+    # the menu.
     action = None
-    with st_mod.sidebar.popover(avatar_initial(user), key="avatar_menu"):
+    _host = container if container is not None else st_mod.sidebar
+    with _host.popover(avatar_initial(user), key="avatar_menu"):
         if email:
-            st_mod.caption(email)
+            st_mod.markdown(
+                f'<div class="dcs-menu-email">{html.escape(email)}</div>',
+                unsafe_allow_html=True)
         st_mod.markdown('<div class="dcs-menu-divider"></div>',
                         unsafe_allow_html=True)
-        if st_mod.button("Profile", key="avatar_profile_btn"):
+        if icon_button("Account", "account", key="avatar_account_btn",
+                       help="Open your Profile.", st_module=st_mod):
             action = "profile"
-        _theme_label = ("Switch to light theme" if current == "dark"
-                        else "Switch to dark theme")
-        if st_mod.button(_theme_label, key="avatar_theme_btn"):
-            st_mod.session_state["dcs_theme"] = (
-                "light" if current == "dark" else "dark")
-            st_mod.rerun()
+        if icon_button("Feature previews", "flask",
+                       key="avatar_previews_btn",
+                       help="See what is being tried out.",
+                       st_module=st_mod):
+            action = "previews"
+        if icon_button("Changelog", "changelog",
+                       key="avatar_changelog_btn",
+                       help="What changed, newest first.",
+                       st_module=st_mod):
+            action = "status"
         st_mod.markdown('<div class="dcs-menu-divider"></div>',
                         unsafe_allow_html=True)
-        if st_mod.button("Log out", key="avatar_logout_btn"):
+        st_mod.markdown('<div class="dcs-menu-label">Theme</div>',
+                        unsafe_allow_html=True)
+
+        def _on_theme():
+            st_mod.session_state["dcs_theme"] = normalize_theme(
+                st_mod.session_state.get(THEME_RADIO_KEY, current))
+
+        st_mod.radio(
+            "Theme", options=list(THEMES),
+            format_func=lambda t: "Dark" if t == "dark" else "Light",
+            key=THEME_RADIO_KEY, on_change=_on_theme,
+            label_visibility="collapsed")
+        st_mod.markdown('<div class="dcs-menu-divider"></div>',
+                        unsafe_allow_html=True)
+        st_mod.markdown(
+            '<div class="dcs-menu-row"><span>Timezone</span>'
+            '<span class="dcs-menu-value">Auto (Asia/Calcutta)</span>'
+            "</div>",
+            unsafe_allow_html=True)
+        st_mod.markdown('<div class="dcs-menu-divider"></div>',
+                        unsafe_allow_html=True)
+        if icon_button("Sign out", "logout", key="avatar_logout_btn",
+                       help="Log out of this account.",
+                       st_module=st_mod):
             action = "logout"
     return action
 
 
+def render_sidebar_avatar(st_module=None, user=None):
+    """Backwards-compatible name for ``render_avatar_menu`` (sidebar
+    placement): the sidebar avatar + account menu. New code calls
+    ``render_avatar_menu`` directly (the avatar lives in the top bar
+    now); this wrapper keeps the old call sites and tests working."""
+    return render_avatar_menu(st_module=st_module, user=user,
+                              container=None)
+
+
 def section_heading(text: str, sub: str | None = None) -> None:
     """Render a 16-18px section heading with an optional muted sub-line
-    underneath (the dashboard's "Get connected" / "Users" pattern)."""
-    sub_html = (f'<div style="font-size: 13px; color: #696969;">'
+    underneath (the dashboard's "Get connected" / "Users" pattern).
+    The colours live in the stylesheet (``.dcs-section-heading`` /
+    ``.dcs-section-sub``) — never inline hex — so the heading reads
+    in both themes (the old inline ``#030303`` / ``#696969`` rendered
+    near-black on dark)."""
+    sub_html = (f'<div class="dcs-section-sub">'
                 f"{html.escape(sub)}</div>" if sub else "")
     st.markdown(
-        f'<h2 style="font-size: 17px; font-weight: 500; color: #030303;">'
-        f"{html.escape(text)}</h2>{sub_html}",
+        f'<h2 class="dcs-section-heading">{html.escape(text)}</h2>'
+        f"{sub_html}",
         unsafe_allow_html=True,
     )
 
 
-def kpi_tile(label: str, value: str, sub: str | None = None) -> None:
+def kpi_tile(label: str, value: str, sub: str | None = None,
+             icon: str | None = None) -> None:
     """Render one status tile: uppercase micro-label, large (monospace)
     value, optional muted sub-line — the dashboard home's six-tile
-    pattern (STATUS / Healthy, COMPUTE SIZE / NANO, ...)."""
+    pattern (STATUS / Healthy, COMPUTE SIZE / NANO, ...). With
+    ``icon`` (an ``svg_icon`` name) the tile gains the dashboard's
+    48px icon box at the left, icon + label + value in a row; without
+    it the tile is the old label + value stack."""
     sub_html = (f'<div class="dcs-kpi-sub">{html.escape(sub)}</div>'
                 if sub else "")
+    icon_html = (f'<div class="dcs-kpi-icon">{svg_icon(icon, 22)}</div>'
+                 if icon else "")
     st.markdown(
-        f'<div class="dcs-kpi">'
+        f'<div class="dcs-kpi">{icon_html}'
+        f'<div class="dcs-kpi-text">'
         f'<div class="dcs-kpi-label">{html.escape(label)}</div>'
         f'<div class="dcs-kpi-value">{html.escape(str(value))}</div>'
-        f"{sub_html}</div>",
+        f"{sub_html}</div></div>",
         unsafe_allow_html=True,
     )
 
@@ -1215,17 +1740,115 @@ def card(title: str | None = None, body: str = "",
     ``title`` is the card heading (skipped when None), ``body`` is HTML
     already escaped / authored by the caller, ``footer`` an optional
     muted footer line. Keep ``body`` short — cards are for one idea.
+    The title/footer colours live in the stylesheet
+    (``.dcs-card-title`` / ``.dcs-card-footer``), never inline hex,
+    so the card reads in both themes.
     """
-    title_html = (f'<div style="font-size: 16px; font-weight: 600; '
-                  f'color: #030303; margin-bottom: 0.5rem;">'
+    title_html = (f'<div class="dcs-card-title">'
                   f"{html.escape(title)}</div>" if title else "")
-    footer_html = (f'<div style="font-size: 13px; color: #696969; '
-                   f'margin-top: 0.75rem;">{html.escape(footer)}</div>'
-                   if footer else "")
+    footer_html = (f'<div class="dcs-card-footer">'
+                   f"{html.escape(footer)}</div>" if footer else "")
     st.markdown(
         f'<div class="dcs-card">{title_html}{body}{footer_html}</div>',
         unsafe_allow_html=True,
     )
+
+
+def settings_card(title: str, desc: str | None = None):
+    """Open a Supabase-style settings card and return
+    ``(left, right, card)``: a bordered card whose first row is
+    [label + description | controls]. ``left`` is already filled with
+    the bold title + muted description; ``right`` is the empty
+    controls column for the caller to fill; ``card`` is the bordered
+    container itself, so the caller can append a Save row at the
+    card's bottom-right (``with card:`` again, then columns [3, 1]
+    with the Save button in the right one). The dashboard's settings
+    pages put label + description left and input (+ Copy) right, one
+    bordered card per section, Save at the bottom-right — this is
+    that shape, for Profile and Settings."""
+    _card = st.container(border=True)
+    with _card:
+        _left, _right = st.columns([1.1, 1])
+        with _left:
+            st.markdown(
+                f'<div class="dcs-settings-title">'
+                f"{html.escape(title)}</div>",
+                unsafe_allow_html=True)
+            if desc:
+                st.markdown(
+                    f'<div class="dcs-settings-desc">'
+                    f"{html.escape(desc)}</div>",
+                    unsafe_allow_html=True)
+    return _left, _right, _card
+
+
+def metric_card(label: str, value, warnings: int = 0, errors: int = 0,
+                bars=None, sub: str | None = None) -> None:
+    """A Supabase service metric card: uppercase label at left with
+    WARNINGS / ERRORS dot counts at right, a large count below, and a
+    bar sparkline along the bottom. ``bars`` is a list of per-bucket
+    heights — each item is a number (0-100, green) or a
+    ``(height, kind)`` pair where kind is ``"ok"`` (green),
+    ``"warn"`` (amber) or ``"error"`` (red). A card with no bars
+    renders the count and dots only. The dots and counts are the
+    app's own data (missing cells, duplicates) — never Supabase's."""
+    _warn = (f'<span class="dcs-metric-count">'
+             f'<span class="dcs-dot dcs-dot--warn"></span>'
+             f"WARNINGS {int(warnings)}</span>")
+    _err = (f'<span class="dcs-metric-count">'
+            f'<span class="dcs-dot dcs-dot--danger"></span>'
+             f"ERRORS {int(errors)}</span>")
+    _bars_html = ""
+    if bars:
+        _items = []
+        for _b in list(bars)[:24]:
+            if isinstance(_b, (tuple, list)):
+                _h, _k = float(_b[0]), str(_b[1])
+            else:
+                _h, _k = float(_b), "ok"
+            _h = max(2.0, min(100.0, _h))
+            # Bar colours live in the stylesheet (.dcs-bar-ok / -warn /
+            # -error) so they follow the theme — never inline hex.
+            _cls = {"warn": "dcs-bar-warn", "error": "dcs-bar-error"}.get(
+                _k, "dcs-bar-ok")
+            _items.append(
+                f'<i class="{_cls}" style="height: {_h:.0f}%;"></i>')
+        _bars_html = ('<div class="dcs-metric-bars">' + "".join(_items) +
+                      "</div>")
+    sub_html = (f'<div class="dcs-kpi-sub">{html.escape(sub)}</div>'
+                if sub else "")
+    st.markdown(
+        f'<div class="dcs-metric-card">'
+        f'<div class="dcs-metric-head">'
+        f'<span class="dcs-kpi-label">{html.escape(label)}</span>'
+        f'<span class="dcs-metric-dots">{_warn} {_err}</span></div>'
+        f'<div class="dcs-metric-value">{html.escape(str(value))}</div>'
+        f"{sub_html}{_bars_html}</div>",
+        unsafe_allow_html=True,
+    )
+
+
+def connect_strip(cells) -> str | None:
+    """The dashboard's "Get connected" strip, mapped to the app: six
+    equal cells in one bordered strip, each an icon button (title) +
+    a muted subtitle. ``cells`` is a list of dicts with ``key``,
+    ``icon`` (an ``icon_button`` name), ``title`` and ``subtitle``.
+    Clicking a cell returns its key — the caller navigates
+    (pending_tab + rerun). Returns None when nothing was clicked."""
+    clicked = None
+    with st.container(border=True):
+        _cols = st.columns(len(cells)) if cells else []
+        for _col, _cell in zip(_cols, cells):
+            with _col:
+                if icon_button(
+                        _cell["title"], _cell["icon"], kind="secondary",
+                        key=f"dcs_connect_{_cell['key']}",
+                        help=_cell.get("subtitle") or _cell["title"],
+                        use_container_width=True):
+                    clicked = _cell["key"]
+                if _cell.get("subtitle"):
+                    st.caption(_cell["subtitle"])
+    return clicked
 
 
 def pill(text: str, kind: str = "mint") -> str:

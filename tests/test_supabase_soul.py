@@ -194,9 +194,10 @@ def test_soul_transition_and_focus_both_themes():
 # ---------------------------------------------------------------------------
 
 def test_avatar_menu_theme_switch():
-    """The avatar menu carries the theme switch (same wording as the
-    login-screen link); clicking it flips dcs_theme and the label
-    flips with it. Profile and Log out are untouched."""
+    """The avatar menu carries the theme as a radio (Dark / Light —
+    the dashboard's Theme radio, minus System, which Streamlit
+    cannot detect without JavaScript). Picking a row flips dcs_theme,
+    and the radio follows it back. Account and Sign out are untouched."""
     at = AppTest.from_string(
         "import streamlit as st\n"
         "import ui_design\n"
@@ -206,25 +207,28 @@ def test_avatar_menu_theme_switch():
         "st.write(f'action={action}')\n")
     at.run()
     assert not at.exception, f"avatar render exception: {at.exception}"
-    find_button(at, "Profile", key="avatar_profile_btn")
-    find_button(at, "Log out", key="avatar_logout_btn")
+    find_button(at, "Account", key="avatar_account_btn")
+    find_button(at, "Sign out", key="avatar_logout_btn")
     # The menu is grouped by hairline dividers (email / actions / out).
-    assert any("dcs-menu-divider" in v for v in vals(at.sidebar.markdown)), \
+    assert any("dcs-menu-divider" in v for v in vals(at.markdown)), \
         "avatar menu must separate its groups with dividers"
-    # Light by default: the switch offers dark.
-    find_button(at, "Switch to dark theme", key="avatar_theme_btn")
-    find_button(at, "Switch to dark theme",
-                key="avatar_theme_btn").click().run()
+    # Light by default: the radio offers Dark.
+    theme = next(r for r in at.radio if r.label == "Theme")
+    assert theme.value == "light", \
+        f"theme radio should start light, got {theme.value!r}"
+    theme.set_value("dark").run()
     assert not at.exception, f"exception flipping theme: {at.exception}"
     assert at.session_state.get("dcs_theme") == "dark", \
-        "avatar theme switch must flip dcs_theme to dark"
-    find_button(at, "Switch to light theme", key="avatar_theme_btn")
+        "avatar theme radio must flip dcs_theme to dark"
+    # The radio follows the flip: it now reads Dark.
+    theme = next(r for r in at.radio if r.label == "Theme")
+    assert theme.value == "dark", \
+        f"theme radio should read dark after the flip, got {theme.value!r}"
     # And back again.
-    find_button(at, "Switch to light theme",
-                key="avatar_theme_btn").click().run()
+    theme.set_value("light").run()
     assert not at.exception, f"exception flipping theme back: {at.exception}"
     assert at.session_state.get("dcs_theme") == "light", \
-        "avatar theme switch must flip dcs_theme back to light"
+        "avatar theme radio must flip dcs_theme back to light"
     # No paid-tier items: the menu never offers an upgrade.
     assert not any("Upgrade" in b.label for b in at.button), \
         "avatar menu must not offer an Upgrade to Pro"
@@ -236,21 +240,28 @@ def test_avatar_menu_theme_switch():
 # ---------------------------------------------------------------------------
 
 def test_sidebar_nav_tooltips():
-    """Each nav row carries a title tooltip with its own label, and
-    the active row keeps its pill."""
+    """Each nav row is an icon button with its own label as the hover
+    tooltip, and the active row is the disabled pill (the dashboard's
+    active-row styling). Clicking a row reports its key."""
     at = AppTest.from_string(
         "import streamlit as st\n"
         "import ui_design\n"
-        "ui_design.sidebar_nav([('Data', [('preview', 'Preview'),\n"
+        "clicked = ui_design.sidebar_nav([('Data', [('preview', 'Preview'),\n"
         "                                  ('clean', 'Clean')])],\n"
-        "                     active='preview')\n")
+        "                     active='preview')\n"
+        "st.write(f'clicked={clicked}')\n")
     at.run()
     assert not at.exception, f"sidebar_nav exception: {at.exception}"
-    html = "\n".join(vals(at.markdown))
-    assert 'title="Preview"' in html, "Preview nav row needs its tooltip"
-    assert 'title="Clean"' in html, "Clean nav row needs its tooltip"
-    assert "dcs-nav-row dcs-nav-active" in html, \
-        "active nav row must keep its pill"
+    preview = find_button(at, "Preview", key="dcs_nav_preview")
+    clean = find_button(at, "Clean", key="dcs_nav_clean")
+    assert preview.help == "Preview", "Preview nav row needs its tooltip"
+    assert clean.help == "Clean", "Clean nav row needs its tooltip"
+    assert preview.disabled, "active nav row must be the disabled pill"
+    assert not clean.disabled, "inactive nav row must stay clickable"
+    clean.click().run()
+    assert not at.exception, f"exception clicking nav: {at.exception}"
+    assert any("clicked=clean" in v for v in vals(at.markdown)), \
+        "clicking a nav row must report its key"
     print("sidebar nav tooltips OK")
 
 
@@ -280,22 +291,21 @@ def test_status_pill_dot(_tmp_env):
 
 def test_profile_dividers_and_caption(_tmp_env):
     """The Profile view reads as a settings page: a one-line caption
-    under the title and a hairline divider between every section,
-    with the danger zone still separated and intact."""
+    under the title and one bordered card per section, with the danger
+    zone still separated and intact."""
     at = AppTest.from_file(APP)
     at.run()
     assert not at.exception, f"startup exception: {at.exception}"
     signup(at, "alice1")
-    find_button(at, "Profile", key="avatar_profile_btn").click().run()
+    find_button(at, "Account", key="avatar_account_btn").click().run()
     assert not at.exception, f"exception opening Profile: {at.exception}"
-    assert any(c.value == "Your account, sign-in and data."
-               for c in at.caption), \
+    assert any("Your account, sign-in and data." in v
+               for v in vals(at.markdown)), \
         "Profile view needs its settings-page caption"
-    assert len(at.divider) >= 5, \
-        f"Profile view needs a divider between every section, got {len(at.divider)}"
     for section in ("Account info", "Change password", "Download my data",
                     "Storage usage", "Danger zone"):
-        assert any(s.value == section for s in at.subheader), \
-            f"Profile section {section!r} missing"
+        assert any("dcs-settings-title" in v and section in v
+                   for v in vals(at.markdown)), \
+            f"Profile section {section!r} must be a settings card"
     find_button(at, "Delete my account", key="profile_delete_reveal")
     print("profile dividers + caption OK")

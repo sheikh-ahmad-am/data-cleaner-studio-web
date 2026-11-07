@@ -1,8 +1,8 @@
 """Profile section tests (AppTest — no browser needed).
 
-Flow: sign up -> sidebar shows the avatar (green circle, initial)
--> the avatar menu holds the email, Profile, and Log out -> clicking
-Profile opens the Profile view (account info, storage usage,
+Flow: sign up -> top bar shows the avatar (green circle, initial)
+-> the avatar menu holds the email, Account, and Sign out -> clicking
+Account opens the Profile view (account info, storage usage,
 download button, danger zone) -> delete gating: the final delete
 button without "DELETE" typed does nothing -> typing DELETE +
 confirming deletes the account (user row gone, files gone) and
@@ -85,8 +85,8 @@ def signup(at, username, password="password123"):
 
 
 def goto_profile(at):
-    """Open the Profile section from the avatar menu's Profile action."""
-    find_button(at, "Profile", key="avatar_profile_btn").click().run()
+    """Open the Profile section from the avatar menu's Account action."""
+    find_button(at, "Account", key="avatar_account_btn").click().run()
     assert not at.exception, f"exception opening Profile: {at.exception}"
     radio = next(r for r in at.radio if r.label == "Section")
     assert radio.value == "Profile", \
@@ -94,17 +94,13 @@ def goto_profile(at):
 
 
 def assert_profile_view(at):
-    """The Profile view's sections are all on screen."""
-    assert any(s.value == "Account info" for s in at.subheader), \
-        "Account info subheader missing"
-    assert any(s.value == "Change password" for s in at.subheader), \
-        "Change password subheader missing"
-    assert any(s.value == "Download my data" for s in at.subheader), \
-        "Download my data subheader missing"
-    assert any(s.value == "Storage usage" for s in at.subheader), \
-        "Storage usage subheader missing"
-    assert any(s.value == "Danger zone" for s in at.subheader), \
-        "Danger zone subheader missing"
+    """The Profile view's sections are all on screen (one bordered
+    settings card per section — the title is the card's heading,
+    rendered as markdown, not a subheader)."""
+    for section in ("Account info", "Change password", "Download my data",
+                    "Storage usage", "Danger zone"):
+        assert any(section in v for v in vals(at.markdown)), \
+            f"Profile section {section!r} missing"
     assert any(b.label == "Download my data" for b in at.download_button), \
         "download-my-data button missing"
     assert any(b.label == "Delete my account" for b in at.button), \
@@ -129,10 +125,10 @@ def test_sidebar_avatar_and_open_profile(_tmp_env):
     assert not at.exception, f"startup exception: {at.exception}"
     signup(at, "alice1")
 
-    # Sidebar avatar: no card, no standalone buttons — the username
+    # Top-bar avatar: no card, no standalone buttons — the username
     # and email must not appear as sidebar markdown, and the old
     # Profile / Log out buttons are gone. The avatar menu (popover)
-    # holds the Profile + Log out actions instead (local users have
+    # holds the Account + Sign out actions instead (local users have
     # no email, so no email caption shows here — the email case is
     # covered in test_sidebar_avatar.py).
     assert not any("alice1" in v for v in vals(at.sidebar.markdown)), \
@@ -145,8 +141,8 @@ def test_sidebar_avatar_and_open_profile(_tmp_env):
         "old standalone sidebar Profile button should be gone"
     assert not any(b.key == "logout_btn" for b in at.sidebar.button), \
         "old standalone sidebar Log out button should be gone"
-    find_button(at, "Profile", key="avatar_profile_btn")
-    find_button(at, "Log out", key="avatar_logout_btn")
+    find_button(at, "Account", key="avatar_account_btn")
+    find_button(at, "Sign out", key="avatar_logout_btn")
 
     # The section switcher only renders once data is loaded (the app
     # stops at "Nothing loaded yet" before that), so load the sample
@@ -303,13 +299,13 @@ def test_profile_reachable_without_data(_tmp_env):
     at.run()
     signup(at, "alice1")
     # No file loaded: the app shows the empty state and stops before
-    # the section switcher — the avatar menu's Profile action must
+    # the section switcher — the avatar menu's Account action must
     # still open the Profile view (no data needed for an account page).
     # The empty state is rendered by ui_design.empty_state as
     # markdown (<h3>), not st.subheader, since the Supabase rebuild.
     assert any("Nothing loaded yet" in m.value for m in at.markdown), \
         "fresh login with no data should show the empty state"
-    find_button(at, "Profile", key="avatar_profile_btn").click().run()
+    find_button(at, "Account", key="avatar_account_btn").click().run()
     assert not at.exception, f"exception opening Profile empty: {at.exception}"
     assert_profile_view(at)
     # Back returns to the empty state.
@@ -317,5 +313,5 @@ def test_profile_reachable_without_data(_tmp_env):
     assert not at.exception, f"exception going back: {at.exception}"
     assert any("Nothing loaded yet" in m.value for m in at.markdown), \
         "Back should return to the empty state"
-    assert not any(s.value == "Account info" for s in at.subheader), \
+    assert not any("Account info" in v for v in vals(at.markdown)), \
         "profile view should be gone after Back"

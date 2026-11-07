@@ -1,12 +1,12 @@
-"""Sidebar avatar tests (AppTest — no browser needed).
+"""Top-bar avatar tests (AppTest — no browser needed).
 
-The sidebar profile block is a single green circle with the user's
-initial; the email, Profile, and Log out live ONLY inside the avatar
+The top-bar profile block is a single green circle with the user's
+initial; the email, Account, and Sign out live ONLY inside the avatar
 menu (st.popover). Covers: the initial logic, the avatar CSS pinned
 in both themes + the app.py literal, the old card/buttons being gone,
 the menu contents and actions (local user: no email; a user dict with
-an email: the caption shows it), and the initial following a saved
-display name.
+an email: the email shows bold at the top of the menu), and the
+initial following a saved display name.
 
 Self-contained: auth.DB_PATH, storage.BASE_DIR and the scheduler jobs
 file are pointed at a temp dir, so the real data/ folder is untouched.
@@ -155,7 +155,7 @@ def test_avatar_css_pinned_both_themes():
 
 
 # ---------------------------------------------------------------------------
-# 3. Sidebar: avatar menu for a local user (no email), actions work
+# 3. Top-bar avatar menu for a local user (no email), actions work
 # ---------------------------------------------------------------------------
 
 def test_sidebar_avatar_menu_local_user(_tmp_env):
@@ -169,12 +169,12 @@ def test_sidebar_avatar_menu_local_user(_tmp_env):
         "old standalone sidebar Profile button should be gone"
     assert not any(b.key == "logout_btn" for b in at.sidebar.button), \
         "old standalone sidebar Log out button should be gone"
-    # The avatar menu (popover) holds the Profile + Log out actions.
-    find_button(at, "Profile", key="avatar_profile_btn")
-    find_button(at, "Log out", key="avatar_logout_btn")
+    # The avatar menu (popover) holds the Account + Sign out actions.
+    find_button(at, "Account", key="avatar_account_btn")
+    find_button(at, "Sign out", key="avatar_logout_btn")
     # The username/email must not appear as sidebar markdown (the
-    # card is gone); local users have no email, so no email caption
-    # shows anywhere in the sidebar either.
+    # card is gone); local users have no email, so no email shows
+    # anywhere in the sidebar either.
     assert not any("alice1" in v for v in vals(at.sidebar.markdown)), \
         "sidebar must not show the username as markdown (card gone)"
     assert not any("@" in v for v in vals(at.sidebar.markdown)), \
@@ -182,24 +182,24 @@ def test_sidebar_avatar_menu_local_user(_tmp_env):
     assert not any("@" in c.value for c in at.sidebar.caption), \
         "sidebar must not show an email caption for a local user"
 
-    # The menu's Profile action opens the Profile view (no data
+    # The menu's Account action opens the Profile view (no data
     # needed for an account page — the empty-state branch handles it).
-    find_button(at, "Profile", key="avatar_profile_btn").click().run()
+    find_button(at, "Account", key="avatar_account_btn").click().run()
     assert not at.exception, f"exception opening Profile: {at.exception}"
-    assert any(s.value == "Account info" for s in at.subheader), \
-        "avatar menu Profile should open the Profile view"
+    assert any("Account info" in v for v in vals(at.markdown)), \
+        "avatar menu Account should open the Profile view"
 
-    # Back to the sidebar, the menu's Log out logs out.
-    find_button(at, "Log out", key="avatar_logout_btn").click().run()
+    # Back to the top bar, the menu's Sign out logs out.
+    find_button(at, "Sign out", key="avatar_logout_btn").click().run()
     assert not at.exception, f"exception on avatar logout: {at.exception}"
     assert any(b.label == "Log in" for b in at.button), \
-        "avatar menu Log out should return to the login screen"
+        "avatar menu Sign out should return to the login screen"
     assert not any(b.label == "Try the messy sample" for b in at.button), \
-        "avatar menu Log out must log the user out"
+        "avatar menu Sign out must log the user out"
 
 
 # ---------------------------------------------------------------------------
-# 4. Avatar menu with an email (cloud-style user): caption shows it
+# 4. Avatar menu with an email (cloud-style user): email bold at top
 # ---------------------------------------------------------------------------
 
 def test_sidebar_avatar_menu_with_email():
@@ -212,26 +212,31 @@ def test_sidebar_avatar_menu_with_email():
         "st.write(f'action={action}')\n")
     at.run()
     assert not at.exception, f"avatar render exception: {at.exception}"
-    # The menu shows the email (and only the menu does — there is no
-    # other sidebar element carrying it).
-    assert any("ahmadfed966@gmail.com" in c.value
-               for c in at.sidebar.caption), \
-        "avatar menu should show the email as a caption"
+    # The menu shows the email bold at the top (plain text, never a
+    # link — the old version rendered it as a blue underlined link)
+    # and only the menu does — there is no other element carrying it.
+    assert any("ahmadfed966@gmail.com" in v
+               and "dcs-menu-email" in v for v in vals(at.markdown)), \
+        "avatar menu should show the email bold at the top"
     assert not any("ahmadfed966@gmail.com" in v
-                   for v in vals(at.sidebar.markdown)), \
-        "email must not appear as sidebar markdown (menu only)"
-    find_button(at, "Profile", key="avatar_profile_btn")
-    find_button(at, "Log out", key="avatar_logout_btn")
+                   for v in vals(at.sidebar.markdown)
+                   if "dcs-menu-email" not in v), \
+        "email must not appear outside the avatar menu"
+    assert not any("ahmadfed966@gmail.com" in c.value
+                   for c in at.sidebar.caption), \
+        "email must not appear as a sidebar caption (menu only)"
+    find_button(at, "Account", key="avatar_account_btn")
+    find_button(at, "Sign out", key="avatar_logout_btn")
 
     # The menu actions report back through the helper's return value.
-    find_button(at, "Profile", key="avatar_profile_btn").click().run()
-    assert not at.exception, f"exception on menu Profile: {at.exception}"
+    find_button(at, "Account", key="avatar_account_btn").click().run()
+    assert not at.exception, f"exception on menu Account: {at.exception}"
     assert any("action=profile" in v for v in vals(at.markdown)), \
-        "menu Profile should return 'profile'"
-    find_button(at, "Log out", key="avatar_logout_btn").click().run()
-    assert not at.exception, f"exception on menu Log out: {at.exception}"
+        "menu Account should return 'profile'"
+    find_button(at, "Sign out", key="avatar_logout_btn").click().run()
+    assert not at.exception, f"exception on menu Sign out: {at.exception}"
     assert any("action=logout" in v for v in vals(at.markdown)), \
-        "menu Log out should return 'logout'"
+        "menu Sign out should return 'logout'"
 
 
 # ---------------------------------------------------------------------------
@@ -243,7 +248,7 @@ def test_avatar_initial_follows_display_name(_tmp_env):
     at.run()
     signup(at, "alice1")
     # Open the Profile view from the avatar menu (no data needed).
-    find_button(at, "Profile", key="avatar_profile_btn").click().run()
+    find_button(at, "Account", key="avatar_account_btn").click().run()
     assert not at.exception, f"exception opening Profile: {at.exception}"
     find_text_input(at, "Display name").set_value("Bob B").run()
     find_button(at, "Save display name").click().run()
