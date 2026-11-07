@@ -322,6 +322,31 @@ div[data-testid="stRadio"] div[role="radiogroup"] label:focus-within {
 /* ---- footer ---- */
 .dcs-footer { color: #696969; font-size: 0.85rem; text-align: center;
   padding: 1.5rem 0 0.5rem; }
+/* ---- login console layout (variant C): no card, top-left logo + title,
+   narrow left-aligned form column, theme switch as a text link ---- */
+.dcs-console-head { display: flex; align-items: center; gap: 12px; }
+.dcs-console-head img { width: 40px; height: 40px; }
+.dcs-console-head h1 { font-size: 22px; font-weight: 500; margin: 0; }
+.dcs-console-h2 { font-size: 18px; font-weight: 500; margin: 0 0 16px; }
+.dcs-code-email { color: #117f50; font-weight: 600; }
+.dcs-console-status { font-size: 13px; color: #696969; display: flex;
+  align-items: center; gap: 6px; margin-top: 0.75rem; }
+.dcs-console-status::before { content: ""; width: 8px; height: 8px;
+  border-radius: 50%; background: #117f50; display: inline-block;
+  flex: none; }
+input[maxlength="6"] { font-family: monospace; font-size: 18px;
+  letter-spacing: .35em; }
+/* tertiary buttons render as plain text links — used only by the login
+   theme switch (console header). */
+div[data-testid="stButton"] > button[kind="tertiary"] {
+  background: transparent; border: none; box-shadow: none;
+  color: #117f50; font-size: 13px; padding: 0.25rem 0; min-height: 0; }
+div[data-testid="stButton"] > button[kind="tertiary"]:hover {
+  background: transparent; color: #117f50; text-decoration: underline; }
+/* right-align the theme link inside the console header row */
+div[data-testid="stHorizontalBlock"] div[data-testid="column"]:last-child
+  div[data-testid="stButton"]:has(> button[kind="tertiary"]) {
+  display: flex; justify-content: flex-end; }
 </style>"""
 
 st.set_page_config(page_title="Data Cleaner Studio", layout="wide",
@@ -934,13 +959,19 @@ def _code_step_ui(pending):
     """
     _email = pending.get("email", "")
     _user = pending.get("user") or {}
-    st.title("Check your email")
-    st.write(f"We sent a 6-digit code to **{_email}**. Enter it below "
-             "to finish signing in — it expires in 10 minutes.")
+    # Console layout (variant C): left-aligned 18px heading + instruction
+    # (email in green), same copy as before — presentation only.
+    st.markdown('<h2 class="dcs-console-h2">Check your email</h2>',
+                unsafe_allow_html=True)
+    st.markdown(f"We sent a 6-digit code to "
+                f'<span class="dcs-code-email">{html.escape(_email)}</span>. '
+                "Enter it below to finish signing in — it expires in "
+                "10 minutes.", unsafe_allow_html=True)
     _code = st.text_input("6-digit code", key="email_code_input",
                           max_chars=6,
                           help="The 6 numbers from the email we just sent.")
-    if st.button("Verify code", key="email_code_verify_btn", type="primary"):
+    if st.button("Verify code", key="email_code_verify_btn", type="primary",
+                 use_container_width=True):
         _typed = (_code or "").strip().replace(" ", "")
         if not _typed:
             st.error("Enter the 6-digit code from the email.")
@@ -968,26 +999,32 @@ def _code_step_ui(pending):
                          "one below.")
             else:
                 st.error("Could not check the code — try again.")
-    if st.button("Resend code", key="email_code_resend_btn"):
-        try:
-            _ok, _status = auth.request_login_code(_email)
-        except AuthServiceError as exc:
-            st.error(f"Account service error: {exc}")
-            _ok, _status = False, None
-        if _ok:
-            st.success(f"A new code is on its way to {_email}.")
-        elif _status == "too_soon":
-            st.error("A code was just sent — wait a minute before "
-                     "requesting a new one.")
-        elif _status == "hourly_limit":
-            st.error("Too many codes requested — try again in an hour.")
-        elif _status == "not_configured":
-            st.error(auth.BREVO_SETUP_MESSAGE)
-        else:
-            st.error("Could not send a new code — try again in a moment.")
-    if st.button("Back to login", key="email_code_cancel_btn"):
-        st.session_state["pending_code"] = None
-        st.rerun()
+    # Resend + Back side by side (variant C console code screen).
+    _rc1, _rc2 = st.columns(2)
+    with _rc1:
+        if st.button("Resend code", key="email_code_resend_btn",
+                     use_container_width=True):
+            try:
+                _ok, _status = auth.request_login_code(_email)
+            except AuthServiceError as exc:
+                st.error(f"Account service error: {exc}")
+                _ok, _status = False, None
+            if _ok:
+                st.success(f"A new code is on its way to {_email}.")
+            elif _status == "too_soon":
+                st.error("A code was just sent — wait a minute before "
+                         "requesting a new one.")
+            elif _status == "hourly_limit":
+                st.error("Too many codes requested — try again in an hour.")
+            elif _status == "not_configured":
+                st.error(auth.BREVO_SETUP_MESSAGE)
+            else:
+                st.error("Could not send a new code — try again in a moment.")
+    with _rc2:
+        if st.button("Back to login", key="email_code_cancel_btn",
+                     use_container_width=True):
+            st.session_state["pending_code"] = None
+            st.rerun()
 
 
 if _current_user is None:
@@ -1001,23 +1038,24 @@ if _current_user is None:
         st.session_state["_cookie_wait_done"] = True
         with st.spinner("Loading…"):
             st.stop()
-    _lc1, _lc2, _lc3 = st.columns([1, 1.4, 1])
-    with _lc2:
-        # ---- login / signup screen ONLY. No data, no sidebar, no tabs. ----
-        # Brand header: logo mark + name + the tagline, in the centred
-        # narrow column. The Log in / Create account buttons below are
-        # deep green via the [theme] primary colour (plus the design-system
-        # stylesheet injected at the top of this file as a fallback).
-        _login_logo = _APP_DIR / "assets" / "logo.svg"
-        if _login_logo.is_file():
-            st.image(str(_login_logo), width=72)
-        st.title("Data Cleaner Studio")
-        st.write("Put in a messy file. Get the cleaned file back, with "
-                 "its KPIs, charts and a one-page report.")
-        # Theme switch for the login screen (no sidebar here): flips the
-        # same st.session_state["dcs_theme"] the sidebar toggle writes,
-        # so the login screen itself restyles on the rerun.
-        ui_design.render_login_theme_toggle()
+    # Console layout (variant C): header row (logo + title left, theme
+    # link right) over a narrow left-aligned form column (~360px).
+    # No card, no panel, no tagline — the spare Supabase-console feel.
+    # (The tagline is intentionally not shown here: the approved
+    # variant C preview has no tagline on the login screen.) Every
+    # widget key, label and call below is unchanged — presentation only.
+    _c1, _console, _c3 = st.columns([1, 2.5, 1])
+    with _console:
+        _h_l, _h_r = st.columns([4, 1])
+        with _h_l:
+            st.markdown(
+                ui_design.console_head_html(_APP_DIR / "assets" / "logo.svg"),
+                unsafe_allow_html=True)
+        with _h_r:
+            # Theme switch for the login screen (no sidebar here): flips
+            # the same st.session_state["dcs_theme"] the sidebar toggle
+            # writes, so the login screen itself restyles on the rerun.
+            ui_design.render_login_theme_toggle()
         banner = auth.get_local_mode_banner()
         if banner:
             st.info(banner)
@@ -1025,129 +1063,134 @@ if _current_user is None:
         if warning:
             st.warning(warning)
         backend = auth.get_auth_backend()
-        if backend == "local":
-            st.caption("Local mode — accounts live on this server only. "
-                       "Cloud accounts need Supabase configured "
-                       "(see Settings).")
-        else:
-            st.caption("Cloud accounts are active.")
-        if st.session_state.get("google_error"):
-            st.error(st.session_state.pop("google_error"))
-        # Email-code step: the password already passed and a code is
-        # waiting — show only the code screen, not the login form.
-        if st.session_state.get("pending_code") is not None:
-            _code_step_ui(st.session_state["pending_code"])
-            st.stop()
-        mode = st.radio("Account", ["Log in", "Sign up"], key="auth_mode",
-                        horizontal=True)
-        id_label = "Email" if backend != "local" else "Username"
-        id_help = ("Your email address." if backend != "local"
-                   else "3–30 characters, letters, digits or underscore only.")
-        ident = st.text_input(id_label, key="auth_id_input", help=id_help)
-        password = st.text_input("Password", type="password",
-                                 key="auth_pw_input",
-                                 help="At least 8 characters.")
-        if mode == "Log in":
-            if st.button("Log in", key="auth_login_btn", type="primary"):
-                if not ident.strip() or not password:
-                    st.error("Enter your email/username and password.")
-                else:
-                    _unconfirmed = False
-                    with st.spinner("Logging you in…"):
-                        try:
-                            user = auth.authenticate(ident.strip(), password)
-                        except auth.EmailNotConfirmedError:
-                            # Registered but the email is not confirmed yet:
-                            # neither a wrong password nor a service error.
-                            st.error("Check your inbox — click the verification "
-                                     "link first, then log in.")
-                            user = None
-                            _unconfirmed = True
-                        except AuthServiceError as exc:
-                            st.error(f"Account service error: {exc}")
-                            user = None
-                    if user is None:
-                        if not _unconfirmed:
-                            st.error("Wrong email/username or password. Try again.")
-                    elif auth.email_code_required():
-                        # Cloud accounts: the 6-digit email code is the
-                        # last gate — no session exists until it passes.
-                        _start_code_step(ident.strip(), user, "login")
-                    elif _log_user_in(user):
-                        st.rerun()
-        else:
-            if st.button("Create account", key="auth_signup_btn", type="primary"):
-                if not ident.strip() or not password:
-                    st.error("Enter an email/username and a password "
-                             "(at least 8 characters).")
-                else:
-                    with st.spinner("Creating your account…"):
-                        try:
-                            ok, error = auth.create_user(ident.strip(), password)
-                        except AuthServiceError as exc:
-                            st.error(f"Account service error: {exc}")
-                            ok, error = False, None
-                    if not ok:
-                        st.error(error or "Could not create the account.")
-                    elif error == auth.SIGNUP_NEEDS_CONFIRMATION:
-                        # The account exists but the email is not confirmed
-                        # yet ("Confirm email" is on): no auto-login and no
-                        # session cookie — the user must click the link in
-                        # their inbox first. (The merge gate switches
-                        # "Confirm email" off, so this branch should not
-                        # fire on the live app.)
-                        st.success(f"Account created for {ident} — check "
-                                   "your inbox and click the verification "
-                                   "link first, then log in here.")
+        _f_l, _f_r = st.columns([1, 1])
+        with _f_l:
+            # Email-code step: the password already passed and a code is
+            # waiting — show only the code screen, not the login form.
+            if st.session_state.get("pending_code") is not None:
+                _code_step_ui(st.session_state["pending_code"])
+                st.stop()
+            if backend == "local":
+                st.caption("Local mode — accounts live on this server only. "
+                           "Cloud accounts need Supabase configured "
+                           "(see Settings).")
+            else:
+                st.markdown('<div class="dcs-console-status">Cloud accounts '
+                            "are active.</div>", unsafe_allow_html=True)
+            if st.session_state.get("google_error"):
+                st.error(st.session_state.pop("google_error"))
+            mode = st.radio("Account", ["Log in", "Sign up"], key="auth_mode",
+                            horizontal=True)
+            id_label = "Email" if backend != "local" else "Username"
+            id_help = ("Your email address." if backend != "local"
+                       else "3–30 characters, letters, digits or underscore only.")
+            ident = st.text_input(id_label, key="auth_id_input", help=id_help)
+            password = st.text_input("Password", type="password",
+                                     key="auth_pw_input",
+                                     help="At least 8 characters.")
+            if mode == "Log in":
+                if st.button("Log in", key="auth_login_btn", type="primary",
+                             use_container_width=True):
+                    if not ident.strip() or not password:
+                        st.error("Enter your email/username and password.")
                     else:
-                        # Confirmed account (or local mode, which has no
-                        # confirmation step): sign in, then the email
-                        # code — the code is both the verification and
-                        # the login check. If the sign-in fails, fall
-                        # back to the old "switch to Log in" message.
                         _unconfirmed = False
                         with st.spinner("Logging you in…"):
                             try:
                                 user = auth.authenticate(ident.strip(), password)
                             except auth.EmailNotConfirmedError:
+                                # Registered but the email is not confirmed yet:
+                                # neither a wrong password nor a service error.
+                                st.error("Check your inbox — click the verification "
+                                         "link first, then log in.")
                                 user = None
                                 _unconfirmed = True
-                            except AuthServiceError:
+                            except AuthServiceError as exc:
+                                st.error(f"Account service error: {exc}")
                                 user = None
-                        if user is not None:
-                            if auth.email_code_required():
-                                _start_code_step(ident.strip(), user, "signup")
-                            elif _log_user_in(user):
-                                st.session_state["just_signed_up"] = True
-                                st.rerun()
-                        elif _unconfirmed:
+                        if user is None:
+                            if not _unconfirmed:
+                                st.error("Wrong email/username or password. Try again.")
+                        elif auth.email_code_required():
+                            # Cloud accounts: the 6-digit email code is the
+                            # last gate — no session exists until it passes.
+                            _start_code_step(ident.strip(), user, "login")
+                        elif _log_user_in(user):
+                            st.rerun()
+            else:
+                if st.button("Create account", key="auth_signup_btn",
+                             type="primary", use_container_width=True):
+                    if not ident.strip() or not password:
+                        st.error("Enter an email/username and a password "
+                                 "(at least 8 characters).")
+                    else:
+                        with st.spinner("Creating your account…"):
+                            try:
+                                ok, error = auth.create_user(ident.strip(), password)
+                            except AuthServiceError as exc:
+                                st.error(f"Account service error: {exc}")
+                                ok, error = False, None
+                        if not ok:
+                            st.error(error or "Could not create the account.")
+                        elif error == auth.SIGNUP_NEEDS_CONFIRMATION:
+                            # The account exists but the email is not confirmed
+                            # yet ("Confirm email" is on): no auto-login and no
+                            # session cookie — the user must click the link in
+                            # their inbox first. (The merge gate switches
+                            # "Confirm email" off, so this branch should not
+                            # fire on the live app.)
                             st.success(f"Account created for {ident} — check "
                                        "your inbox and click the verification "
                                        "link first, then log in here.")
                         else:
-                            st.success(f"Account created — switch to 'Log in' "
-                                       f"above and log in as {ident}.")
-        google_url = None
-        _google_entry = (getattr(auth, "get_google_sign_in_url", None)
-                         or getattr(auth, "google_sign_in_url", None))
-        if callable(_google_entry):
-            try:
-                google_url = _google_entry()
-            except Exception:  # noqa: BLE001 - no Google URL, show the note
-                google_url = None
-        if google_url and _google_oauth_enabled():
-            st.write("— or —")
-            st.link_button("Continue with Google", google_url)
-        elif not google_url:
-            # Local mode: get_google_sign_in_url() returns None, so there
-            # is no button — show the plain-words reason instead.
-            st.caption("Google sign-in needs Supabase configured first: "
-                       "add the Supabase details to the app's secrets "
-                       "(see README.md) and enable Google in the Supabase "
-                       "dashboard. "
-                       "For now, use email and password above.")
-        # else: Supabase is up but GOOGLE_OAUTH_ENABLED is off (the
-        # default) — the button stays hidden, no dead end, no note.
+                            # Confirmed account (or local mode, which has no
+                            # confirmation step): sign in, then the email
+                            # code — the code is both the verification and
+                            # the login check. If the sign-in fails, fall
+                            # back to the old "switch to Log in" message.
+                            _unconfirmed = False
+                            with st.spinner("Logging you in…"):
+                                try:
+                                    user = auth.authenticate(ident.strip(), password)
+                                except auth.EmailNotConfirmedError:
+                                    user = None
+                                    _unconfirmed = True
+                                except AuthServiceError:
+                                    user = None
+                            if user is not None:
+                                if auth.email_code_required():
+                                    _start_code_step(ident.strip(), user, "signup")
+                                elif _log_user_in(user):
+                                    st.session_state["just_signed_up"] = True
+                                    st.rerun()
+                            elif _unconfirmed:
+                                st.success(f"Account created for {ident} — check "
+                                           "your inbox and click the verification "
+                                           "link first, then log in here.")
+                            else:
+                                st.success(f"Account created — switch to 'Log in' "
+                                           f"above and log in as {ident}.")
+            google_url = None
+            _google_entry = (getattr(auth, "get_google_sign_in_url", None)
+                             or getattr(auth, "google_sign_in_url", None))
+            if callable(_google_entry):
+                try:
+                    google_url = _google_entry()
+                except Exception:  # noqa: BLE001 - no Google URL, show the note
+                    google_url = None
+            if google_url and _google_oauth_enabled():
+                st.write("— or —")
+                st.link_button("Continue with Google", google_url)
+            elif not google_url:
+                # Local mode: get_google_sign_in_url() returns None, so there
+                # is no button — show the plain-words reason instead.
+                st.caption("Google sign-in needs Supabase configured first: "
+                           "add the Supabase details to the app's secrets "
+                           "(see README.md) and enable Google in the Supabase "
+                           "dashboard. "
+                           "For now, use email and password above.")
+            # else: Supabase is up but GOOGLE_OAUTH_ENABLED is off (the
+            # default) — the button stays hidden, no dead end, no note.
         st.stop()
 
 # ---- logged in from here on. ----

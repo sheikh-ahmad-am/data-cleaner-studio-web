@@ -68,7 +68,9 @@ Public API (presentation only — no behaviour changes):
 
 from __future__ import annotations
 
+import base64
 import html
+from pathlib import Path
 
 import streamlit as st
 
@@ -402,6 +404,31 @@ div[data-testid="stRadio"] div[role="radiogroup"] label:focus-within {
 /* ---- footer ---- */
 .dcs-footer { color: #696969; font-size: 0.85rem; text-align: center;
   padding: 1.5rem 0 0.5rem; }
+/* ---- login console layout (variant C): no card, top-left logo + title,
+   narrow left-aligned form column, theme switch as a text link ---- */
+.dcs-console-head { display: flex; align-items: center; gap: 12px; }
+.dcs-console-head img { width: 40px; height: 40px; }
+.dcs-console-head h1 { font-size: 22px; font-weight: 500; margin: 0; }
+.dcs-console-h2 { font-size: 18px; font-weight: 500; margin: 0 0 16px; }
+.dcs-code-email { color: #117f50; font-weight: 600; }
+.dcs-console-status { font-size: 13px; color: #696969; display: flex;
+  align-items: center; gap: 6px; margin-top: 0.75rem; }
+.dcs-console-status::before { content: ""; width: 8px; height: 8px;
+  border-radius: 50%; background: #117f50; display: inline-block;
+  flex: none; }
+input[maxlength="6"] { font-family: monospace; font-size: 18px;
+  letter-spacing: .35em; }
+/* tertiary buttons render as plain text links — used only by the login
+   theme switch (console header). */
+div[data-testid="stButton"] > button[kind="tertiary"] {
+  background: transparent; border: none; box-shadow: none;
+  color: #117f50; font-size: 13px; padding: 0.25rem 0; min-height: 0; }
+div[data-testid="stButton"] > button[kind="tertiary"]:hover {
+  background: transparent; color: #117f50; text-decoration: underline; }
+/* right-align the theme link inside the console header row */
+div[data-testid="stHorizontalBlock"] div[data-testid="column"]:last-child
+  div[data-testid="stButton"]:has(> button[kind="tertiary"]) {
+  display: flex; justify-content: flex-end; }
 </style>"""
 
 
@@ -642,6 +669,28 @@ div[data-baseweb="menu"] li[role="option"]:hover {
 /* ---- footer ---- */
 .dcs-footer { color: #989a99; font-size: 0.85rem; text-align: center;
   padding: 1.5rem 0 0.5rem; }
+/* ---- login console layout (variant C): dark twin of the light rules
+   above — same layout, dark tokens only. ---- */
+.dcs-console-head { display: flex; align-items: center; gap: 12px; }
+.dcs-console-head img { width: 40px; height: 40px; }
+.dcs-console-head h1 { font-size: 22px; font-weight: 500; margin: 0; }
+.dcs-console-h2 { font-size: 18px; font-weight: 500; margin: 0 0 16px; }
+.dcs-code-email { color: #4acd8b; font-weight: 600; }
+.dcs-console-status { font-size: 13px; color: #989a99; display: flex;
+  align-items: center; gap: 6px; margin-top: 0.75rem; }
+.dcs-console-status::before { content: ""; width: 8px; height: 8px;
+  border-radius: 50%; background: #4acd8b; display: inline-block;
+  flex: none; }
+input[maxlength="6"] { font-family: monospace; font-size: 18px;
+  letter-spacing: .35em; }
+div[data-testid="stButton"] > button[kind="tertiary"] {
+  background: transparent; border: none; box-shadow: none;
+  color: #4acd8b; font-size: 13px; padding: 0.25rem 0; min-height: 0; }
+div[data-testid="stButton"] > button[kind="tertiary"]:hover {
+  background: transparent; color: #4acd8b; text-decoration: underline; }
+div[data-testid="stHorizontalBlock"] div[data-testid="column"]:last-child
+  div[data-testid="stButton"]:has(> button[kind="tertiary"]) {
+  display: flex; justify-content: flex-end; }
 </style>"""
 
 
@@ -686,20 +735,44 @@ def render_theme_toggle(st_module=None) -> str:
 
 
 def render_login_theme_toggle(st_module=None) -> None:
-    """Render the theme switch as a button for the login screen, which
-    has no sidebar. Flips ``st.session_state["dcs_theme"]`` between
-    light and dark and reruns, so the login screen itself restyles.
-    The sidebar selectbox is not rendered on this screen, so writing
-    the shared key here never collides with the widget."""
+    """Render the theme switch as a text link for the login screen, which
+    has no sidebar. A tertiary button (borderless, link-green — see the
+    ``button[kind="tertiary"]`` rules in both stylesheets), so it reads
+    as the small "Switch to dark theme" link at the top-right of the
+    variant C console header. Flips ``st.session_state["dcs_theme"]``
+    between light and dark and reruns, so the login screen itself
+    restyles. The sidebar selectbox is not rendered on this screen, so
+    writing the shared key here never collides with the widget."""
     st_mod = st_module or st
     current = normalize_theme(
         st_mod.session_state.get("dcs_theme", THEME_DEFAULT))
     label = ("Switch to light theme" if current == "dark"
              else "Switch to dark theme")
-    if st_mod.button(label, key="dcs_theme_login_toggle"):
+    if st_mod.button(label, key="dcs_theme_login_toggle", type="tertiary"):
         st_mod.session_state["dcs_theme"] = (
             "light" if current == "dark" else "dark")
         st_mod.rerun()
+
+
+def console_head_html(logo_path) -> str:
+    """Header row for the variant C console login: 40px logo + 22px
+    title, left-aligned (``.dcs-console-head``). ``logo_path`` is the
+    ``assets/logo.svg`` path — the current mark is a placeholder until
+    the logo swap, which replaces that one file and nothing else
+    moves. When the file is missing only the title renders, same as
+    the old ``st.image`` guard. The SVG is inlined as base64 because
+    Streamlit cannot put an ``st.image`` inside a flex row."""
+    _logo = ""
+    try:
+        _p = Path(logo_path)
+        if _p.is_file():
+            _b64 = base64.b64encode(_p.read_bytes()).decode("ascii")
+            _logo = ('<img src="data:image/svg+xml;base64,' + _b64 +
+                     '" alt="Data Cleaner Studio logo">')
+    except OSError:
+        _logo = ""
+    return ('<div class="dcs-console-head">' + _logo +
+            "<h1>Data Cleaner Studio</h1></div>")
 
 
 def topbar(title: str, breadcrumb: str = "") -> None:
