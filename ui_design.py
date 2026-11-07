@@ -429,6 +429,52 @@ div[data-testid="stButton"] > button[kind="tertiary"]:hover {
 div[data-testid="stHorizontalBlock"] div[data-testid="column"]:last-child
   div[data-testid="stButton"]:has(> button[kind="tertiary"]) {
   display: flex; justify-content: flex-end; }
+/* ---- branded loader: the logo mark animating, Supabase-style ----
+   The mark is the user's PNG (three bars + checkmark). It is layered
+   four times over ONE base64 data URI, set inline as --dcs-logo on
+   the container, so the 571KB file is inlined once, not four times.
+   The three bars rise one by one (scaleY from the bottom, staggered),
+   then the checkmark draws itself left to right (clip-path wipe),
+   then the whole mark breathes gently while the wait continues. A
+   thin shimmer bar runs under the status text. All motion uses the
+   Supabase 0.2s cubic-bezier(0.22, 1, 0.36, 1) timing; under
+   prefers-reduced-motion the mark renders whole and still. */
+.dcs-loader { text-align: center; padding: 2.5rem 1rem 2rem; }
+.dcs-loader-mark { position: relative; margin: 0 auto 16px;
+  animation: dcs-lm-breathe 1.8s ease-in-out 1.15s infinite alternate; }
+.dcs-loader--large .dcs-loader-mark { width: 96px; height: 96px; }
+.dcs-loader--compact { text-align: left; padding: 0.5rem 0; }
+.dcs-loader--compact .dcs-loader-row { display: flex; align-items: center;
+  gap: 12px; }
+.dcs-loader--compact .dcs-loader-mark { width: 40px; height: 40px;
+  margin: 0; flex: none; }
+.dcs-loader-mark > div { position: absolute; inset: 0;
+  background-image: var(--dcs-logo); background-size: 100% 100%;
+  background-repeat: no-repeat; }
+.dcs-lm-bar1 { clip-path: inset(0 63% 0 18%); transform-origin: 50% 100%;
+  animation: dcs-lm-rise .45s cubic-bezier(.22,1,.36,1) 0s both; }
+.dcs-lm-bar2 { clip-path: inset(0 44% 0 37%); transform-origin: 50% 100%;
+  animation: dcs-lm-rise .45s cubic-bezier(.22,1,.36,1) .13s both; }
+.dcs-lm-bar3 { clip-path: inset(0 23% 0 57%); transform-origin: 50% 100%;
+  animation: dcs-lm-rise .45s cubic-bezier(.22,1,.36,1) .26s both; }
+.dcs-lm-check { clip-path: inset(0 9% 0 54%);
+  animation: dcs-lm-drawcheck .6s cubic-bezier(.22,1,.36,1) .45s both; }
+@keyframes dcs-lm-rise { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+@keyframes dcs-lm-drawcheck { from { clip-path: inset(0 100% 0 54%); } to { clip-path: inset(0 9% 0 54%); } }
+@keyframes dcs-lm-breathe { from { transform: scale(1); } to { transform: scale(1.035); } }
+.dcs-loader-name { font-size: 17px; font-weight: 600; color: #030303; }
+.dcs-loader-status { color: #696969; font-size: 13px; margin-top: 6px; }
+.dcs-loader--compact .dcs-loader-status { margin-top: 0; }
+.dcs-loader-shimmer { width: 200px; height: 3px; margin: 20px auto 0;
+  background: #e8e8e8; border-radius: 2px; overflow: hidden; }
+.dcs-loader--compact .dcs-loader-shimmer { width: 160px; margin: 12px 0 0; }
+.dcs-loader-shimmer i { display: block; height: 100%; width: 40%;
+  border-radius: 2px; background: linear-gradient(90deg, #118050, #117f50);
+  animation: dcs-lm-slide 1.4s cubic-bezier(.22,1,.36,1) infinite; }
+@keyframes dcs-lm-slide { 0% { transform: translateX(-110%); } 100% { transform: translateX(520%); } }
+@media (prefers-reduced-motion: reduce) {
+  .dcs-loader-mark, .dcs-loader-mark > div, .dcs-loader-shimmer i {
+    animation: none !important; } }
 </style>"""
 
 
@@ -691,6 +737,46 @@ div[data-testid="stButton"] > button[kind="tertiary"]:hover {
 div[data-testid="stHorizontalBlock"] div[data-testid="column"]:last-child
   div[data-testid="stButton"]:has(> button[kind="tertiary"]) {
   display: flex; justify-content: flex-end; }
+/* ---- branded loader: dark twin of the light rules above — same
+   mark, same keyframes, same timing; only the text/shimmer colours
+   change (muted #989a99, name #edefee, track #2e2e2e, shimmer
+   gradient brightened to the dark link green #4acd8b). */
+.dcs-loader { text-align: center; padding: 2.5rem 1rem 2rem; }
+.dcs-loader-mark { position: relative; margin: 0 auto 16px;
+  animation: dcs-lm-breathe 1.8s ease-in-out 1.15s infinite alternate; }
+.dcs-loader--large .dcs-loader-mark { width: 96px; height: 96px; }
+.dcs-loader--compact { text-align: left; padding: 0.5rem 0; }
+.dcs-loader--compact .dcs-loader-row { display: flex; align-items: center;
+  gap: 12px; }
+.dcs-loader--compact .dcs-loader-mark { width: 40px; height: 40px;
+  margin: 0; flex: none; }
+.dcs-loader-mark > div { position: absolute; inset: 0;
+  background-image: var(--dcs-logo); background-size: 100% 100%;
+  background-repeat: no-repeat; }
+.dcs-lm-bar1 { clip-path: inset(0 63% 0 18%); transform-origin: 50% 100%;
+  animation: dcs-lm-rise .45s cubic-bezier(.22,1,.36,1) 0s both; }
+.dcs-lm-bar2 { clip-path: inset(0 44% 0 37%); transform-origin: 50% 100%;
+  animation: dcs-lm-rise .45s cubic-bezier(.22,1,.36,1) .13s both; }
+.dcs-lm-bar3 { clip-path: inset(0 23% 0 57%); transform-origin: 50% 100%;
+  animation: dcs-lm-rise .45s cubic-bezier(.22,1,.36,1) .26s both; }
+.dcs-lm-check { clip-path: inset(0 9% 0 54%);
+  animation: dcs-lm-drawcheck .6s cubic-bezier(.22,1,.36,1) .45s both; }
+@keyframes dcs-lm-rise { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+@keyframes dcs-lm-drawcheck { from { clip-path: inset(0 100% 0 54%); } to { clip-path: inset(0 9% 0 54%); } }
+@keyframes dcs-lm-breathe { from { transform: scale(1); } to { transform: scale(1.035); } }
+.dcs-loader-name { font-size: 17px; font-weight: 600; color: #edefee; }
+.dcs-loader-status { color: #989a99; font-size: 13px; margin-top: 6px; }
+.dcs-loader--compact .dcs-loader-status { margin-top: 0; }
+.dcs-loader-shimmer { width: 200px; height: 3px; margin: 20px auto 0;
+  background: #2e2e2e; border-radius: 2px; overflow: hidden; }
+.dcs-loader--compact .dcs-loader-shimmer { width: 160px; margin: 12px 0 0; }
+.dcs-loader-shimmer i { display: block; height: 100%; width: 40%;
+  border-radius: 2px; background: linear-gradient(90deg, #3ecf8e, #4acd8b);
+  animation: dcs-lm-slide 1.4s cubic-bezier(.22,1,.36,1) infinite; }
+@keyframes dcs-lm-slide { 0% { transform: translateX(-110%); } 100% { transform: translateX(520%); } }
+@media (prefers-reduced-motion: reduce) {
+  .dcs-loader-mark, .dcs-loader-mark > div, .dcs-loader-shimmer i {
+    animation: none !important; } }
 </style>"""
 
 
@@ -754,6 +840,24 @@ def render_login_theme_toggle(st_module=None) -> None:
         st_mod.rerun()
 
 
+def _logo_data_uri(logo_path):
+    """The logo file as a ``data:`` URI (``None`` when the file is
+    missing or unreadable). Shared by the console header and the
+    branded loader — the PNG is inlined as base64 because Streamlit
+    cannot put an ``st.image`` inside a flex row, and the loader
+    layers need the same URI."""
+    try:
+        _p = Path(logo_path)
+        if _p.is_file():
+            _mime = ("image/svg+xml" if _p.suffix == ".svg"
+                     else "image/png")
+            return ("data:" + _mime + ";base64," +
+                    base64.b64encode(_p.read_bytes()).decode("ascii"))
+    except OSError:
+        pass
+    return None
+
+
 def console_head_html(logo_path) -> str:
     """Header row for the variant C console login: 40px logo + 22px
     title, left-aligned (``.dcs-console-head``). ``logo_path`` is the
@@ -763,19 +867,52 @@ def console_head_html(logo_path) -> str:
     the file is missing only the title renders, same as the old
     ``st.image`` guard. The PNG is inlined as base64 because
     Streamlit cannot put an ``st.image`` inside a flex row."""
-    _logo = ""
-    try:
-        _p = Path(logo_path)
-        if _p.is_file():
-            _mime = ("image/svg+xml" if _p.suffix == ".svg"
-                     else "image/png")
-            _b64 = base64.b64encode(_p.read_bytes()).decode("ascii")
-            _logo = ('<img src="data:' + _mime + ';base64,' + _b64 +
-                     '" alt="Data Cleaner Studio logo">')
-    except OSError:
-        _logo = ""
+    _uri = _logo_data_uri(logo_path)
+    _logo = ('<img src="' + _uri + '" alt="Data Cleaner Studio logo">'
+             if _uri else "")
     return ('<div class="dcs-console-head">' + _logo +
             "<h1>Data Cleaner Studio</h1></div>")
+
+
+def loader_block_html(logo_path, status, size="large") -> str:
+    """The branded loader: the logo mark animating Supabase-style —
+    the three bars rising one by one (staggered), the checkmark
+    drawing itself left to right, then a gentle pulse while the wait
+    continues — plus the status line and a thin shimmer bar. The mark
+    is layered four times over ONE base64 data URI, set inline as the
+    ``--dcs-logo`` custom property on the container (see the
+    ``.dcs-loader`` rules in the stylesheets), so the 571KB logo file
+    is inlined once, not four times. ``size`` is ``"large"`` (96px
+    mark, centred, app name + status — the login screen while the
+    session restores) or ``"compact"`` (40px mark in a row with the
+    status — a file-processing wait). A missing logo file renders the
+    status line alone, so a wait never breaks. The status text is
+    escaped; the logo path is never echoed."""
+    _size = "compact" if size == "compact" else "large"
+    _status = html.escape(str(status))
+    _uri = _logo_data_uri(logo_path)
+    if _uri is None:
+        return ('<div class="dcs-loader dcs-loader--' + _size + '">'
+                '<div class="dcs-loader-status">' + _status +
+                "</div></div>")
+    _mark = ('<div class="dcs-loader-mark">'
+             '<div class="dcs-lm-bar1"></div>'
+             '<div class="dcs-lm-bar2"></div>'
+             '<div class="dcs-lm-bar3"></div>'
+             '<div class="dcs-lm-check"></div></div>')
+    if _size == "compact":
+        _body = ('<div class="dcs-loader-row">' + _mark +
+                 '<div class="dcs-loader-status">' + _status +
+                 "</div></div>"
+                 '<div class="dcs-loader-shimmer"><i></i></div>')
+    else:
+        _body = (_mark +
+                 '<div class="dcs-loader-name">Data Cleaner Studio</div>'
+                 '<div class="dcs-loader-status">' + _status + "</div>"
+                 '<div class="dcs-loader-shimmer"><i></i></div>')
+    return ('<div class="dcs-loader dcs-loader--' + _size +
+            '" style="--dcs-logo: url(\'' + _uri + '\')">' +
+            _body + "</div>")
 
 
 def topbar(title: str, breadcrumb: str = "") -> None:

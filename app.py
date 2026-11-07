@@ -58,6 +58,7 @@ Web differences (all deliberate):
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import html
 import json
@@ -347,6 +348,52 @@ div[data-testid="stButton"] > button[kind="tertiary"]:hover {
 div[data-testid="stHorizontalBlock"] div[data-testid="column"]:last-child
   div[data-testid="stButton"]:has(> button[kind="tertiary"]) {
   display: flex; justify-content: flex-end; }
+/* ---- branded loader: the logo mark animating, Supabase-style ----
+   The mark is the user's PNG (three bars + checkmark). It is layered
+   four times over ONE base64 data URI, set inline as --dcs-logo on
+   the container, so the 571KB file is inlined once, not four times.
+   The three bars rise one by one (scaleY from the bottom, staggered),
+   then the checkmark draws itself left to right (clip-path wipe),
+   then the whole mark breathes gently while the wait continues. A
+   thin shimmer bar runs under the status text. All motion uses the
+   Supabase 0.2s cubic-bezier(0.22, 1, 0.36, 1) timing; under
+   prefers-reduced-motion the mark renders whole and still. */
+.dcs-loader { text-align: center; padding: 2.5rem 1rem 2rem; }
+.dcs-loader-mark { position: relative; margin: 0 auto 16px;
+  animation: dcs-lm-breathe 1.8s ease-in-out 1.15s infinite alternate; }
+.dcs-loader--large .dcs-loader-mark { width: 96px; height: 96px; }
+.dcs-loader--compact { text-align: left; padding: 0.5rem 0; }
+.dcs-loader--compact .dcs-loader-row { display: flex; align-items: center;
+  gap: 12px; }
+.dcs-loader--compact .dcs-loader-mark { width: 40px; height: 40px;
+  margin: 0; flex: none; }
+.dcs-loader-mark > div { position: absolute; inset: 0;
+  background-image: var(--dcs-logo); background-size: 100% 100%;
+  background-repeat: no-repeat; }
+.dcs-lm-bar1 { clip-path: inset(0 63% 0 18%); transform-origin: 50% 100%;
+  animation: dcs-lm-rise .45s cubic-bezier(.22,1,.36,1) 0s both; }
+.dcs-lm-bar2 { clip-path: inset(0 44% 0 37%); transform-origin: 50% 100%;
+  animation: dcs-lm-rise .45s cubic-bezier(.22,1,.36,1) .13s both; }
+.dcs-lm-bar3 { clip-path: inset(0 23% 0 57%); transform-origin: 50% 100%;
+  animation: dcs-lm-rise .45s cubic-bezier(.22,1,.36,1) .26s both; }
+.dcs-lm-check { clip-path: inset(0 9% 0 54%);
+  animation: dcs-lm-drawcheck .6s cubic-bezier(.22,1,.36,1) .45s both; }
+@keyframes dcs-lm-rise { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+@keyframes dcs-lm-drawcheck { from { clip-path: inset(0 100% 0 54%); } to { clip-path: inset(0 9% 0 54%); } }
+@keyframes dcs-lm-breathe { from { transform: scale(1); } to { transform: scale(1.035); } }
+.dcs-loader-name { font-size: 17px; font-weight: 600; color: #030303; }
+.dcs-loader-status { color: #696969; font-size: 13px; margin-top: 6px; }
+.dcs-loader--compact .dcs-loader-status { margin-top: 0; }
+.dcs-loader-shimmer { width: 200px; height: 3px; margin: 20px auto 0;
+  background: #e8e8e8; border-radius: 2px; overflow: hidden; }
+.dcs-loader--compact .dcs-loader-shimmer { width: 160px; margin: 12px 0 0; }
+.dcs-loader-shimmer i { display: block; height: 100%; width: 40%;
+  border-radius: 2px; background: linear-gradient(90deg, #118050, #117f50);
+  animation: dcs-lm-slide 1.4s cubic-bezier(.22,1,.36,1) infinite; }
+@keyframes dcs-lm-slide { 0% { transform: translateX(-110%); } 100% { transform: translateX(520%); } }
+@media (prefers-reduced-motion: reduce) {
+  .dcs-loader-mark, .dcs-loader-mark > div, .dcs-loader-shimmer i {
+    animation: none !important; } }
 </style>"""
 
 st.set_page_config(page_title="Data Cleaner Studio", layout="wide",
@@ -1027,6 +1074,33 @@ def _code_step_ui(pending):
             st.rerun()
 
 
+def _loader_logo_path():
+    """The logo file for the branded loader: the light recolor
+    (assets/logo-dark.png, #4acd8b) on the dark theme, the original
+    (assets/logo.png) on light — the same pick as the console header."""
+    return _APP_DIR / "assets" / (
+        "logo-dark.png"
+        if (st.session_state.get("dcs_theme") or "light") == "dark"
+        else "logo.png")
+
+
+@contextlib.contextmanager
+def branded_spinner(status):
+    """Branded wait state, replacing bare st.spinner wherever a user
+    waits: the logo mark animating (bars rising, checkmark drawing,
+    then a gentle pulse) + the status text + a thin shimmer bar.
+    A placeholder is cleared on exit, exactly like st.spinner."""
+    _ph = st.empty()
+    _ph.markdown(
+        ui_design.loader_block_html(_loader_logo_path(), status,
+                                    size="compact"),
+        unsafe_allow_html=True)
+    try:
+        yield
+    finally:
+        _ph.empty()
+
+
 if _current_user is None:
     if not _cookie_read_resolved() and not st.session_state.get("_cookie_wait_done"):
         # The cookie read has not resolved yet (no request cookies
@@ -1036,8 +1110,17 @@ if _current_user is None:
         # one wait per session so a broken component can never
         # wedge the login screen.
         st.session_state["_cookie_wait_done"] = True
-        with st.spinner("Loading…"):
-            st.stop()
+        # Branded loader (large): the mark drawing itself while the
+        # session restores. Rendered directly, not through
+        # branded_spinner — st.stop() below must NOT clear it (the
+        # context manager's finally would), or the screen would go
+        # blank until the cookie component's rerun.
+        st.markdown(
+            ui_design.loader_block_html(
+                _loader_logo_path(), "Waking up your workspace…",
+                size="large"),
+            unsafe_allow_html=True)
+        st.stop()
     # Console layout (variant C): header row (logo + title left, theme
     # link right) over a narrow left-aligned form column (~360px).
     # No card, no panel, no tagline — the spare Supabase-console feel.
@@ -1103,7 +1186,7 @@ if _current_user is None:
                         st.error("Enter your email/username and password.")
                     else:
                         _unconfirmed = False
-                        with st.spinner("Logging you in…"):
+                        with branded_spinner("Logging you in…"):
                             try:
                                 user = auth.authenticate(ident.strip(), password)
                             except auth.EmailNotConfirmedError:
@@ -1132,7 +1215,7 @@ if _current_user is None:
                         st.error("Enter an email/username and a password "
                                  "(at least 8 characters).")
                     else:
-                        with st.spinner("Creating your account…"):
+                        with branded_spinner("Creating your account…"):
                             try:
                                 ok, error = auth.create_user(ident.strip(), password)
                             except AuthServiceError as exc:
@@ -1157,7 +1240,7 @@ if _current_user is None:
                             # the login check. If the sign-in fails, fall
                             # back to the old "switch to Log in" message.
                             _unconfirmed = False
-                            with st.spinner("Logging you in…"):
+                            with branded_spinner("Logging you in…"):
                                 try:
                                     user = auth.authenticate(ident.strip(), password)
                                 except auth.EmailNotConfirmedError:
@@ -1585,7 +1668,7 @@ if st.session_state.get("pending_excel"):
                 # Anti-shift skeleton: reserves the preview's space
                 # before the blocking load, exactly like st.spinner.
                 ui_loading.skeleton_table(rows=5, columns=4)
-                with st.spinner("Loading that sheet…"):
+                with branded_spinner("Loading that sheet…"):
                     if ex_choice == "All sheets combined":
                         ex_df, _ = feat_combine.load_excel_all(ex_bytes)
                         _set_raw(ex_df, f"{ex_name} (all sheets)")
@@ -1600,7 +1683,7 @@ if st.session_state.get("pending_excel"):
 if st.sidebar.button(_t("try_sample"), key="sample_btn"):
     _sample_path = _APP_DIR / "sample_data" / "messy_sales.csv"
     ui_loading.skeleton_table(rows=5, columns=4)
-    with st.spinner("Loading the sample file…"):
+    with branded_spinner("Loading the sample file…"):
         _set_raw(engine.load_file("messy_sales.csv",
                                   _sample_path.read_bytes()),
                  "messy_sales.csv (sample)", kind="sample")
@@ -1621,7 +1704,7 @@ if _saved_uploads:
                       disabled=not _saved_pick) and _saved_pick:
             try:
                 ui_loading.skeleton_table(rows=5, columns=4)
-                with st.spinner("Opening that file…"):
+                with branded_spinner("Opening that file…"):
                     _saved_bytes = storage.read_file(_skey, "uploads", _saved_pick)
                     _set_raw(engine.load_file(_saved_pick, _saved_bytes),
                              _saved_pick, kind="upload")
@@ -1660,7 +1743,7 @@ with st.sidebar.expander("More ways to load"):
         else:
             try:
                 ui_loading.skeleton_table(rows=5, columns=4)
-                with st.spinner("Loading that sheet…"):
+                with branded_spinner("Loading that sheet…"):
                     _set_raw(engine.load_sheets_url(sheet_url.strip()), "Google Sheet",
                              kind="sheets", url=sheet_url.strip())
                 st.session_state["last_upload"] = None
@@ -1683,7 +1766,7 @@ with st.sidebar.expander("More ways to load"):
             if st.button("Load table", key="db_load"):
                 try:
                     ui_loading.skeleton_table(rows=5, columns=4)
-                    with st.spinner("Loading that table…"):
+                    with branded_spinner("Loading that table…"):
                         _set_raw(engine.load_sqlite(db_file.getvalue(), table),
                                  f"{db_file.name} : {table}")
                     st.session_state["last_upload"] = None
@@ -1794,7 +1877,7 @@ if raw is None:
             "right away.",
             cta_label="Try the sample data"):
         _sample_path = _APP_DIR / "sample_data" / "messy_sales.csv"
-        with st.spinner("Loading the sample file…"):
+        with branded_spinner("Loading the sample file…"):
             _set_raw(engine.load_file("messy_sales.csv",
                                       _sample_path.read_bytes()),
                      "messy_sales.csv (sample)", kind="sample")
@@ -2067,7 +2150,7 @@ if _active_tab == "clean":
     if st.button(_t("clean_my_data"), type="primary", key="clean_btn"):
         feat_automate.push_snapshot(st.session_state, "Before cleaning")
         _opts = feat_automate.to_engine_opts(opts)
-        with st.spinner("Cleaning your data…"):
+        with branded_spinner("Cleaning your data…"):
             if (len(raw) > 100_000 and uploaded is not None
                     and uploaded.name.lower().endswith(".csv")):
                 # Big file: clean in chunks (same result, less memory).
@@ -2440,7 +2523,7 @@ if _active_tab == "dashboard":
                                  for row in
                                  _snap_grouped.head(50).to_dict("records")]
                     _token = secrets.token_urlsafe(24)
-                    with st.spinner("Creating your share link…"):
+                    with branded_spinner("Creating your share link…"):
                         _registry = storage.load_json(_skey, "views", _SHARES_FILENAME)
                         if not isinstance(_registry, dict):
                             _registry = {}

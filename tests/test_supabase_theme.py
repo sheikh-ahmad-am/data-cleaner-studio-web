@@ -209,8 +209,11 @@ def test_motion_and_focus_ring_both_themes():
     """Honest motion only: the measured 0.2s cubic-bezier(0.22,1,0.36,1)
     colour transition on both themes, the shared focus ring (2px gap +
     4px translucent green halo) on both, primary hover darkening toward
-    #007243 — and NO invented animation: no keyframes, no scroll
-    effects, no animation property anywhere."""
+    #007243 — and the ONLY keyframes/animation allowed are the branded
+    loader's (approved loading motion, 2026-11-07: bars rising,
+    checkmark drawing, gentle pulse, shimmer slide — functional, never
+    decorative, per the Supabase rule). No scroll effects, no parallax,
+    no other animation anywhere."""
     for theme in ("light", "dark"):
         css = ui_design.theme_css(theme)
         assert "0.2s cubic-bezier(0.22, 1, 0.36, 1)" in css, \
@@ -226,8 +229,17 @@ def test_motion_and_focus_ring_both_themes():
         assert "0 0 0 2px" in css and "0 0 0 6px #30ba798c" in css, \
             f"{theme}: focus ring must be 2px gap + 4px halo"
         assert "#007243" in css, f"{theme}: primary hover #007243 missing"
-        for invented in ("@keyframes", "animation:", "scroll-behavior",
-                         "parallax"):
+        # Only the loader's keyframes may exist, and only the loader's
+        # animations (plus `animation: none` under reduced motion).
+        _allowed = {"dcs-lm-rise", "dcs-lm-drawcheck", "dcs-lm-breathe",
+                    "dcs-lm-slide", "none"}
+        for _m in re.finditer(r"@keyframes\s+([\w-]+)", css):
+            assert _m.group(1) in _allowed, \
+                f"{theme}: only the loader keyframes may ship, got {_m.group(1)}"
+        for _m in re.finditer(r"animation:\s*([\w-]+)", css):
+            assert _m.group(1) in _allowed, \
+                f"{theme}: only the loader animations may ship, got {_m.group(1)}"
+        for invented in ("scroll-behavior", "parallax"):
             assert invented not in css, \
                 f"{theme}: invented motion {invented!r} must not ship"
         # The existing loading language survives: green spinner rule.
