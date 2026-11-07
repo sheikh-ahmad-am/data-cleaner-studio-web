@@ -267,19 +267,32 @@ def test_loader_css_in_both_themes():
 def test_loader_block_html():
     """loader_block_html: large (centred, 96px, name + status +
     shimmer) and compact (row: 40px mark + status) share one data
-    URI across four layers; the status is escaped; a missing logo
-    renders the status alone; an unknown size falls back to large."""
+    URI across four <img> slices; the status is escaped; a missing
+    logo renders the status alone; an unknown size falls back to large.
+    (Round 3: the mark is <img> slices, not empty divs over a
+    background image on an inline custom property — that mechanism
+    never painted live, two live checks saw the status text but never
+    the mark, while <img> data URIs already paint everywhere else in
+    this app.)"""
     logo = ROOT / "assets" / "logo.png"
     large = ui_design.loader_block_html(
         logo, "Waking up your workspace…")
     assert 'class="dcs-loader dcs-loader--large"' in large
-    assert large.count("data:image/png;base64,") == 1, \
-        "the 571KB logo must be inlined once, not four times"
+    # One data-URI value, inlined once per slice (four slices share it).
+    assert large.count("data:image/png;base64,") == 4, \
+        "the logo must be inlined once per img slice (4 slices)"
+    import re as _re
+    uris = set(_re.findall(r'src="(data:image/png;base64,[^"]+)"', large))
+    assert len(uris) == 1, "all four slices must share the same data URI"
     for layer in ("dcs-lm-bar1", "dcs-lm-bar2", "dcs-lm-bar3",
                   "dcs-lm-check"):
+        assert f'<img src="data:image/png;base64,' in large, \
+            "each layer must be an <img> with the data URI"
         assert layer in large, f"loader missing layer {layer}"
-    assert "--dcs-logo: url(" in large, \
-        "layers must share the URI via the --dcs-logo property"
+    assert "<div class=\"dcs-lm-bar1\">" not in large, \
+        "layers must be <img> slices, not empty divs"
+    assert "--dcs-logo" not in large, \
+        "the inline custom-property mechanism is gone"
     assert "Data Cleaner Studio" in large
     assert "Waking up your workspace…" in large
     assert "dcs-loader-shimmer" in large
@@ -290,7 +303,7 @@ def test_loader_block_html():
     assert "Cleaning your data…" in compact
     assert "Data Cleaner Studio" not in compact, \
         "compact loader has no app name (row: mark + status only)"
-    assert compact.count("data:image/png;base64,") == 1
+    assert compact.count("data:image/png;base64,") == 4
     assert 'dcs-loader--large' in ui_design.loader_block_html(
         logo, "x", size="huge"), "unknown size must fall back to large"
     escaped = ui_design.loader_block_html(logo, "<b>bold</b>")
@@ -305,12 +318,12 @@ def test_loader_block_html():
     # The dark recolor inlines byte-identical to its asset file.
     import base64 as _b64
     dark = ui_design.loader_block_html(
-        ROOT / "assets" / "logo-dark.png", "Loading…")
+        ROOT / "assets" / "logo-loader-dark.png", "Loading…")
     m = re.search(r"data:image/png;base64,([A-Za-z0-9+/=]+)", dark)
     assert m, "dark loader must inline the logo"
     assert _b64.b64decode(m.group(1)) == \
-        (ROOT / "assets" / "logo-dark.png").read_bytes(), \
-        "dark loader must inline logo-dark.png byte-identical"
+        (ROOT / "assets" / "logo-loader-dark.png").read_bytes(), \
+        "dark loader must inline logo-loader-dark.png byte-identical"
     print("loader_block_html OK")
 
 

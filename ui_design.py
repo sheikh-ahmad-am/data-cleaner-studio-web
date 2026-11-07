@@ -792,10 +792,14 @@ div[data-testid="stHorizontalBlock"] div[data-testid="column"]:last-child
   div[data-testid="stButton"]:has(> button[kind="tertiary"]) {
   display: flex; justify-content: flex-end; }
 /* ---- branded loader: the logo mark animating, Supabase-style ----
-   The mark is the user's PNG (three bars + checkmark). It is layered
-   four times over ONE base64 data URI, set inline as --dcs-logo on
-   the container, so the 571KB file is inlined once, not four times.
-   The three bars rise one by one (scaleY from the bottom, staggered),
+   The mark is the user's PNG (three bars + checkmark), layered as
+   four <img> slices over ONE small base64 data URI (the 192px
+   loader file, ~17KB) — an <img> per slice, because the earlier
+   background-image carried on an inline custom property never
+   painted live: two live checks saw the status text but never the
+   mark, while <img> data URIs already paint everywhere else in
+   this app (top bar, console header). The three bars rise one by
+   one (scaleY from the bottom, staggered),
    then the checkmark draws itself left to right (clip-path wipe),
    then the whole mark breathes gently while the wait continues. A
    thin shimmer bar runs under the status text. All motion uses the
@@ -810,9 +814,8 @@ div[data-testid="stHorizontalBlock"] div[data-testid="column"]:last-child
   gap: 12px; }
 .dcs-loader--compact .dcs-loader-mark { width: 40px; height: 40px;
   margin: 0; flex: none; }
-.dcs-loader-mark > div { position: absolute; inset: 0;
-  background-image: var(--dcs-logo); background-size: 100% 100%;
-  background-repeat: no-repeat; }
+.dcs-loader-mark > img { position: absolute; inset: 0; width: 100%;
+  height: 100%; object-fit: fill; }
 .dcs-lm-bar1 { clip-path: inset(0 63% 0 18%); transform-origin: 50% 100%;
   animation: dcs-lm-rise .45s cubic-bezier(.22,1,.36,1) 0s both; }
 .dcs-lm-bar2 { clip-path: inset(0 44% 0 37%); transform-origin: 50% 100%;
@@ -835,7 +838,7 @@ div[data-testid="stHorizontalBlock"] div[data-testid="column"]:last-child
   animation: dcs-lm-slide 1.4s cubic-bezier(.22,1,.36,1) infinite; }
 @keyframes dcs-lm-slide { 0% { transform: translateX(-110%); } 100% { transform: translateX(520%); } }
 @media (prefers-reduced-motion: reduce) {
-  .dcs-loader-mark, .dcs-loader-mark > div, .dcs-loader-shimmer i {
+  .dcs-loader-mark, .dcs-loader-mark > img, .dcs-loader-shimmer i {
     animation: none !important; } }
 /* ---- Supabase faithful rebuild (2026-11-07, page-by-page study) ----
    Primary buttons are pills (New / Connect / Run are fully rounded in
@@ -1322,9 +1325,8 @@ div[data-testid="stHorizontalBlock"] div[data-testid="column"]:last-child
   gap: 12px; }
 .dcs-loader--compact .dcs-loader-mark { width: 40px; height: 40px;
   margin: 0; flex: none; }
-.dcs-loader-mark > div { position: absolute; inset: 0;
-  background-image: var(--dcs-logo); background-size: 100% 100%;
-  background-repeat: no-repeat; }
+.dcs-loader-mark > img { position: absolute; inset: 0; width: 100%;
+  height: 100%; object-fit: fill; }
 .dcs-lm-bar1 { clip-path: inset(0 63% 0 18%); transform-origin: 50% 100%;
   animation: dcs-lm-rise .45s cubic-bezier(.22,1,.36,1) 0s both; }
 .dcs-lm-bar2 { clip-path: inset(0 44% 0 37%); transform-origin: 50% 100%;
@@ -1347,7 +1349,7 @@ div[data-testid="stHorizontalBlock"] div[data-testid="column"]:last-child
   animation: dcs-lm-slide 1.4s cubic-bezier(.22,1,.36,1) infinite; }
 @keyframes dcs-lm-slide { 0% { transform: translateX(-110%); } 100% { transform: translateX(520%); } }
 @media (prefers-reduced-motion: reduce) {
-  .dcs-loader-mark, .dcs-loader-mark > div, .dcs-loader-shimmer i {
+  .dcs-loader-mark, .dcs-loader-mark > img, .dcs-loader-shimmer i {
     animation: none !important; } }
 /* ---- Supabase faithful rebuild (2026-11-07, page-by-page study) ----
    Dark twin of the light rebuild block above: same structure, dark
@@ -1560,10 +1562,14 @@ def loader_block_html(logo_path, status, size="large") -> str:
     the three bars rising one by one (staggered), the checkmark
     drawing itself left to right, then a gentle pulse while the wait
     continues — plus the status line and a thin shimmer bar. The mark
-    is layered four times over ONE base64 data URI, set inline as the
-    ``--dcs-logo`` custom property on the container (see the
-    ``.dcs-loader`` rules in the stylesheets), so the 571KB logo file
-    is inlined once, not four times. ``size`` is ``"large"`` (96px
+    is layered as four <img> slices over ONE small base64 data URI
+    (the 192px loader file, ~17KB — the same data URI in all four
+    slices, so the file is inlined once per slice, not once per
+    layer of a bigger file). An <img> per slice, not a background
+    image on a custom property: the earlier mechanism never painted
+    live (two live checks saw the status text but never the mark),
+    while <img> data URIs already paint everywhere else in this app.
+    ``size`` is ``"large"`` (96px
     mark, centred, app name + status — the login screen while the
     session restores) or ``"compact"`` (40px mark in a row with the
     status — a file-processing wait). A missing logo file renders the
@@ -1577,10 +1583,10 @@ def loader_block_html(logo_path, status, size="large") -> str:
                 '<div class="dcs-loader-status">' + _status +
                 "</div></div>")
     _mark = ('<div class="dcs-loader-mark">'
-             '<div class="dcs-lm-bar1"></div>'
-             '<div class="dcs-lm-bar2"></div>'
-             '<div class="dcs-lm-bar3"></div>'
-             '<div class="dcs-lm-check"></div></div>')
+             '<img src="' + _uri + '" alt="" class="dcs-lm-bar1">'
+             '<img src="' + _uri + '" alt="" class="dcs-lm-bar2">'
+             '<img src="' + _uri + '" alt="" class="dcs-lm-bar3">'
+             '<img src="' + _uri + '" alt="" class="dcs-lm-check"></div>')
     if _size == "compact":
         _body = ('<div class="dcs-loader-row">' + _mark +
                  '<div class="dcs-loader-status">' + _status +
@@ -1591,8 +1597,7 @@ def loader_block_html(logo_path, status, size="large") -> str:
                  '<div class="dcs-loader-name">Data Cleaner Studio</div>'
                  '<div class="dcs-loader-status">' + _status + "</div>"
                  '<div class="dcs-loader-shimmer"><i></i></div>')
-    return ('<div class="dcs-loader dcs-loader--' + _size +
-            '" style="--dcs-logo: url(\'' + _uri + '\')">' +
+    return ('<div class="dcs-loader dcs-loader--' + _size + '">' +
             _body + "</div>")
 
 

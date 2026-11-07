@@ -498,10 +498,14 @@ div[data-testid="stHorizontalBlock"] div[data-testid="column"]:last-child
   div[data-testid="stButton"]:has(> button[kind="tertiary"]) {
   display: flex; justify-content: flex-end; }
 /* ---- branded loader: the logo mark animating, Supabase-style ----
-   The mark is the user's PNG (three bars + checkmark). It is layered
-   four times over ONE base64 data URI, set inline as --dcs-logo on
-   the container, so the 571KB file is inlined once, not four times.
-   The three bars rise one by one (scaleY from the bottom, staggered),
+   The mark is the user's PNG (three bars + checkmark), layered as
+   four <img> slices over ONE small base64 data URI (the 192px
+   loader file, ~17KB) — an <img> per slice, because the earlier
+   background-image carried on an inline custom property never
+   painted live: two live checks saw the status text but never the
+   mark, while <img> data URIs already paint everywhere else in
+   this app (top bar, console header). The three bars rise one by
+   one (scaleY from the bottom, staggered),
    then the checkmark draws itself left to right (clip-path wipe),
    then the whole mark breathes gently while the wait continues. A
    thin shimmer bar runs under the status text. All motion uses the
@@ -516,9 +520,8 @@ div[data-testid="stHorizontalBlock"] div[data-testid="column"]:last-child
   gap: 12px; }
 .dcs-loader--compact .dcs-loader-mark { width: 40px; height: 40px;
   margin: 0; flex: none; }
-.dcs-loader-mark > div { position: absolute; inset: 0;
-  background-image: var(--dcs-logo); background-size: 100% 100%;
-  background-repeat: no-repeat; }
+.dcs-loader-mark > img { position: absolute; inset: 0; width: 100%;
+  height: 100%; object-fit: fill; }
 .dcs-lm-bar1 { clip-path: inset(0 63% 0 18%); transform-origin: 50% 100%;
   animation: dcs-lm-rise .45s cubic-bezier(.22,1,.36,1) 0s both; }
 .dcs-lm-bar2 { clip-path: inset(0 44% 0 37%); transform-origin: 50% 100%;
@@ -541,7 +544,7 @@ div[data-testid="stHorizontalBlock"] div[data-testid="column"]:last-child
   animation: dcs-lm-slide 1.4s cubic-bezier(.22,1,.36,1) infinite; }
 @keyframes dcs-lm-slide { 0% { transform: translateX(-110%); } 100% { transform: translateX(520%); } }
 @media (prefers-reduced-motion: reduce) {
-  .dcs-loader-mark, .dcs-loader-mark > div, .dcs-loader-shimmer i {
+  .dcs-loader-mark, .dcs-loader-mark > img, .dcs-loader-shimmer i {
     animation: none !important; } }
 /* ---- Supabase faithful rebuild (2026-11-07, page-by-page study) ----
    Primary buttons are pills (New / Connect / Run are fully rounded in
@@ -1315,13 +1318,17 @@ def _code_step_ui(pending):
 
 
 def _loader_logo_path():
-    """The logo file for the branded loader: the light recolor
-    (assets/logo-dark.png, #4acd8b) on the dark theme, the original
-    (assets/logo.png) on light — the same pick as the console header."""
+    """The logo file for the branded loader: the 192px loader variants
+    (assets/logo-loader-dark.png, #4acd8b, on the dark theme, the
+    light one on light) — the same pick as the console header, at the
+    size the mark actually displays (40px compact, 96px large). The
+    full 1024px files were 571KB/207KB and were inlined into every
+    loader render; the 192px files are ~17KB each and identical at
+    display size. The top bar reuses this path too (24px display)."""
     return _APP_DIR / "assets" / (
-        "logo-dark.png"
+        "logo-loader-dark.png"
         if (st.session_state.get("dcs_theme") or "light") == "dark"
-        else "logo.png")
+        else "logo-loader.png")
 
 
 #: Minimum time the branded loader stays visible (seconds). A fast
