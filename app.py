@@ -374,7 +374,7 @@ _STORAGE_KEY_RE = re.compile(r"^[a-zA-Z0-9_]{3,30}$")
 # Override it with the APP_PUBLIC_URL (or APP_URL) environment
 # variable or Streamlit secret when the app moves to a new address.
 # Default: the live Streamlit Community Cloud URL for this app.
-_DEFAULT_APP_URL = "https://data-c-ak7dfcpvbzklkfn8gozels.streamlit.app"
+_DEFAULT_APP_URL = "https://datacleanerstudio.streamlit.app"
 
 
 def _app_base_url() -> str:

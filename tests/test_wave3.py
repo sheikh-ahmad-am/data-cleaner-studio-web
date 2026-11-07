@@ -35,7 +35,7 @@ from streamlit.testing.v1 import AppTest  # noqa: E402
 
 APP = str(PROJECT_ROOT / "app.py")
 SAMPLE = PROJECT_ROOT / "sample_data" / "messy_sales.csv"
-LIVE_URL = "https://data-c-ak7dfcpvbzklkfn8gozels.streamlit.app"
+LIVE_URL = "https://datacleanerstudio.streamlit.app"
 
 
 def _fresh_backend():
