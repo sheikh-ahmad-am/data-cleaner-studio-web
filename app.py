@@ -137,8 +137,13 @@ DESIGN_SYSTEM_CSS = """<style>
 /* ---- cards: white, 1px hairline border, 10-12px radius, flat ---- */
 .dcs-card { background-color: #ffffff; border: 1px solid #e8e8e8;
   border-radius: 12px; padding: 1rem 1.25rem; margin-bottom: 1rem; }
+/* Cards and expanders answer the hover: the hairline deepens one
+   step (to the checkbox-border token #d0d0d0) — no shadow, no lift,
+   no colour change, just the border, Supabase-quiet. */
+.dcs-card:hover { border-color: #d0d0d0; }
 div[data-testid="stExpander"] { background-color: #ffffff;
   border: 1px solid #e8e8e8; border-radius: 12px; }
+div[data-testid="stExpander"]:hover { border-color: #d0d0d0; }
 /* ---- spacing: consistent gaps between sections ---- */
 div[data-testid="stVerticalBlock"] > div { gap: 0.75rem; }
 /* ---- buttons: primary deep green, subtle vertical gradient ---- */
@@ -171,10 +176,14 @@ div[data-testid="stButton"] > button[kind="secondary"]:hover {
 div[data-testid="stDownloadButton"] > button {
   background-color: #ffffff; color: #030303; border: 1px solid #e5e5e5;
   border-radius: 6px; }
+div[data-testid="stDownloadButton"] > button:hover {
+  background-color: #f8f8f8; color: #030303; border-color: #e5e5e5; }
 /* ---- inputs: white, 6px radius, hairline border ---- */
 .stApp input, .stApp textarea, .stApp select {
   background-color: #ffffff; color: #030303;
   border-color: #e8e8e8; border-radius: 6px; }
+.stApp input:hover, .stApp textarea:hover, .stApp select:hover {
+  border-color: #d0d0d0; }
 .stApp label { color: #030303; }
 /* ---- checkboxes: hairline box border, green check ---- */
 .stApp input[type="checkbox"] { accent-color: #117f50; }
@@ -191,6 +200,25 @@ section[data-testid="stSidebar"] a { color: #117f50; }
 .dcs-nav-row:hover { background-color: #f8f8f8; color: #0e7e4e; }
 .dcs-nav-row.dcs-nav-active { background-color: #f3f3f3;
   font-weight: 600; color: #030303; border-left: 2px solid #030303; }
+/* ---- sidebar buttons read as full-width rows (Load sheet, Try the
+   messy sample, Quick jump picks) — Supabase's sidebar actions are
+   rows, not centred pills. The avatar trigger is a stPopoverButton,
+   not an stButton, so it is untouched by this rule. ---- */
+section[data-testid="stSidebar"] div[data-testid="stButton"] > button[kind="secondary"] {
+  width: 100%; justify-content: flex-start; }
+/* ---- sidebar collapse control: the chevron that hides / shows the
+   sidebar. Streamlit renders it as collapsedControl when the bar is
+   hidden and as a header button inside the bar when it is shown
+   (the testid varies by version, so all three are styled) — muted
+   by default, quiet wash on hover, same 6px radius as everything. */
+div[data-testid="collapsedControl"],
+section[data-testid="stSidebar"] [data-testid="stSidebarCollapseButton"],
+section[data-testid="stSidebar"] button[kind="header"] {
+  color: #696969; border-radius: 6px; }
+div[data-testid="collapsedControl"]:hover,
+section[data-testid="stSidebar"] [data-testid="stSidebarCollapseButton"]:hover,
+section[data-testid="stSidebar"] button[kind="header"]:hover {
+  background-color: #f8f8f8; color: #030303; }
 /* ---- sidebar avatar: green circle, initial only ---- */
 div[data-testid="stPopover"] { margin-bottom: 0.75rem; }
 div[data-testid="stPopover"] button[data-testid="stPopoverButton"] {
@@ -209,6 +237,20 @@ div[data-testid="stPopover"] button[data-testid="stPopoverButton"] svg {
 /* ---- avatar menu (popover body): white card, hairline border ---- */
 div[data-testid="stPopoverBody"] { background-color: #ffffff;
   border: 1px solid #e8e8e8; border-radius: 12px; }
+/* Avatar menu rows: the Profile / theme / Log out buttons inside the
+   popover are menu rows, not pills — full-width, left-aligned, no
+   border, quiet wash on hover. The popover is used only by the
+   avatar, so scoping to stPopoverBody is safe. */
+div[data-testid="stPopoverBody"] .stButton > button[kind="secondary"] {
+  width: 100% !important; justify-content: flex-start !important;
+  background: transparent !important; background-color: transparent !important;
+  border: none !important; box-shadow: none !important;
+  border-radius: 6px !important; padding: 0.35rem 0.75rem !important;
+  font-weight: 400 !important; color: #030303 !important; }
+div[data-testid="stPopoverBody"] .stButton > button[kind="secondary"]:hover {
+  background-color: #f8f8f8 !important; color: #030303 !important; }
+/* Menu divider: one hairline between the email, the actions and Log out. */
+.dcs-menu-divider { border-top: 1px solid #e8e8e8; margin: 0.35rem 0; }
 /* ---- links: deep green, sparingly ---- */
 .stApp a { color: #117f50; }
 .stApp a:hover { color: #0e7e4e; }
@@ -227,6 +269,7 @@ div[data-testid="stMetricLabel"], div[data-testid="stMetricLabel"] * {
 /* ---- KPI tiles: white icon box + micro-label + value ---- */
 .dcs-kpi { background-color: #ffffff; border: 1px solid #e8e8e8;
   border-radius: 12px; padding: 0.9rem 1rem; }
+.dcs-kpi:hover { border-color: #d0d0d0; }
 .dcs-kpi .dcs-kpi-label { font-size: 11px; font-weight: 600;
   letter-spacing: 0.08em; text-transform: uppercase; color: #696969; }
 .dcs-kpi .dcs-kpi-value { font-size: 20px; font-weight: 500;
@@ -235,6 +278,12 @@ div[data-testid="stMetricLabel"], div[data-testid="stMetricLabel"] * {
 /* ---- file-uploader dropzone + uploaded-file chips: ink on white ---- */
 div[data-testid="stFileUploader"], div[data-testid="stFileUploader"] * {
   color: #030303 !important; }
+div[data-testid="stFileUploaderDropzone"]:hover { border-color: #d0d0d0; }
+/* ---- native dropdown menus (baseweb portal): white menu, quiet hover ---- */
+div[data-baseweb="popover"] { background-color: #ffffff; }
+div[data-baseweb="menu"] li[role="option"] { color: #030303; }
+div[data-baseweb="menu"] li[role="option"]:hover {
+  background-color: #f8f8f8; }
 /* ---- info / success / warning / error boxes: nested elements ink ---- */
 div[data-testid="stAlert"], div[data-testid="stAlert"] * {
   color: #030303 !important; }
@@ -297,16 +346,32 @@ div[data-testid="stDataFrame"] th, div[data-testid="stTable"] th {
 div[data-testid="stDataFrame"] td, div[data-testid="stTable"] td {
   background-color: #ffffff; color: #030303;
   border-bottom: 1px solid #e8e8e8; font-size: 13px; }
-/* ---- motion, honestly measured: colour-only 0.2s ease-out ---- */
+/* ---- motion, honestly measured: colour-only 0.2s ease-out ----
+   Every hover above is a colour/border change only (no scale, no
+   shadow, no movement) and every one of those elements carries this
+   transition, so the hover never snaps. */
 .stApp .stButton > button, .stApp a, .dcs-nav-row,
 div[data-testid="stRadio"] div[role="radiogroup"] label,
-.stApp input, .stApp textarea, .stApp select {
+.stApp input, .stApp textarea, .stApp select,
+.dcs-card, .dcs-kpi, .dcs-console-inside div,
+div[data-testid="stDownloadButton"] > button,
+div[data-testid="stExpander"],
+div[data-testid="stFileUploaderDropzone"],
+div[data-testid="stPopoverBody"] .stButton > button,
+div[data-testid="stPopover"] button[data-testid="stPopoverButton"],
+div[data-testid="collapsedControl"],
+section[data-testid="stSidebar"] [data-testid="stSidebarCollapseButton"],
+section[data-testid="stSidebar"] button[kind="header"],
+div[data-baseweb="menu"] li[role="option"] {
   transition: background-color 0.2s cubic-bezier(0.22, 1, 0.36, 1),
     border-color 0.2s cubic-bezier(0.22, 1, 0.36, 1),
-    color 0.2s cubic-bezier(0.22, 1, 0.36, 1); }
+    color 0.2s cubic-bezier(0.22, 1, 0.36, 1);
 /* ---- focus: one shared ring — 2px gap + 4px translucent green halo ---- */
 .stApp .stButton > button:focus-visible,
 div[data-testid="stDownloadButton"] > button:focus-visible,
+div[data-testid="stPopover"] button[data-testid="stPopoverButton"]:focus-visible,
+div[data-testid="collapsedControl"] button:focus-visible,
+section[data-testid="stSidebar"] [data-testid="stSidebarCollapseButton"]:focus-visible,
 .stApp a:focus-visible,
 div[data-testid="stRadio"] div[role="radiogroup"] label:focus-within {
   outline: none;
@@ -344,6 +409,16 @@ div[data-testid="stRadio"] div[role="radiogroup"] label:focus-within {
 .dcs-console-inside div::before { content: ""; width: 6px; height: 6px;
   border-radius: 50%; background: #117f50; display: inline-block;
   flex: none; margin-top: 6px; }
+/* The "What's inside" rows answer a hover too: the line deepens
+   from muted to ink (the dot stays green) — the same quiet
+   treatment as the nav rows. */
+.dcs-console-inside div:hover { color: #030303; }
+/* ---- status dot: the 8px green dot from the login status line,
+   reusable anywhere a state is shown (sidebar status pill). ---- */
+.dcs-dot { display: inline-block; width: 8px; height: 8px;
+  border-radius: 50%; background: #117f50; flex: none; }
+.dcs-dot--warn { background: #e69344; }
+.dcs-dot--muted { background: #696969; }
 input[maxlength="6"] { font-family: monospace; font-size: 18px;
   letter-spacing: .35em; }
 /* tertiary buttons render as plain text links — used only by the login

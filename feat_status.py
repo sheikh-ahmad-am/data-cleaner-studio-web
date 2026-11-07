@@ -166,14 +166,20 @@ def render_status_pill(st) -> None:
     """
     status = get_status()
     if status["state"] == "operational":
-        label, kind = "All systems operational", "mint"
+        label, kind, dot = ("All systems operational", "mint", "dcs-dot")
     elif status["state"] == "unavailable":
-        label, kind = "Cloud unavailable", "amber"
+        label, kind, dot = ("Cloud unavailable", "amber",
+                            "dcs-dot dcs-dot--warn")
     else:
-        label, kind = "Local mode", "grey"
+        label, kind, dot = ("Local mode", "grey", "dcs-dot dcs-dot--muted")
+    # The dot is the login screen's 8px status dot (.dcs-dot, same
+    # size and green) — the pill alone reads as a label; dot + pill
+    # reads as a status, the Supabase way.
     st.markdown(
         '<div class="dcs-micro-label">Status</div>'
-        f"{ui_design.pill(label, kind=kind)}",
+        '<div style="display: flex; align-items: center; gap: 6px;">'
+        f'<span class="{dot}"></span>'
+        f"{ui_design.pill(label, kind=kind)}</div>",
         unsafe_allow_html=True)
 
 

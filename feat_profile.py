@@ -152,6 +152,7 @@ def render_profile_view(st, user, storage_key, on_logout=None):
     logged in, so they can retry.
     """
     st.subheader("Profile")
+    st.caption("Your account, sign-in and data.")
 
     # (1) Account info ------------------------------------------------------
     st.subheader("Account info")
@@ -189,6 +190,9 @@ def render_profile_view(st, user, storage_key, on_logout=None):
             st.error(_err or "Could not save the display name.")
 
     # (2) Change password ---------------------------------------------------
+    # Hairline between settings sections (st.divider, the Supabase
+    # settings-page separation — one line, no card chrome).
+    st.divider()
     st.subheader("Change password")
     if auth.get_auth_backend() == "supabase":
         if st.session_state.pop("profile_reset_sent", False):
@@ -208,6 +212,7 @@ def render_profile_view(st, user, storage_key, on_logout=None):
                  "accounts — local accounts have no email address on file.")
 
     # (3) Download my data --------------------------------------------------
+    st.divider()
     st.subheader("Download my data")
     st.write("A copy of your account details, sessions, file list and "
              "storage usage — no passwords or keys in it.")
@@ -223,6 +228,7 @@ def render_profile_view(st, user, storage_key, on_logout=None):
         st.error(f"Could not build your data export: {exc}")
 
     # (4) Storage usage -----------------------------------------------------
+    st.divider()
     st.subheader("Storage usage")
     try:
         _total_bytes, _per_folder = storage.storage_usage(storage_key)
@@ -248,12 +254,17 @@ def render_profile_view(st, user, storage_key, on_logout=None):
         f"({(_total_bytes / _FREE_TIER_BYTES * 100):.1f}% used).")
 
     # (5) Log out -----------------------------------------------------------
+    st.divider()
     if st.button("Log out", key="profile_logout_btn"):
         if on_logout is not None:
             on_logout()
         return "logout"
 
     # (6) Danger zone -------------------------------------------------------
+    # The danger zone stays separated by its own divider on top of the
+    # warning — it is the one section a visitor must not read as
+    # ordinary settings.
+    st.divider()
     st.subheader("Danger zone")
     st.warning("Deleting your account is permanent. It removes your "
                "files, your data and the login itself. "

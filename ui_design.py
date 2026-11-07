@@ -218,8 +218,13 @@ DESIGN_SYSTEM_CSS = """<style>
 /* ---- cards: white, 1px hairline border, 10-12px radius, flat ---- */
 .dcs-card { background-color: #ffffff; border: 1px solid #e8e8e8;
   border-radius: 12px; padding: 1rem 1.25rem; margin-bottom: 1rem; }
+/* Cards and expanders answer the hover: the hairline deepens one
+   step (to the checkbox-border token #d0d0d0) — no shadow, no lift,
+   no colour change, just the border, Supabase-quiet. */
+.dcs-card:hover { border-color: #d0d0d0; }
 div[data-testid="stExpander"] { background-color: #ffffff;
   border: 1px solid #e8e8e8; border-radius: 12px; }
+div[data-testid="stExpander"]:hover { border-color: #d0d0d0; }
 /* ---- spacing: consistent gaps between sections ---- */
 div[data-testid="stVerticalBlock"] > div { gap: 0.75rem; }
 /* ---- buttons: primary deep green, subtle vertical gradient ---- */
@@ -252,10 +257,14 @@ div[data-testid="stButton"] > button[kind="secondary"]:hover {
 div[data-testid="stDownloadButton"] > button {
   background-color: #ffffff; color: #030303; border: 1px solid #e5e5e5;
   border-radius: 6px; }
+div[data-testid="stDownloadButton"] > button:hover {
+  background-color: #f8f8f8; color: #030303; border-color: #e5e5e5; }
 /* ---- inputs: white, 6px radius, hairline border ---- */
 .stApp input, .stApp textarea, .stApp select {
   background-color: #ffffff; color: #030303;
   border-color: #e8e8e8; border-radius: 6px; }
+.stApp input:hover, .stApp textarea:hover, .stApp select:hover {
+  border-color: #d0d0d0; }
 .stApp label { color: #030303; }
 /* ---- checkboxes: hairline box border, green check ---- */
 .stApp input[type="checkbox"] { accent-color: #117f50; }
@@ -272,6 +281,25 @@ section[data-testid="stSidebar"] a { color: #117f50; }
 .dcs-nav-row:hover { background-color: #f8f8f8; color: #0e7e4e; }
 .dcs-nav-row.dcs-nav-active { background-color: #f3f3f3;
   font-weight: 600; color: #030303; border-left: 2px solid #030303; }
+/* ---- sidebar buttons read as full-width rows (Load sheet, Try the
+   messy sample, Quick jump picks) — Supabase's sidebar actions are
+   rows, not centred pills. The avatar trigger is a stPopoverButton,
+   not an stButton, so it is untouched by this rule. ---- */
+section[data-testid="stSidebar"] div[data-testid="stButton"] > button[kind="secondary"] {
+  width: 100%; justify-content: flex-start; }
+/* ---- sidebar collapse control: the chevron that hides / shows the
+   sidebar. Streamlit renders it as collapsedControl when the bar is
+   hidden and as a header button inside the bar when it is shown
+   (the testid varies by version, so all three are styled) — muted
+   by default, quiet wash on hover, same 6px radius as everything. */
+div[data-testid="collapsedControl"],
+section[data-testid="stSidebar"] [data-testid="stSidebarCollapseButton"],
+section[data-testid="stSidebar"] button[kind="header"] {
+  color: #696969; border-radius: 6px; }
+div[data-testid="collapsedControl"]:hover,
+section[data-testid="stSidebar"] [data-testid="stSidebarCollapseButton"]:hover,
+section[data-testid="stSidebar"] button[kind="header"]:hover {
+  background-color: #f8f8f8; color: #030303; }
 /* ---- sidebar avatar: green circle, initial only ---- */
 div[data-testid="stPopover"] { margin-bottom: 0.75rem; }
 div[data-testid="stPopover"] button[data-testid="stPopoverButton"] {
@@ -290,6 +318,20 @@ div[data-testid="stPopover"] button[data-testid="stPopoverButton"] svg {
 /* ---- avatar menu (popover body): white card, hairline border ---- */
 div[data-testid="stPopoverBody"] { background-color: #ffffff;
   border: 1px solid #e8e8e8; border-radius: 12px; }
+/* Avatar menu rows: the Profile / theme / Log out buttons inside the
+   popover are menu rows, not pills — full-width, left-aligned, no
+   border, quiet wash on hover. The popover is used only by the
+   avatar, so scoping to stPopoverBody is safe. */
+div[data-testid="stPopoverBody"] .stButton > button[kind="secondary"] {
+  width: 100% !important; justify-content: flex-start !important;
+  background: transparent !important; background-color: transparent !important;
+  border: none !important; box-shadow: none !important;
+  border-radius: 6px !important; padding: 0.35rem 0.75rem !important;
+  font-weight: 400 !important; color: #030303 !important; }
+div[data-testid="stPopoverBody"] .stButton > button[kind="secondary"]:hover {
+  background-color: #f8f8f8 !important; color: #030303 !important; }
+/* Menu divider: one hairline between the email, the actions and Log out. */
+.dcs-menu-divider { border-top: 1px solid #e8e8e8; margin: 0.35rem 0; }
 /* ---- links: deep green, sparingly ---- */
 .stApp a { color: #117f50; }
 .stApp a:hover { color: #0e7e4e; }
@@ -308,6 +350,7 @@ div[data-testid="stMetricLabel"], div[data-testid="stMetricLabel"] * {
 /* ---- KPI tiles: white icon box + micro-label + value ---- */
 .dcs-kpi { background-color: #ffffff; border: 1px solid #e8e8e8;
   border-radius: 12px; padding: 0.9rem 1rem; }
+.dcs-kpi:hover { border-color: #d0d0d0; }
 .dcs-kpi .dcs-kpi-label { font-size: 11px; font-weight: 600;
   letter-spacing: 0.08em; text-transform: uppercase; color: #696969; }
 .dcs-kpi .dcs-kpi-value { font-size: 20px; font-weight: 500;
@@ -316,6 +359,12 @@ div[data-testid="stMetricLabel"], div[data-testid="stMetricLabel"] * {
 /* ---- file-uploader dropzone + uploaded-file chips: ink on white ---- */
 div[data-testid="stFileUploader"], div[data-testid="stFileUploader"] * {
   color: #030303 !important; }
+div[data-testid="stFileUploaderDropzone"]:hover { border-color: #d0d0d0; }
+/* ---- native dropdown menus (baseweb portal): white menu, quiet hover ---- */
+div[data-baseweb="popover"] { background-color: #ffffff; }
+div[data-baseweb="menu"] li[role="option"] { color: #030303; }
+div[data-baseweb="menu"] li[role="option"]:hover {
+  background-color: #f8f8f8; }
 /* ---- info / success / warning / error boxes: nested elements ink ---- */
 div[data-testid="stAlert"], div[data-testid="stAlert"] * {
   color: #030303 !important; }
@@ -378,16 +427,32 @@ div[data-testid="stDataFrame"] th, div[data-testid="stTable"] th {
 div[data-testid="stDataFrame"] td, div[data-testid="stTable"] td {
   background-color: #ffffff; color: #030303;
   border-bottom: 1px solid #e8e8e8; font-size: 13px; }
-/* ---- motion, honestly measured: colour-only 0.2s ease-out ---- */
+/* ---- motion, honestly measured: colour-only 0.2s ease-out ----
+   Every hover above is a colour/border change only (no scale, no
+   shadow, no movement) and every one of those elements carries this
+   transition, so the hover never snaps. */
 .stApp .stButton > button, .stApp a, .dcs-nav-row,
 div[data-testid="stRadio"] div[role="radiogroup"] label,
-.stApp input, .stApp textarea, .stApp select {
+.stApp input, .stApp textarea, .stApp select,
+.dcs-card, .dcs-kpi, .dcs-console-inside div,
+div[data-testid="stDownloadButton"] > button,
+div[data-testid="stExpander"],
+div[data-testid="stFileUploaderDropzone"],
+div[data-testid="stPopoverBody"] .stButton > button,
+div[data-testid="stPopover"] button[data-testid="stPopoverButton"],
+div[data-testid="collapsedControl"],
+section[data-testid="stSidebar"] [data-testid="stSidebarCollapseButton"],
+section[data-testid="stSidebar"] button[kind="header"],
+div[data-baseweb="menu"] li[role="option"] {
   transition: background-color 0.2s cubic-bezier(0.22, 1, 0.36, 1),
     border-color 0.2s cubic-bezier(0.22, 1, 0.36, 1),
-    color 0.2s cubic-bezier(0.22, 1, 0.36, 1); }
+    color 0.2s cubic-bezier(0.22, 1, 0.36, 1);
 /* ---- focus: one shared ring — 2px gap + 4px translucent green halo ---- */
 .stApp .stButton > button:focus-visible,
 div[data-testid="stDownloadButton"] > button:focus-visible,
+div[data-testid="stPopover"] button[data-testid="stPopoverButton"]:focus-visible,
+div[data-testid="collapsedControl"] button:focus-visible,
+section[data-testid="stSidebar"] [data-testid="stSidebarCollapseButton"]:focus-visible,
 .stApp a:focus-visible,
 div[data-testid="stRadio"] div[role="radiogroup"] label:focus-within {
   outline: none;
@@ -425,6 +490,16 @@ div[data-testid="stRadio"] div[role="radiogroup"] label:focus-within {
 .dcs-console-inside div::before { content: ""; width: 6px; height: 6px;
   border-radius: 50%; background: #117f50; display: inline-block;
   flex: none; margin-top: 6px; }
+/* The "What's inside" rows answer a hover too: the line deepens
+   from muted to ink (the dot stays green) — the same quiet
+   treatment as the nav rows. */
+.dcs-console-inside div:hover { color: #030303; }
+/* ---- status dot: the 8px green dot from the login status line,
+   reusable anywhere a state is shown (sidebar status pill). ---- */
+.dcs-dot { display: inline-block; width: 8px; height: 8px;
+  border-radius: 50%; background: #117f50; flex: none; }
+.dcs-dot--warn { background: #e69344; }
+.dcs-dot--muted { background: #696969; }
 input[maxlength="6"] { font-family: monospace; font-size: 18px;
   letter-spacing: .35em; }
 /* tertiary buttons render as plain text links — used only by the login
@@ -526,8 +601,13 @@ header[data-testid="stHeader"] { background-color: #1b1d1c; }
 /* ---- cards: dark panel, 1px hairline border, 10-12px radius, flat ---- */
 .dcs-card { background-color: #232625; border: 1px solid #2e2e2e;
   border-radius: 12px; padding: 1rem 1.25rem; margin-bottom: 1rem; }
+/* Cards and expanders answer the hover: the hairline lightens one
+   step (to the dark checkbox-border token #4a4d4c) — no shadow, no
+   lift, no colour change, just the border, Supabase-quiet. */
+.dcs-card:hover { border-color: #4a4d4c; }
 div[data-testid="stExpander"] { background-color: #232625;
   border: 1px solid #2e2e2e; border-radius: 12px; }
+div[data-testid="stExpander"]:hover { border-color: #4a4d4c; }
 /* ---- spacing: consistent gaps between sections ---- */
 div[data-testid="stVerticalBlock"] > div { gap: 0.75rem; }
 /* ---- buttons: primary deepened green, subtle vertical gradient ---- */
@@ -558,10 +638,14 @@ div[data-testid="stButton"] > button[kind="secondary"]:hover {
 div[data-testid="stDownloadButton"] > button {
   background-color: #232625; color: #edefee; border: 1px solid #363636;
   border-radius: 6px; }
+div[data-testid="stDownloadButton"] > button:hover {
+  background-color: #2a2d2c; color: #edefee; border-color: #363636; }
 /* ---- inputs: dark panel, 6px radius, hairline border ---- */
 .stApp input, .stApp textarea, .stApp select {
   background-color: #232625; color: #edefee;
   border-color: #2e2e2e; border-radius: 6px; }
+.stApp input:hover, .stApp textarea:hover, .stApp select:hover {
+  border-color: #4a4d4c; }
 .stApp label { color: #edefee; }
 /* ---- checkboxes: hairline box border, bright green check ---- */
 .stApp input[type="checkbox"] { accent-color: #4acd8b; }
@@ -578,6 +662,23 @@ section[data-testid="stSidebar"] a { color: #4acd8b; }
 .dcs-nav-row:hover { background-color: #262928; color: #4acd8b; }
 .dcs-nav-row.dcs-nav-active { background-color: #2a2d2c;
   font-weight: 600; color: #edefee; border-left: 2px solid #edefee; }
+/* ---- sidebar buttons read as full-width rows (Load sheet, Try the
+   messy sample, Quick jump picks) — Supabase's sidebar actions are
+   rows, not centred pills. The avatar trigger is a stPopoverButton,
+   not an stButton, so it is untouched by this rule. ---- */
+section[data-testid="stSidebar"] div[data-testid="stButton"] > button[kind="secondary"] {
+  width: 100%; justify-content: flex-start; }
+/* ---- sidebar collapse control: the chevron that hides / shows the
+   sidebar — muted by default, quiet wash on hover, same 6px radius
+   as everything (see the light stylesheet for the selector note). */
+div[data-testid="collapsedControl"],
+section[data-testid="stSidebar"] [data-testid="stSidebarCollapseButton"],
+section[data-testid="stSidebar"] button[kind="header"] {
+  color: #989a99; border-radius: 6px; }
+div[data-testid="collapsedControl"]:hover,
+section[data-testid="stSidebar"] [data-testid="stSidebarCollapseButton"]:hover,
+section[data-testid="stSidebar"] button[kind="header"]:hover {
+  background-color: #262928; color: #edefee; }
 /* ---- sidebar avatar: same green circle in dark mode ---- */
 div[data-testid="stPopover"] { margin-bottom: 0.75rem; }
 div[data-testid="stPopover"] button[data-testid="stPopoverButton"] {
@@ -596,6 +697,19 @@ div[data-testid="stPopover"] button[data-testid="stPopoverButton"] svg {
 /* ---- avatar menu (popover body): dark card, hairline border ---- */
 div[data-testid="stPopoverBody"] { background-color: #232625;
   border: 1px solid #2e2e2e; border-radius: 12px; }
+/* Avatar menu rows: the Profile / theme / Log out buttons inside the
+   popover are menu rows, not pills — full-width, left-aligned, no
+   border, quiet wash on hover (see the light stylesheet). */
+div[data-testid="stPopoverBody"] .stButton > button[kind="secondary"] {
+  width: 100% !important; justify-content: flex-start !important;
+  background: transparent !important; background-color: transparent !important;
+  border: none !important; box-shadow: none !important;
+  border-radius: 6px !important; padding: 0.35rem 0.75rem !important;
+  font-weight: 400 !important; color: #edefee !important; }
+div[data-testid="stPopoverBody"] .stButton > button[kind="secondary"]:hover {
+  background-color: #262928 !important; color: #edefee !important; }
+/* Menu divider: one hairline between the email, the actions and Log out. */
+.dcs-menu-divider { border-top: 1px solid #2e2e2e; margin: 0.35rem 0; }
 /* The email caption inside the menu is secondary body text: the
    #bcbdbc body token (not the fainter #989a99 micro-label grey), so
    the address stays readable on the dark card. */
@@ -619,6 +733,7 @@ div[data-testid="stMetricLabel"], div[data-testid="stMetricLabel"] * {
 /* ---- KPI tiles: dark panel icon box + micro-label + value ---- */
 .dcs-kpi { background-color: #232625; border: 1px solid #2e2e2e;
   border-radius: 12px; padding: 0.9rem 1rem; }
+.dcs-kpi:hover { border-color: #4a4d4c; }
 .dcs-kpi .dcs-kpi-label { font-size: 11px; font-weight: 600;
   letter-spacing: 0.08em; text-transform: uppercase; color: #989a99; }
 .dcs-kpi .dcs-kpi-value { font-size: 20px; font-weight: 500;
@@ -629,6 +744,7 @@ div[data-testid="stFileUploader"], div[data-testid="stFileUploader"] * {
   color: #edefee !important; }
 div[data-testid="stFileUploaderDropzone"] {
   background-color: #232625; border-color: #2e2e2e; }
+div[data-testid="stFileUploaderDropzone"]:hover { border-color: #4a4d4c; }
 /* ---- info / success / warning / error boxes: dark panel, bright text ---- */
 div[data-testid="stAlert"] { background-color: #232625;
   border-color: #2e2e2e; }
@@ -693,16 +809,32 @@ div[data-testid="stDataFrame"] th, div[data-testid="stTable"] th {
 div[data-testid="stDataFrame"] td, div[data-testid="stTable"] td {
   background-color: #232625; color: #edefee;
   border-bottom: 1px solid #2e2e2e; font-size: 13px; }
-/* ---- motion, honestly measured: colour-only 0.2s ease-out ---- */
+/* ---- motion, honestly measured: colour-only 0.2s ease-out ----
+   Every hover above is a colour/border change only (no scale, no
+   shadow, no movement) and every one of those elements carries this
+   transition, so the hover never snaps. */
 .stApp .stButton > button, .stApp a, .dcs-nav-row,
 div[data-testid="stRadio"] div[role="radiogroup"] label,
-.stApp input, .stApp textarea, .stApp select {
+.stApp input, .stApp textarea, .stApp select,
+.dcs-card, .dcs-kpi, .dcs-console-inside div,
+div[data-testid="stDownloadButton"] > button,
+div[data-testid="stExpander"],
+div[data-testid="stFileUploaderDropzone"],
+div[data-testid="stPopoverBody"] .stButton > button,
+div[data-testid="stPopover"] button[data-testid="stPopoverButton"],
+div[data-testid="collapsedControl"],
+section[data-testid="stSidebar"] [data-testid="stSidebarCollapseButton"],
+section[data-testid="stSidebar"] button[kind="header"],
+div[data-baseweb="menu"] li[role="option"] {
   transition: background-color 0.2s cubic-bezier(0.22, 1, 0.36, 1),
     border-color 0.2s cubic-bezier(0.22, 1, 0.36, 1),
-    color 0.2s cubic-bezier(0.22, 1, 0.36, 1); }
+    color 0.2s cubic-bezier(0.22, 1, 0.36, 1);
 /* ---- focus: one shared ring — 2px dark gap + 4px translucent green halo ---- */
 .stApp .stButton > button:focus-visible,
 div[data-testid="stDownloadButton"] > button:focus-visible,
+div[data-testid="stPopover"] button[data-testid="stPopoverButton"]:focus-visible,
+div[data-testid="collapsedControl"] button:focus-visible,
+section[data-testid="stSidebar"] [data-testid="stSidebarCollapseButton"]:focus-visible,
 .stApp a:focus-visible,
 div[data-testid="stRadio"] div[role="radiogroup"] label:focus-within {
   outline: none;
@@ -745,6 +877,16 @@ div[data-baseweb="menu"] li[role="option"]:hover {
 .dcs-console-inside div::before { content: ""; width: 6px; height: 6px;
   border-radius: 50%; background: #4acd8b; display: inline-block;
   flex: none; margin-top: 6px; }
+/* The "What's inside" rows answer a hover too: the line deepens
+   from muted to ink (the dot stays green) — the same quiet
+   treatment as the nav rows. */
+.dcs-console-inside div:hover { color: #edefee; }
+/* ---- status dot: the 8px green dot from the login status line,
+   reusable anywhere a state is shown (sidebar status pill). ---- */
+.dcs-dot { display: inline-block; width: 8px; height: 8px;
+  border-radius: 50%; background: #4acd8b; flex: none; }
+.dcs-dot--warn { background: #f3ba63; }
+.dcs-dot--muted { background: #989a99; }
 input[maxlength="6"] { font-family: monospace; font-size: 18px;
   letter-spacing: .35em; }
 div[data-testid="stButton"] > button[kind="tertiary"] {
@@ -962,7 +1104,9 @@ def sidebar_nav(sections, active: str | None = None) -> None:
 
     Display-only: this helper draws the rows, it does not navigate.
     The caller keeps its own selection control (e.g. the tab-bar radio)
-    and passes the current key back in as ``active``.
+    and passes the current key back in as ``active``. Each row carries
+    a ``title`` tooltip (its own label) — the Supabase hover hint for
+    a nav item, free in plain HTML.
     """
     parts: list[str] = []
     for section_label, items in sections:
@@ -974,7 +1118,8 @@ def sidebar_nav(sections, active: str | None = None) -> None:
             cls = "dcs-nav-row dcs-nav-active" if key == active \
                 else "dcs-nav-row"
             parts.append(
-                f'<div class="{cls}">{html.escape(str(label))}</div>')
+                f'<div class="{cls}" title="{html.escape(str(label))}">'
+                f"{html.escape(str(label))}</div>")
     st.markdown("\n".join(parts), unsafe_allow_html=True)
 
 
@@ -991,25 +1136,46 @@ def avatar_initial(user) -> str:
 def render_sidebar_avatar(st_module=None, user=None):
     """Render the sidebar avatar: a single green circle with the
     user's initial (see ``avatar_initial``), the only profile element
-    in the sidebar. Clicking it opens a menu with the email (shown
-    here, and only here, in the sidebar), a Profile action, and
-    Log out. Returns ``"profile"`` when Profile was clicked,
-    ``"logout"`` when Log out was clicked, else ``None`` — the caller
-    acts on it (open the Profile tab / log out). The circle itself is
-    styled by the design system CSS (``stPopoverButton`` rules); the
-    popover is the honest Streamlit menu — no overlay palette exists
-    in Streamlit, and the trigger button is the avatar."""
+    in the sidebar. Clicking it opens a Supabase-style account menu:
+    the email at the top (shown here, and only here, in the sidebar),
+    then Profile, then the theme switch (Light/Dark — the same switch
+    as the sidebar selectbox and the login-screen link, all writing
+    the shared ``dcs_theme`` key), then Log out, with hairline
+    dividers grouping them. No "Upgrade to Pro", Changelog or Feature
+    previews: the app has no paid tier and none of those exist.
+    Returns ``"profile"`` when Profile was clicked, ``"logout"``
+    when Log out was clicked, else ``None`` — the caller acts on it
+    (open the Profile tab / log out). The theme switch flips the
+    theme and reruns itself (like render_login_theme_toggle), so it
+    returns no action. The circle itself is styled by the design
+    system CSS (``stPopoverButton`` rules); the popover is the honest
+    Streamlit menu — no overlay palette exists in Streamlit, and the
+    trigger button is the avatar."""
     st_mod = st_module or st
     email = str((user or {}).get("email") or "")
-    # Both buttons are always created, every run: returning early on the
-    # Profile click would skip the Log out button for that run, leaving
-    # the menu half-built. Collect the action, return after the menu.
+    current = normalize_theme(
+        st_mod.session_state.get("dcs_theme", THEME_DEFAULT))
+    # All buttons are always created, every run: returning early on
+    # the Profile click would skip the Log out button for that run,
+    # leaving the menu half-built. Collect the action, return after
+    # the menu. (The theme switch reruns instead of returning — the
+    # rerun rebuilds the whole menu, so it stays whole too.)
     action = None
     with st_mod.sidebar.popover(avatar_initial(user), key="avatar_menu"):
         if email:
             st_mod.caption(email)
+        st_mod.markdown('<div class="dcs-menu-divider"></div>',
+                        unsafe_allow_html=True)
         if st_mod.button("Profile", key="avatar_profile_btn"):
             action = "profile"
+        _theme_label = ("Switch to light theme" if current == "dark"
+                        else "Switch to dark theme")
+        if st_mod.button(_theme_label, key="avatar_theme_btn"):
+            st_mod.session_state["dcs_theme"] = (
+                "light" if current == "dark" else "dark")
+            st_mod.rerun()
+        st_mod.markdown('<div class="dcs-menu-divider"></div>',
+                        unsafe_allow_html=True)
         if st_mod.button("Log out", key="avatar_logout_btn"):
             action = "logout"
     return action
