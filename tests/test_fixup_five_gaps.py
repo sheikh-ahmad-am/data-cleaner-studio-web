@@ -491,14 +491,18 @@ def test_gap2_profile_has_no_home_content_above_it(_tmp_env):
     heading and cards — and NONE of the home content that used to sit
     above it: the intro caption, the flow line, the first-run banner,
     the what's-new box, the language picker, the auto-save toggle, or
-    a Back button."""
+    a Back button. (Round 5 rebuilt Profile as Supabase's Preferences
+    page: the caption is "Manage your account, sign-in and data.",
+    the Back button is "← Back to dashboard" in the left sub-nav
+    beside the heading, and the sections are headings above bordered
+    cards, class dcs-profile-section.)"""
     at = AppTest.from_file(APP)
     at.run()
     signup(at, "alice1")
     find_button(at, "Account", key="avatar_account_btn").click().run()
     assert not at.exception, f"exception opening Profile: {at.exception}"
     text = all_text(at)
-    assert "Your account, sign-in and data." in text, \
+    assert "Manage your account, sign-in and data." in text, \
         "Profile caption must render"
     for banned in ("Put in messy data. Get clean data",
                    "Your flow:", "First time here?",
@@ -510,14 +514,14 @@ def test_gap2_profile_has_no_home_content_above_it(_tmp_env):
     assert not any(s.value == "Auto-save workspace" for s in at.subheader), \
         "auto-save toggle must not render above Profile"
     # The Back button is Profile navigation, not home content: it is
-    # kept as the way back to the empty state, but it renders BELOW
-    # the Profile content now (after render_profile_view), never above
-    # the heading.
-    assert any(b.label == "← Back to data" for b in at.button), \
-        "Back to data must still be the way back from Profile"
-    for section in ("Account info", "Change password", "Download my data",
-                    "Storage usage", "Log out", "Danger zone"):
-        assert any("dcs-settings-title" in v and section in v
+    # kept as the way back to the empty state, in the left sub-nav
+    # beside the heading (never above the heading).
+    assert any(b.label == "← Back to dashboard" for b in at.button), \
+        "Back to dashboard must still be the way back from Profile"
+    for section in ("Profile information", "Sign-in methods",
+                    "Appearance", "Download my data", "Storage usage",
+                    "Log out", "Danger zone"):
+        assert any("dcs-profile-section" in v and section in v
                    for v in vals(at.markdown)), \
             f"Profile section {section!r} must still be a settings card"
     print("gap 2 Profile has no home content above it OK")

@@ -281,22 +281,25 @@ def test_profile_caption_and_cards(_tmp_env):
     """The caption existed in code (st.caption) but never appeared on
     screen. The rebuild fuses title + caption into one heading
     element and puts every section in a bordered card — prove the
-    caption and all six cards actually render."""
+    caption and all six cards actually render. (Round 5 rebuilt it
+    as Supabase's Preferences page: caption "Manage your account,
+    sign-in and data.", sections as headings above bordered cards.)"""
     at = AppTest.from_file(APP)
     at.run()
     signup(at, "alice1")
     find_button(at, "Account", key="avatar_account_btn").click().run()
     assert not at.exception, f"exception opening Profile: {at.exception}"
-    assert any("Your account, sign-in and data." in v
+    assert any("Manage your account, sign-in and data." in v
                for v in vals(at.markdown)), \
         "Profile caption must render on screen"
-    for section in ("Account info", "Change password", "Download my data",
-                    "Storage usage", "Log out", "Danger zone"):
-        assert any("dcs-settings-title" in v and section in v
+    for section in ("Profile information", "Sign-in methods",
+                    "Appearance", "Download my data", "Storage usage",
+                    "Log out", "Danger zone"):
+        assert any("dcs-profile-section" in v and section in v
                    for v in vals(at.markdown)), \
             f"Profile section {section!r} must be a settings card"
     # The section controls are all still there, keys unchanged.
-    find_button(at, "Save display name")
+    find_button(at, "Save")
     assert any(b.label == "Download my data" for b in at.download_button), \
         "download-my-data button missing"
     find_button(at, "Log out", key="profile_logout_btn")

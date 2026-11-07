@@ -513,15 +513,25 @@ div[data-testid="stButton"] > button[data-testid="stBaseButton-primary"] {
   border-radius: 999px; font-weight: 500; }
 div[data-testid="stButton"] > button[data-testid="stBaseButton-primary"] * {
   color: #ffffff !important; }
-/* Sidebar nav rows + the active (disabled) pill, same anchoring. */
+/* Sidebar nav rows + the active (disabled) pill, same anchoring.
+   Full-width rows (gap 3): the old `button[kind="secondary"]`
+   selector was dead — Streamlit 1.66.1 renders no `kind` attribute
+   on the <button> (the kind lives in
+   `data-testid="stBaseButton-secondary"`), so the expanded nav rows
+   rendered as compact pills hugging their labels. The wrapper div
+   is forced full-width too (see below). The collapsed rail's own
+   rule (rail_css, later in the page, more specific) still centres
+   the icon-only buttons. */
 section[data-testid="stSidebar"] div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"] {
   background-color: #ffffff !important; color: #030303 !important;
-  border: 1px solid #e5e5e5 !important; }
+  border: 1px solid #e5e5e5 !important;
+  width: 100% !important; justify-content: flex-start !important; }
 section[data-testid="stSidebar"] div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"] * {
   color: #030303 !important; }
 section[data-testid="stSidebar"] div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"]:disabled {
   background-color: #f3f3f3 !important; color: #030303 !important;
-  border: 1px solid #e5e5e5 !important; opacity: 1 !important; }
+  border: 1px solid #e5e5e5 !important; opacity: 1 !important;
+  border-left: 2px solid #030303 !important; font-weight: 600 !important; }
 section[data-testid="stSidebar"] div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"]:disabled * {
   color: #030303 !important; }
 /* Danger-zone buttons (the .dcs-danger-zone marker icon_button emits
@@ -553,12 +563,39 @@ section[data-testid="stSidebar"] a { color: #117f50; }
 .dcs-nav-row:hover { background-color: #f8f8f8; color: #0e7e4e; }
 .dcs-nav-row.dcs-nav-active { background-color: #f3f3f3;
   font-weight: 600; color: #030303; border-left: 2px solid #030303; }
-/* ---- sidebar buttons read as full-width rows (Load sheet, Try the
-   messy sample, Quick jump picks) — Supabase's sidebar actions are
-   rows, not centred pills. The avatar trigger is a stPopoverButton,
-   not an stButton, so it is untouched by this rule. ---- */
-section[data-testid="stSidebar"] div[data-testid="stButton"] > button[kind="secondary"] {
-  width: 100%; justify-content: flex-start; }
+/* ---- expanded nav rows are full-width (gap 3): the wrapper div
+   is forced full-width here; the button itself gets its width from
+   the merged sidebar rule above. The old `button[kind="secondary"]`
+   selector was dead — Streamlit 1.66.1 renders no `kind` attribute
+   on the <button> (the kind lives in
+   `data-testid="stBaseButton-secondary"`), so the rows rendered as
+   compact pills hugging their labels. The avatar trigger is a
+   stPopoverButton, not an stButton, so it is untouched by this
+   rule. The collapsed rail's own rule (rail_css, later in the
+   page, more specific) still centres the icon-only buttons. ---- */
+section[data-testid="stSidebar"] div[data-testid="stButton"] {
+  width: 100% !important; }
+/* ---- uploader format line wraps instead of truncating: the
+   instructions element ("1GB per file • CSV, XLSX, XLS, JSON,
+   PARQUET") is one long line in the 260px sidebar, so it was cut
+   off at the right edge ("…JS…"). ---- */
+section[data-testid="stSidebar"] [data-testid="stFileUploaderDropzoneInstructions"],
+section[data-testid="stSidebar"] [data-testid="stFileUploaderDropzoneInstructions"] * {
+  white-space: normal !important; overflow: visible !important;
+  text-overflow: clip !important; }
+/* ---- tooltips: Supabase's dark rounded pill, white text, in both
+   themes — Streamlit's native tooltip is a light box by default.
+   The content lives in a floating portal, so the rule is
+   document-wide (no sidebar scoping). The pill is dark in both
+   themes by design, but each theme uses its OWN near-black so no
+   dark token leaks into the light sheet (light ink here,
+   the dark surface in the dark sheet). No shortcut chips: the
+   app has no G-then-X navigation shortcuts, so none are shown. ---- */
+div[data-testid="stTooltipContent"] {
+  background-color: #030303 !important; color: #ffffff !important;
+  border-radius: 8px !important; padding: 6px 10px !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25) !important; }
+div[data-testid="stTooltipContent"] * { color: #ffffff !important; }
 /* ---- sidebar collapse control: the chevron that hides / shows the
    sidebar. Streamlit renders it as collapsedControl when the bar is
    hidden and as a header button inside the bar when it is shown
@@ -853,11 +890,38 @@ div[data-testid="stHorizontalBlock"] div[data-testid="column"]:last-child
    avatar menu rows, the nav active pill, the danger marker, the
    settings cards, the KPI icon box and the metric cards. */
 .dcs-topbar-left { display: flex; align-items: center; gap: 8px;
-  min-width: 0; }
+  min-width: 0; flex-wrap: nowrap; }
 .dcs-topbar-logo { width: 24px; height: 24px; flex: none; }
 .dcs-topbar-brand { font-size: 17px; font-weight: 500; color: #030303;
-  white-space: nowrap; }
+  white-space: nowrap; flex: none; }
+/* ---- top-bar breadcrumb never overlaps the search column: the
+   spans are flex items with no min-width, so a long breadcrumb
+   overflowed its column and sat on top of the search hint. They
+   shrink and ellipsize instead; the brand never shrinks. ---- */
+.dcs-topbar-left > span { min-width: 0; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; }
 .dcs-topbar-rule { border-top: 1px solid #e8e8e8; margin: 0.25rem 0 1rem; }
+/* ---- Profile (Preferences) page: Supabase's two-column account
+   page — a narrow sub-nav at the left (Back link, section rows)
+   and bordered cards at the right. The sub-nav column carries a
+   hairline right edge; the marker div is the page's own element,
+   so the rule only fires on the Profile page. The sub-nav rows are
+   anchor links to the section headings (the page is one stacked
+   page, not separate pages — the links scroll to the card). The
+   .stApp prefix out-specifies the sheet's own h3 / a rules. ---- */
+div:has(> .dcs-profile-page) ~ div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:first-child {
+  border-right: 1px solid #e8e8e8; padding-right: 1rem; }
+.stApp .dcs-profile-section { font-size: 15px; font-weight: 600;
+  color: #030303; margin: 1.25rem 0 0.25rem; }
+.stApp .dcs-profile-section-sub { font-size: 13px; color: #696969;
+  margin-bottom: 0.5rem; }
+.stApp .dcs-profile-subnav-link { display: block; padding: 0.35rem 0.75rem;
+  border-radius: 6px; font-size: 13px; color: #030303; }
+.stApp a.dcs-profile-subnav-link { text-decoration: none; }
+.stApp a.dcs-profile-subnav-link:hover { background-color: #f8f8f8;
+  color: #0e7e4e; text-decoration: none; }
+.dcs-profile-subnav-link.dcs-profile-subnav-active {
+  background-color: #f3f3f3; font-weight: 600; }
 /* ---- avatar menu rows: bold email, micro section label, timezone row ---- */
 .dcs-menu-email { font-size: 14px; font-weight: 700; color: #030303;
   padding: 0.35rem 0.75rem; overflow-wrap: anywhere; }
@@ -1161,6 +1225,27 @@ div[data-testid="stFileUploader"], div[data-testid="stFileUploader"] * {
 div[data-testid="stFileUploaderDropzone"] {
   background-color: #232625; border-color: #2e2e2e; }
 div[data-testid="stFileUploaderDropzone"]:hover { border-color: #4a4d4c; }
+/* ---- uploader format line wraps instead of truncating: the
+   instructions element ("1GB per file • CSV, XLSX, XLS, JSON,
+   PARQUET") is one long line in the 260px sidebar, so it was cut
+   off at the right edge ("…JS…"). ---- */
+section[data-testid="stSidebar"] [data-testid="stFileUploaderDropzoneInstructions"],
+section[data-testid="stSidebar"] [data-testid="stFileUploaderDropzoneInstructions"] * {
+  white-space: normal !important; overflow: visible !important;
+  text-overflow: clip !important; }
+/* ---- tooltips: Supabase's dark rounded pill, white text, in both
+   themes — Streamlit's native tooltip is a light box by default.
+   The content lives in a floating portal, so the rule is
+   document-wide (no sidebar scoping). The pill is dark in both
+   themes by design, but each theme uses its OWN near-black so no
+   dark token leaks into the light sheet (light ink in the
+   light sheet, the dark surface here). No shortcut chips: the
+   app has no G-then-X navigation shortcuts, so none are shown. ---- */
+div[data-testid="stTooltipContent"] {
+  background-color: #1b1d1c !important; color: #ffffff !important;
+  border-radius: 8px !important; padding: 6px 10px !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25) !important; }
+div[data-testid="stTooltipContent"] * { color: #ffffff !important; }
 /* ---- info / success / warning / error boxes: dark panel, bright text ---- */
 div[data-testid="stAlert"] { background-color: #232625;
   border-color: #2e2e2e; }
@@ -1367,11 +1452,38 @@ div[data-testid="stHorizontalBlock"] div[data-testid="column"]:last-child
    nav active pill, danger marker, settings cards, KPI icon box and
    metric cards follow the dark tokens. */
 .dcs-topbar-left { display: flex; align-items: center; gap: 8px;
-  min-width: 0; }
+  min-width: 0; flex-wrap: nowrap; }
 .dcs-topbar-logo { width: 24px; height: 24px; flex: none; }
 .dcs-topbar-brand { font-size: 17px; font-weight: 500; color: #edefee;
-  white-space: nowrap; }
+  white-space: nowrap; flex: none; }
+/* ---- top-bar breadcrumb never overlaps the search column: the
+   spans are flex items with no min-width, so a long breadcrumb
+   overflowed its column and sat on top of the search hint. They
+   shrink and ellipsize instead; the brand never shrinks. ---- */
+.dcs-topbar-left > span { min-width: 0; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; }
 .dcs-topbar-rule { border-top: 1px solid #2e2e2e; margin: 0.25rem 0 1rem; }
+/* ---- Profile (Preferences) page: Supabase's two-column account
+   page — a narrow sub-nav at the left (Back link, section rows)
+   and bordered cards at the right. The sub-nav column carries a
+   hairline right edge; the marker div is the page's own element,
+   so the rule only fires on the Profile page. The sub-nav rows are
+   anchor links to the section headings (the page is one stacked
+   page, not separate pages — the links scroll to the card). The
+   .stApp prefix out-specifies the sheet's own h3 / a rules. ---- */
+div:has(> .dcs-profile-page) ~ div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:first-child {
+  border-right: 1px solid #2e2e2e; padding-right: 1rem; }
+.stApp .dcs-profile-section { font-size: 15px; font-weight: 600;
+  color: #edefee; margin: 1.25rem 0 0.25rem; }
+.stApp .dcs-profile-section-sub { font-size: 13px; color: #989a99;
+  margin-bottom: 0.5rem; }
+.stApp .dcs-profile-subnav-link { display: block; padding: 0.35rem 0.75rem;
+  border-radius: 6px; font-size: 13px; color: #edefee; }
+.stApp a.dcs-profile-subnav-link { text-decoration: none; }
+.stApp a.dcs-profile-subnav-link:hover { background-color: #2a2d2c;
+  color: #4acd8b; text-decoration: none; }
+.dcs-profile-subnav-link.dcs-profile-subnav-active {
+  background-color: #2a2d2c; font-weight: 600; }
 /* ---- avatar menu rows: bold email, micro section label, timezone row ---- */
 .dcs-menu-email { font-size: 14px; font-weight: 700; color: #edefee;
   padding: 0.35rem 0.75rem; overflow-wrap: anywhere; }
@@ -1462,6 +1574,7 @@ def inject_design_system(st_module=None, theme: str = "light") -> None:
 #: ``sync_theme_widgets`` + ``on_change`` callbacks.
 THEME_SELECT_KEY = "dcs_theme_select"
 THEME_RADIO_KEY = "avatar_theme_radio"
+PROFILE_THEME_RADIO_KEY = "profile_theme_radio"
 
 
 def sync_theme_widgets(st_module=None) -> None:
@@ -1472,15 +1585,17 @@ def sync_theme_widgets(st_module=None) -> None:
     Writing a widget's session key is only allowed before that widget
     is instantiated in the run, which is exactly where this runs — so
     a theme flipped from anywhere (login link, avatar menu, sidebar
-    selectbox) is reflected in every control on the next run, and the
-    sidebar dropdown can never again show "Light" while the page is
-    dark. The widgets' ``on_change`` callbacks write back the other
-    way (widget -> ``dcs_theme``), so the two directions agree."""
+    selectbox, Profile Appearance card) is reflected in every control
+    on the next run, and the sidebar dropdown can never again show
+    "Light" while the page is dark. The widgets' ``on_change``
+    callbacks write back the other way (widget -> ``dcs_theme``), so
+    the two directions agree."""
     st_mod = st_module or st
     current = normalize_theme(
         st_mod.session_state.get("dcs_theme", THEME_DEFAULT))
     st_mod.session_state[THEME_SELECT_KEY] = current
     st_mod.session_state[THEME_RADIO_KEY] = current
+    st_mod.session_state[PROFILE_THEME_RADIO_KEY] = current
 
 
 def render_theme_toggle(st_module=None) -> str:
@@ -1654,14 +1769,19 @@ def topbar(title: str, breadcrumb: str = "", user=None,
     _uri = _logo_data_uri(logo_path) if logo_path else None
     _logo = (f'<img src="{_uri}" alt="" class="dcs-topbar-logo">'
              if _uri else "")
+    # The breadcrumb is the file name only — the brand already says
+    # the workspace name and the title is the current screen, so
+    # repeating the workspace name here duplicated it ("Data Cleaner
+    # Studio / Data Cleaner Studio / Preview"). The title carries
+    # its own " / " separator, the crumb follows it.
     _crumb = (f'<span class="dcs-topbar-crumb"> / '
               f"{html.escape(breadcrumb)}</span>" if breadcrumb else "")
-    _title = (f'<span class="dcs-topbar-title">'
+    _title = (f'<span class="dcs-topbar-title"> / '
               f"{html.escape(title)}</span>")
     _brand = ('<span class="dcs-topbar-brand">Data Cleaner Studio</span>')
-    _left = (f'<div class="dcs-topbar-left">{_logo}{_brand}{_crumb}'
-             f"{_title}</div>")
-    cols = st_mod.columns([2.6, 2.0, 0.85, 0.4, 0.5], gap="small",
+    _left = (f'<div class="dcs-topbar-left">{_logo}{_brand}{_title}'
+             f"{_crumb}</div>")
+    cols = st_mod.columns([2.3, 1.9, 1.1, 0.35, 0.45], gap="small",
                           vertical_alignment="center")
     with cols[0]:
         st_mod.markdown(_left, unsafe_allow_html=True)
@@ -1737,14 +1857,30 @@ def rail_css(collapsed: bool, theme) -> str:
     follows the session-state rail state — the base stylesheets never
     change, and the app.py literal stays the verbatim light paste.
 
+    Both states: the sidebar is a flex column
+    (``stSidebarContent`` > header + ``stSidebarUserContent`` >
+    vertical block) and the toggle — the vertical block's LAST
+    child, rendered after the slicers — is pinned to the bottom
+    (``margin-top: auto`` when the content is short, ``position:
+    sticky; bottom: 0`` when it scrolls), so the collapse control
+    is always reachable without scrolling. The width animates on a
+    200ms ease (the dashboard's ~0.2s slide), not a snap.
+
     Collapsed: 60px sidebar, 6px content padding, 4px gaps, rail
-    buttons as 40px borderless squares with a centred icon, a subtle
-    wash on hover (the dashboard's buttons show NO colour change
-    live — only the cursor — so the wash is deliberately quiet) and
-    the active (disabled) icon in a rounded-square highlight. The
-    button rules repeat the base sheet's five selectors (button,
-    button *, :hover, :disabled, :disabled *) with the rail values,
-    so they win on equal specificity by coming later in the page.
+    buttons as 36px borderless squares with a centred icon (12
+    icons + toggle fit a 573px viewport: 13 x 36 + 12 x 4 + padding
+    = 528px, so the scroll offset clamps to ~0 when collapsing),
+    a subtle wash on hover and the active (disabled) icon in a
+    rounded-square highlight. The button rules repeat the base
+    sheet's five selectors (button, button *, :hover, :disabled,
+    :disabled *) with the rail values, so they win on equal
+    specificity by coming later in the page. A safety net hides
+    every non-nav child of the vertical block in this state — the
+    client-mode checkbox, the auto-refresh expander, the slicers
+    and any sidebar toast stay mounted (their values survive) but
+    can never render as a vertical column of single letters in
+    the 60px rail; only wrappers holding a button directly (nav
+    rows + toggle) stay visible.
     Expanded: 260px sidebar; the nav rows keep the base sheet's
     icon + label row styling."""
     _tokens = (DARK_TOKENS if normalize_theme(theme) == "dark"
@@ -1754,14 +1890,39 @@ def rail_css(collapsed: bool, theme) -> str:
     _ink = _tokens["ink"]
     _hover = _tokens["hover"]
     _active = _tokens["active_nav"]
+    _bg = _tokens["bg"]
     _css = [
         "<style>",
         "/* ---- sidebar rail: Supabase icon rail / labelled sidebar ---- */",
         'section[data-testid="stSidebar"] {',
         f"  width: {_width} !important; min-width: {_width} !important;",
         f"  max-width: {_width} !important; flex: 0 0 {_width} !important;",
-        "  transition: transform 300ms, min-width 300ms,",
-        "    max-width 300ms, width 300ms !important; }",
+        "  transition: transform 200ms cubic-bezier(0.22,1,0.36,1),",
+        "    min-width 200ms cubic-bezier(0.22,1,0.36,1),",
+        "    max-width 200ms cubic-bezier(0.22,1,0.36,1),",
+        "    width 200ms cubic-bezier(0.22,1,0.36,1) !important; }",
+        # Pin the toggle to the bottom of the rail (both states):
+        # the scroll container becomes a flex column, the user
+        # content + vertical block fill the height, and the toggle
+        # wrapper (last child) takes the free space above it — and
+        # sticks to the viewport bottom while the rail scrolls.
+        # The wrapper carries the sidebar surface so scrolling rows
+        # never show through it; the 4px top padding is the
+        # occlusion strip over the gap above the button.
+        'section[data-testid="stSidebar"] div[data-testid="stSidebarContent"] {',
+        "  display: flex !important; flex-direction: column !important; }",
+        'section[data-testid="stSidebar"] div[data-testid="stSidebarHeader"] {',
+        "  flex: none !important; }",
+        'section[data-testid="stSidebar"] div[data-testid="stSidebarUserContent"] {',
+        "  flex: 1 1 auto !important; min-height: 0 !important;",
+        "  display: flex !important; flex-direction: column !important; }",
+        'section[data-testid="stSidebar"] div[data-testid="stSidebarUserContent"] > div[data-testid="stVerticalBlock"] {',
+        "  flex: 1 1 auto !important; min-height: 0 !important;",
+        "  display: flex !important; flex-direction: column !important; }",
+        'section[data-testid="stSidebar"] div[data-testid="stSidebarUserContent"] > div[data-testid="stVerticalBlock"] > div:last-child {',
+        "  margin-top: auto !important; position: sticky !important;",
+        "  bottom: 0 !important; z-index: 2 !important;",
+        f"  background: {_bg} !important; padding-top: 4px !important; }}",
     ]
     if collapsed:
         _css += [
@@ -1769,9 +1930,16 @@ def rail_css(collapsed: bool, theme) -> str:
             "  padding-left: 6px !important; padding-right: 6px !important; }",
             'section[data-testid="stSidebar"] div[data-testid="stVerticalBlock"] {',
             "  gap: 4px !important; }",
+            # Safety net: in the collapsed rail only nav buttons and
+            # the toggle may show. Every other direct child of the
+            # vertical block (checkbox, expander, multiselect, date
+            # input, caption, alert) is hidden — the widgets stay
+            # mounted, so their values survive the collapse.
+            'section[data-testid="stSidebar"] div[data-testid="stSidebarUserContent"] > div[data-testid="stVerticalBlock"] > div:not(:has(> div[data-testid="stButton"])) {',
+            "  display: none !important; }",
             'section[data-testid="stSidebar"] div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"] {',
-            "  width: 100% !important; height: 40px !important;",
-            "  min-height: 40px !important; padding: 0 !important;",
+            "  width: 100% !important; height: 36px !important;",
+            "  min-height: 36px !important; padding: 0 !important;",
             "  border: none !important; border-radius: 8px !important;",
             "  background: transparent !important;",
             "  background-color: transparent !important;",
@@ -1802,10 +1970,12 @@ def sidebar_nav(items, active: str | None = None, collapsed: bool = False,
     rail has none, and the DATA / ANALYSE / OUTPUT / WORKSPACE
     headers are gone. Every row carries its line icon left of its
     label (the dashboard's icon + label rows) and a ``help`` tooltip
-    with the plain label — the tooltip is the only place the label
-    appears in the collapsed state. The row for ``active`` is a
-    DISABLED button — you are already there, so it cannot be clicked
-    — and the stylesheet renders a disabled sidebar button as the
+    reading "Go to <label>" — the tooltip is the only place the label
+    appears in the collapsed state, and it carries no shortcut chips:
+    the app has no G-then-X navigation shortcuts, so none are shown.
+    The row for ``active`` is a DISABLED button — you are already
+    there, so it cannot be clicked — and the stylesheet renders a
+    disabled sidebar button as the
     active pill (light) / rounded-square highlight (collapsed).
     Clicking any other row returns its key; the caller sets
     ``pending_tab`` and reruns (the radio below is the authority,
@@ -1834,7 +2004,7 @@ def sidebar_nav(items, active: str | None = None, collapsed: bool = False,
         if st_mod.button(
                 "" if collapsed else str(label),
                 icon=icon_for(NAV_ICONS.get(key, "diamond")),
-                key=f"dcs_nav_{key}", help=str(label),
+                key=f"dcs_nav_{key}", help=f"Go to {label}",
                 type="secondary", disabled=(key == active)):
             clicked = key
     return clicked
@@ -1846,10 +2016,11 @@ def render_rail_toggle(st_module=None) -> bool:
     ``dcs_rail_collapsed`` and reruns). Collapsed: a right chevron,
     icon-only, "Expand sidebar". Expanded: a left chevron with the
     label "Collapse sidebar". Call inside ``with st.sidebar:``,
-    right after the nav rows — the toggle belongs to the rail, so it
-    sits directly under the nav in both states. Streamlit's own
-    sidebar collapse chevron (top of the bar) is untouched and keeps
-    working alongside this one."""
+    LAST in the sidebar content (after the slicers) — the rail CSS
+    pins the vertical block's last child to the bottom, so the
+    toggle is the collapse control at the rail's foot, not a nav
+    row. Streamlit's own sidebar collapse chevron (top of the bar)
+    is untouched and keeps working alongside this one."""
     st_mod = st_module or st
     if rail_collapsed(st_mod):
         return bool(st_mod.button(

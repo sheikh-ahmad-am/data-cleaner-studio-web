@@ -7,10 +7,11 @@ wash + tooltip per icon — and for the whole interface to match the
 page-by-page study. This file pins what AppTest can pin:
 
   1. rail_css: the 60px / 260px widths, the 6px content padding, the
-     40px icon squares, the hover wash and active highlight, in both
-     themes, with no cross-theme hex leaking in.
+     36px icon squares (12 icons + toggle fit a 573px viewport), the
+     hover wash and active highlight, in both themes, with no
+     cross-theme hex leaking in.
   2. sidebar_nav: collapsed = icon-only buttons (empty label, icon
-     set, help = the plain label, active disabled), expanded = icon +
+     set, help = "Go to <label>", active disabled), expanded = icon +
      label rows; grouped input still flattens but emits NO section
      headers; clicking a row reports its key.
   3. render_rail_toggle: chevron_right / "Expand sidebar" collapsed,
@@ -167,8 +168,9 @@ def test_rail_css_collapsed_light():
         assert width_rule in css, f"collapsed rail CSS missing {width_rule!r}"
     assert "padding-left: 6px !important" in css, \
         "collapsed rail must shrink the sidebar content padding to 6px"
-    assert "height: 40px !important" in css, \
-        "collapsed rail buttons must be 40px squares"
+    assert "height: 36px !important" in css, \
+        "collapsed rail buttons must be 36px squares (12 icons + " \
+        "toggle fit a 573px viewport at 36px)"
     assert "border-radius: 8px !important" in css, \
         "collapsed rail buttons must be rounded squares, not pills"
     assert "background-color: #f8f8f8 !important" in css, \
@@ -260,8 +262,9 @@ def test_sidebar_nav_collapsed_icon_only():
         "Preview icon must be the preview line icon"
     assert clean.proto.icon == ui_design.icon_for("clean"), \
         "Clean icon must be the clean line icon"
-    assert preview.help == "Preview", "Preview tooltip must be its label"
-    assert clean.help == "Clean", "Clean tooltip must be its label"
+    assert preview.help == "Go to Preview", \
+        "Preview tooltip must read 'Go to Preview'"
+    assert clean.help == "Go to Clean", "Clean tooltip must read 'Go to Clean'"
     assert preview.disabled, "active nav row must be the disabled pill"
     assert not clean.disabled, "inactive nav row must stay clickable"
     assert not any("dcs-section-label" in v for v in vals(at.markdown)), \
@@ -287,7 +290,8 @@ def test_sidebar_nav_expanded_labelled():
     clean = find_button(at, "Clean", key="dcs_nav_clean")
     assert preview.proto.icon.startswith(":material/"), \
         "expanded nav row must still carry its icon"
-    assert preview.help == "Preview", "expanded nav row needs its tooltip"
+    assert preview.help == "Go to Preview", \
+        "expanded nav row needs its 'Go to' tooltip"
     assert preview.disabled, "active nav row must be the disabled pill"
     assert not clean.disabled, "inactive nav row must stay clickable"
     assert not any("dcs-section-label" in v for v in vals(at.markdown)), \
@@ -485,7 +489,7 @@ def test_rail_default_collapsed_after_signup(_tmp_env):
             f"collapsed nav row {b.key} must be icon-only, got {b.label!r}"
         assert b.proto.icon.startswith(":material/"), \
             f"collapsed nav row {b.key} must carry its icon"
-        assert b.help == NAV_LABELS[b.key.removeprefix("dcs_nav_")], \
+        assert b.help == "Go to " + NAV_LABELS[b.key.removeprefix("dcs_nav_")], \
             f"collapsed nav row {b.key} tooltip must be its label"
     preview = find_button_by_key(at, "dcs_nav_preview")
     assert preview.disabled, "Preview (active) must be the disabled row"
@@ -579,7 +583,7 @@ def test_rail_nav_click_collapsed_navigates(_tmp_env):
     signup(at, "alice1")
     assert at.session_state.get("dcs_rail_collapsed") is True
     clean = find_button_by_key(at, "dcs_nav_clean")
-    assert clean.label == "" and clean.help == "Clean"
+    assert clean.label == "" and clean.help == "Go to Clean"
     clean.click().run()
     assert not at.exception, f"exception clicking Clean icon: {at.exception}"
     assert at.session_state.get("active_tab") == "Clean", \
@@ -616,7 +620,7 @@ def test_profile_caption_renders(_tmp_env):
     find_button(at, "Profile", key="dcs_nav_profile").click().run()
     assert not at.exception, f"exception going to Profile: {at.exception}"
     page = "\n".join(vals(at.markdown) + vals(at.caption))
-    assert "Your account, sign-in and data." in page, \
+    assert "Manage your account, sign-in and data." in page, \
         "the Profile caption must render"
     print("profile caption renders OK")
 

@@ -186,11 +186,15 @@ def test_soul_hover_rules_both_themes():
             assert colour in body.group(1), \
                 f"{theme}: {selector} must use {colour}, got {body.group(1)!r}"
     # Sidebar buttons are full-width rows in both themes. Light uses
-    # the `>`-chained form, dark the descendant form (round 2).
+    # the `>`-chained form, dark the descendant form (round 2). The
+    # light selector is the testid form — the old `[kind="secondary"]`
+    # form was dead (kind lives in data-testid, not an attribute),
+    # so round 5 replaced it.
     for theme in ("light", "dark"):
         css = ui_design.theme_css(theme)
         rule = ('section[data-testid="stSidebar"] '
-                'div[data-testid="stButton"] > button[kind="secondary"]'
+                'div[data-testid="stButton"] > '
+                'button[data-testid="stBaseButton-secondary"]'
                 if theme == "light" else
                 'section[data-testid="stSidebar"] '
                 'div[data-testid="stButton"] button')
@@ -293,8 +297,10 @@ def test_sidebar_nav_tooltips():
     assert not at.exception, f"sidebar_nav exception: {at.exception}"
     preview = find_button(at, "Preview", key="dcs_nav_preview")
     clean = find_button(at, "Clean", key="dcs_nav_clean")
-    assert preview.help == "Preview", "Preview nav row needs its tooltip"
-    assert clean.help == "Clean", "Clean nav row needs its tooltip"
+    assert preview.help == "Go to Preview", \
+        "Preview nav row needs its 'Go to' tooltip"
+    assert clean.help == "Go to Clean", \
+        "Clean nav row needs its 'Go to' tooltip"
     assert preview.disabled, "active nav row must be the disabled pill"
     assert not clean.disabled, "inactive nav row must stay clickable"
     clean.click().run()
@@ -331,19 +337,23 @@ def test_status_pill_dot(_tmp_env):
 def test_profile_dividers_and_caption(_tmp_env):
     """The Profile view reads as a settings page: a one-line caption
     under the title and one bordered card per section, with the danger
-    zone still separated and intact."""
+    zone still separated and intact. (Round 5 rebuilt it as
+    Supabase's Preferences page: the caption is now "Manage your
+    account, sign-in and data." and each section is a heading above a
+    bordered card, class dcs-profile-section.)"""
     at = AppTest.from_file(APP)
     at.run()
     assert not at.exception, f"startup exception: {at.exception}"
     signup(at, "alice1")
     find_button(at, "Account", key="avatar_account_btn").click().run()
     assert not at.exception, f"exception opening Profile: {at.exception}"
-    assert any("Your account, sign-in and data." in v
+    assert any("Manage your account, sign-in and data." in v
                for v in vals(at.markdown)), \
         "Profile view needs its settings-page caption"
-    for section in ("Account info", "Change password", "Download my data",
-                    "Storage usage", "Danger zone"):
-        assert any("dcs-settings-title" in v and section in v
+    for section in ("Profile information", "Sign-in methods",
+                    "Appearance", "Download my data", "Storage usage",
+                    "Danger zone"):
+        assert any("dcs-profile-section" in v and section in v
                    for v in vals(at.markdown)), \
             f"Profile section {section!r} must be a settings card"
     find_button(at, "Delete my account", key="profile_delete_reveal")

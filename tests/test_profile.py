@@ -107,10 +107,11 @@ def goto_profile(at):
 
 
 def assert_profile_view(at):
-    """The Profile view's sections are all on screen (one bordered
-    settings card per section — the title is the card's heading,
-    rendered as markdown, not a subheader)."""
-    for section in ("Account info", "Change password", "Download my data",
+    """The Profile view's sections are all on screen (Supabase's
+    Preferences page: a section heading above a bordered card, the
+    heading rendered as markdown, not a subheader)."""
+    for section in ("Profile information", "Sign-in methods",
+                    "Appearance", "Download my data",
                     "Storage usage", "Danger zone"):
         assert any(section in v for v in vals(at.markdown)), \
             f"Profile section {section!r} missing"
@@ -118,6 +119,23 @@ def assert_profile_view(at):
         "download-my-data button missing"
     assert any(b.label == "Delete my account" for b in at.button), \
         "danger-zone delete button missing"
+    assert any(b.label == "← Back to dashboard" for b in at.button), \
+        "sub-nav Back button missing"
+    # These tests run in local mode (see _tmp_env): there is no
+    # password to change, so the Sign-in methods row shows the
+    # local-mode note instead of the Change password button. The
+    # button exists only in Supabase mode, where the real email+code
+    # login lives.
+    assert any("Password reset by email is only available for cloud "
+               "accounts" in v for v in vals(at.markdown)), \
+        "sign-in-methods local-mode note missing"
+    assert any(b.label == "Save" for b in at.button), \
+        "profile-information Save button missing"
+    # No Supabase product the app does not have: no Access Tokens,
+    # no Audit Logs, no Upgrade to Pro, no System theme row.
+    for missing in ("Access Tokens", "Audit Logs", "Upgrade to Pro"):
+        assert not any(missing in v for v in vals(at.markdown)), \
+            f"Profile must not invent {missing!r}"
 
 
 def upload_sample(at, username):
@@ -166,14 +184,18 @@ def test_sidebar_avatar_and_open_profile(_tmp_env):
 
     # Local mode: the user dict now carries a display_name key (None
     # until set), so the editor is enabled — saving a name works
-    # end to end and the avatar picks the new initial up.
-    name_input = find_text_input(at, "Display name")
-    assert not name_input.disabled, \
-        "display-name editor should be enabled once the DB setup exists"
+    # end to end and the avatar picks the new initial up. The name
+    # is edited as First + Last name (Supabase's Profile information
+    # rows) and recombined on Save.
+    first_input = find_text_input(at, "First name")
+    last_input = find_text_input(at, "Last name")
+    assert not first_input.disabled and not last_input.disabled, \
+        "name editor should be enabled once the DB setup exists"
     assert not any("updated database setup" in v for v in vals(at.caption)), \
         "no DB-setup note should show once the setup exists"
-    name_input.set_value("Alice A").run()
-    find_button(at, "Save display name").click().run()
+    first_input.set_value("Alice").run()
+    last_input.set_value("A").run()
+    find_button(at, "Save").click().run()
     assert not at.exception, f"exception saving display name: {at.exception}"
     assert any("Display name saved." in v for v in vals(at.success)), \
         "saving the display name should confirm"
@@ -322,9 +344,9 @@ def test_profile_reachable_without_data(_tmp_env):
     assert not at.exception, f"exception opening Profile empty: {at.exception}"
     assert_profile_view(at)
     # Back returns to the empty state.
-    find_button(at, "← Back to data").click().run()
+    find_button(at, "← Back to dashboard").click().run()
     assert not at.exception, f"exception going back: {at.exception}"
     assert any("Nothing loaded yet" in m.value for m in at.markdown), \
         "Back should return to the empty state"
-    assert not any("Account info" in v for v in vals(at.markdown)), \
+    assert not any("Profile information" in v for v in vals(at.markdown)), \
         "profile view should be gone after Back"

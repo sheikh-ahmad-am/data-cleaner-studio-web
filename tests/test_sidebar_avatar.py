@@ -199,7 +199,7 @@ def test_sidebar_avatar_menu_local_user(_tmp_env):
     # needed for an account page — the empty-state branch handles it).
     find_button(at, "Account", key="avatar_account_btn").click().run()
     assert not at.exception, f"exception opening Profile: {at.exception}"
-    assert any("Account info" in v for v in vals(at.markdown)), \
+    assert any("Profile information" in v for v in vals(at.markdown)), \
         "avatar menu Account should open the Profile view"
 
     # Back to the top bar, the menu's Sign out logs out.
@@ -263,8 +263,12 @@ def test_avatar_initial_follows_display_name(_tmp_env):
     # Open the Profile view from the avatar menu (no data needed).
     find_button(at, "Account", key="avatar_account_btn").click().run()
     assert not at.exception, f"exception opening Profile: {at.exception}"
-    find_text_input(at, "Display name").set_value("Bob B").run()
-    find_button(at, "Save display name").click().run()
+    # Round 5 split the single "Display name" input into First name
+    # / Last name (Supabase's Preferences layout); Save recombines
+    # them into the display name.
+    find_text_input(at, "First name").set_value("Bob").run()
+    find_text_input(at, "Last name").set_value("B").run()
+    find_button(at, "Save").click().run()
     assert not at.exception, f"exception saving display name: {at.exception}"
     user = at.session_state["current_user"]
     assert user.get("display_name") == "Bob B", \
