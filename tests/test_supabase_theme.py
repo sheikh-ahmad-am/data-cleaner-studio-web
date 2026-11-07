@@ -150,7 +150,7 @@ def test_all_tokens_pinned_both_themes():
     light tokens in theme_css('light'), dark tokens in
     theme_css('dark') — and no dark hex leaks into the light sheet.
     Three light tokens live outside CSS by design and are pinned here
-    instead: #3ecf8e (brand green — logo mark only, in assets/logo.svg),
+    instead: #3ecf8e (brand green — logo mark only, not a CSS rule),
     #16b674 (icon green — dashboard node icons, not a CSS rule) and
     #4d4d4d (body token — the shipped CSS deliberately uses ink #030303
     for body text, so the token is record-only)."""

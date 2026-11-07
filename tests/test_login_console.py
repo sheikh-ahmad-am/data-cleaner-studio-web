@@ -33,7 +33,8 @@ import ui_design  # noqa: E402
 from streamlit.testing.v1 import AppTest  # noqa: E402
 
 APP = str(PROJECT_ROOT / "app.py")
-LOGO = PROJECT_ROOT / "assets" / "logo.svg"
+LOGO = PROJECT_ROOT / "assets" / "logo.png"
+LOGO_DARK = PROJECT_ROOT / "assets" / "logo-dark.png"
 
 _CONSOLE_SELECTORS = (
     ".dcs-console-head",
@@ -95,15 +96,88 @@ def test_console_head_html():
     html = ui_design.console_head_html(LOGO)
     assert 'class="dcs-console-head"' in html
     assert "<h1>Data Cleaner Studio</h1>" in html
-    assert "data:image/svg+xml;base64," in html, \
+    assert "data:image/png;base64," in html, \
         "the logo must be inlined (Streamlit cannot put st.image in a row)"
     assert "width: 40px" in ui_design.theme_css("light") or \
         ".dcs-console-head img" in ui_design.theme_css("light")
     missing = ui_design.console_head_html(
-        PROJECT_ROOT / "assets" / "no-such-logo.svg")
+        PROJECT_ROOT / "assets" / "no-such-logo.png")
     assert "<img" not in missing, "a missing logo must not render an img"
     assert "<h1>Data Cleaner Studio</h1>" in missing
     print("console_head_html OK")
+
+
+def test_logo_assets():
+    """The user's logo is in place everywhere it belongs: the app
+    logo, its dark-theme recolor, the email size and the favicon are
+    valid PNGs with the right sizes, and the old checkmark SVG is
+    gone. The dark recolor is the same mark in #4acd8b (the dark
+    link green) — the dark-green line art would be invisible on the
+    dark surfaces otherwise."""
+    from PIL import Image
+
+    def _dominant(path):
+        im = Image.open(path).convert("RGBA")
+        px = im.load()
+        w, h = im.size
+        counts = {}
+        for y in range(0, h, 4):
+            for x in range(0, w, 4):
+                r, g, b, a = px[x, y]
+                if a > 200:
+                    counts[(r, g, b)] = counts.get((r, g, b), 0) + 1
+        return max(counts.items(), key=lambda kv: kv[1])[0], im.size
+
+    assert not (PROJECT_ROOT / "assets" / "logo.svg").exists(), \
+        "the old checkmark logo.svg must be gone"
+    assert Image.open(LOGO).size == (1024, 1024), \
+        "logo.png must be the user's 1024x1024 mark, as-is"
+    assert Image.open(LOGO_DARK).size == (1024, 1024)
+    assert Image.open(PROJECT_ROOT / "assets" / "logo-email.png").size == \
+        (240, 240), "the email logo must be 240x240"
+    assert Image.open(PROJECT_ROOT / "assets" / "favicon.png").size == \
+        (64, 64), "the favicon must be 64x64"
+    light_green, _ = _dominant(LOGO)
+    assert all(abs(a - b) <= 3 for a, b in zip(light_green, (0, 78, 44))), \
+        f"logo.png must keep the user's dark green, got {light_green}"
+    dark_green, _ = _dominant(LOGO_DARK)
+    assert dark_green == (0x4A, 0xCD, 0x8B), \
+        f"logo-dark.png must be the #4acd8b recolor, got {dark_green}"
+    dark_html = ui_design.console_head_html(LOGO_DARK)
+    assert "data:image/png;base64," in dark_html
+    print("logo assets OK")
+
+
+def _header_logo_bytes(at):
+    """Decode the base64 logo inlined in the console header markdown
+    of an AppTest run (None when the header has no img)."""
+    import base64 as _b64
+    import re as _re
+
+    for v in vals(at.markdown):
+        if 'class="dcs-console-head"' in v:
+            m = _re.search(r"data:image/png;base64,([A-Za-z0-9+/=]+)", v)
+            return _b64.b64decode(m.group(1)) if m else None
+    raise AssertionError("console header markdown missing")
+
+
+def test_login_logo_follows_theme(_tmp_env):
+    """AppTest: the header inlines logo.png on the light theme and
+    logo-dark.png after the theme link flips to dark (byte-identical
+    to the asset files)."""
+    at = AppTest.from_file(APP)
+    at.run()
+    assert not at.exception, f"startup exception: {at.exception}"
+    assert _header_logo_bytes(at) == LOGO.read_bytes(), \
+        "light theme must inline the original logo.png"
+    toggle = find_button(at, "Switch to dark theme",
+                         key="dcs_theme_login_toggle")
+    toggle.click().run()
+    assert not at.exception, f"exception flipping theme: {at.exception}"
+    assert at.session_state.get("dcs_theme") == "dark"
+    assert _header_logo_bytes(at) == LOGO_DARK.read_bytes(), \
+        "dark theme must inline the #4acd8b logo-dark.png"
+    print("login logo follows theme OK")
 
 
 def test_login_screen_console_layout(_tmp_env):
@@ -172,4 +246,5 @@ def test_code_screen_console_layout(_tmp_env):
 if __name__ == "__main__":
     test_console_css_in_both_themes()
     test_console_head_html()
+    test_logo_assets()
     print("login console tests OK (AppTest cases need pytest)")

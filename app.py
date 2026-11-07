@@ -1048,8 +1048,16 @@ if _current_user is None:
     with _console:
         _h_l, _h_r = st.columns([4, 1])
         with _h_l:
+            # The mark is dark-green line art: on the dark theme it
+            # uses the light recolor (assets/logo-dark.png, #4acd8b),
+            # on light the original (assets/logo.png).
+            _logo_name = ("logo-dark.png"
+                          if (st.session_state.get("dcs_theme")
+                              or "light") == "dark"
+                          else "logo.png")
             st.markdown(
-                ui_design.console_head_html(_APP_DIR / "assets" / "logo.svg"),
+                ui_design.console_head_html(
+                    _APP_DIR / "assets" / _logo_name),
                 unsafe_allow_html=True)
         with _h_r:
             # Theme switch for the login screen (no sidebar here): flips

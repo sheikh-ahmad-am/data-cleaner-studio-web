@@ -5,7 +5,8 @@ Pins the professional UI upgrade:
   (b) theme_css("Supabase") carries the palette and no retired colours
   (c) no destructive-labelled button (delete/clear/reset/remove) is primary
   (d) set_page_config carries the page title and a page_icon
-  (e) assets/logo.svg + assets/favicon.png exist, PNG is a valid image
+  (e) assets/logo.png + assets/logo-dark.png + assets/favicon.png exist,
+      PNGs are valid images
   (f) the consolidated stylesheet is injected before the login view
 
 Run: .test-venv-uipolish/bin/python tests/test_ui_polish.py (from root)
@@ -122,14 +123,26 @@ def test_page_config_title_and_icon():
 
 
 def test_logo_and_favicon_assets():
-    """(e) assets/logo.svg + assets/favicon.png exist; PNG is valid."""
+    """(e) assets/logo.png + assets/logo-dark.png + assets/favicon.png
+    exist; the PNGs are valid. The logo is the user's mark (dark-green
+    bars + check, 1024x1024); the dark variant is the same mark in
+    #4acd8b for the dark theme; the old checkmark logo.svg is gone."""
     from PIL import Image
 
-    logo = ROOT / "assets" / "logo.svg"
-    assert logo.is_file(), "assets/logo.svg missing"
-    svg = logo.read_text(encoding="utf-8")
-    assert "<svg" in svg and "#2F5D5A" in svg, "logo is not the teal mark"
-    assert "check" in svg.lower() or "M32 62" in svg, "logo has no check mark"
+    assert not (ROOT / "assets" / "logo.svg").exists(), \
+        "the old checkmark logo.svg must be gone"
+    logo = ROOT / "assets" / "logo.png"
+    assert logo.is_file(), "assets/logo.png missing"
+    with Image.open(logo) as img:
+        img.load()
+        assert img.format == "PNG" and img.mode == "RGBA"
+        assert img.size == (1024, 1024), \
+            f"logo is {img.size}, want the user's 1024x1024 mark"
+    dark = ROOT / "assets" / "logo-dark.png"
+    assert dark.is_file(), "assets/logo-dark.png missing"
+    with Image.open(dark) as img:
+        img.load()
+        assert img.format == "PNG" and img.size == (1024, 1024)
     favicon = ROOT / "assets" / "favicon.png"
     assert favicon.is_file(), "assets/favicon.png missing"
     with Image.open(favicon) as img:

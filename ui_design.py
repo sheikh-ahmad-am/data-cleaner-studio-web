@@ -757,17 +757,20 @@ def render_login_theme_toggle(st_module=None) -> None:
 def console_head_html(logo_path) -> str:
     """Header row for the variant C console login: 40px logo + 22px
     title, left-aligned (``.dcs-console-head``). ``logo_path`` is the
-    ``assets/logo.svg`` path — the current mark is a placeholder until
-    the logo swap, which replaces that one file and nothing else
-    moves. When the file is missing only the title renders, same as
-    the old ``st.image`` guard. The SVG is inlined as base64 because
+    ``assets/logo.png`` path (``assets/logo-dark.png`` when the theme
+    is dark — the mark is dark-green line art, so the dark variant is
+    the same mark recolored to the dark link green ``#4acd8b``). When
+    the file is missing only the title renders, same as the old
+    ``st.image`` guard. The PNG is inlined as base64 because
     Streamlit cannot put an ``st.image`` inside a flex row."""
     _logo = ""
     try:
         _p = Path(logo_path)
         if _p.is_file():
+            _mime = ("image/svg+xml" if _p.suffix == ".svg"
+                     else "image/png")
             _b64 = base64.b64encode(_p.read_bytes()).decode("ascii")
-            _logo = ('<img src="data:image/svg+xml;base64,' + _b64 +
+            _logo = ('<img src="data:' + _mime + ';base64,' + _b64 +
                      '" alt="Data Cleaner Studio logo">')
     except OSError:
         _logo = ""
