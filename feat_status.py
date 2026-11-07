@@ -52,7 +52,7 @@ __all__ = [
 CHANGELOG_ENTRIES = [
     {
         "date": "2026-11-07",
-        "commit": "HASHME",
+        "commit": "c4c862ff487f60528d510e28ad21f816ba423637",
         "title": "Email login code replaces the security check",
         "user_action": ("Nothing — logging in and signing up now ask "
                         "for a 6-digit code sent to your email instead "
