@@ -6,6 +6,7 @@ Status tab ("What's new") — see `feat_status.py`.
 
 | Date | Milestone | What changed for you |
 | --- | --- | --- |
+| 2026-11-07 | Email login code replaces the security check (`HASHME`) | Nothing — logging in and signing up now ask for a 6-digit code sent to your email instead of the old security check. The code expires in 10 minutes; if it does not arrive, use Resend. |
 | 2026-11-06 | Rebuilt on the Supabase design system (`6ce9c8a`) | Nothing — the whole app was restyled (near-white, one green, hairline borders) and works exactly as before. |
 | 2026-11-06 | Profile section added (`fa9aa3f`) | Nothing — open Profile from the sidebar to see your account, change your display name, reset your password, download your data, or delete your account. |
 | 2026-11-06 | Cleaner look: light theme, guided empty states (`845b1fd`) | Nothing — the app is lighter and the empty screens now say what to do next instead of leaving a blank page. |

@@ -133,20 +133,19 @@ switching backends means re-registering.
 > `SUPABASE_SERVICE_ROLE_KEY` environment variable (server-side).
 > If a key ever leaks, roll it in the Supabase dashboard.
 
-**Turnstile security check (optional, Cloudflare):** the login and
-sign-up screens show a Cloudflare Turnstile check when a site key
-is configured, and pass its token to Supabase Auth — so CAPTCHA
-can be switched on in Supabase without breaking logins. Add the
-site key (public — it ships in the page) to the app's Streamlit
-secrets or environment as `TURNSTILE_SITE_KEY` (get it from the
-Cloudflare dashboard: Turnstile → Add Widget, Managed mode, the
-app's hostname). With no key configured the screens behave exactly
-as before: no widget, no token sent, local mode unaffected. The
-**secret** key never goes in the repo or the app's secrets — it
-belongs in the Supabase dashboard only (Authentication → Attack
-Protection → Bot and Abuse Protection), and only AFTER the app
-has the site key: switching CAPTCHA on first would reject logins
-that carry no token.
+**Email login code (Brevo, free 300/day):** every password login —
+and every sign-up — asks for a 6-digit code sent to the user's
+email. The code is the login check and the email verification in
+one, and it replaces the old Cloudflare Turnstile check (removed).
+Set it up in Brevo first (free account, verify a sender address,
+generate a v3 API key), then add the key and sender to the app's
+Streamlit secrets as `BREVO_API_KEY` and `BREVO_SENDER_EMAIL`.
+With no key configured the app refuses password logins with a clear
+setup message — the code check is never bypassed. Google sign-in
+is exempt (Google already verified the email); local mode has no
+email addresses, so the check does not apply there. Codes expire
+after 10 minutes, allow 5 wrong tries, and a new one can be
+requested no sooner than 60 seconds after the last (5 per hour).
 
 ### If the Supabase project ever pauses (free tier)
 

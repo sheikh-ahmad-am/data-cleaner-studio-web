@@ -137,15 +137,14 @@ SUPABASE_URL = "https://YOUR-PROJECT-REF.supabase.co"
 SUPABASE_ANON_KEY = "paste-the-anon-key-here"
 # Only if Supabase-mode file storage is wanted (server-side only):
 SUPABASE_SERVICE_ROLE_KEY = "paste-the-service-role-key-here"
-# Optional: Cloudflare Turnstile site key (PUBLIC) so the login and
-# sign-up screens show the security check. Get it from the Cloudflare
-# dashboard (Turnstile → Add Widget, Managed mode, this app's
-# hostname). The SECRET key never goes here — it belongs in the
-# Supabase dashboard (Authentication → Attack Protection), and only
-# after this site key is set: switching CAPTCHA on first would reject
-# logins that carry no token. Without this line the app works exactly
-# as before, with no check shown.
-# TURNSTILE_SITE_KEY = "paste-the-site-key-here"
+# Email login code (Brevo, free 300/day) — required for password
+# logins: the app sends a 6-digit code to the user's email on every
+# login and sign-up. Get them from the Brevo dashboard (free account,
+# verify a sender address, then SMTP & API → API Keys). Without these
+# lines the app refuses password logins with a setup message — the
+# code check is never bypassed.
+BREVO_API_KEY = "paste-the-brevo-api-key-here"
+BREVO_SENDER_EMAIL = "your-verified-sender@example.com"
 ```
 
    Never put secrets in the repo. Without them the app runs in local mode.

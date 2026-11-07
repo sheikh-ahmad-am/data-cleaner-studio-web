@@ -51,6 +51,16 @@ __all__ = [
 # ---------------------------------------------------------------------------
 CHANGELOG_ENTRIES = [
     {
+        "date": "2026-11-07",
+        "commit": "HASHME",
+        "title": "Email login code replaces the security check",
+        "user_action": ("Nothing — logging in and signing up now ask "
+                        "for a 6-digit code sent to your email instead "
+                        "of the old security check. The code expires "
+                        "in 10 minutes; if it does not arrive, use "
+                        "Resend."),
+    },
+    {
         "date": "2026-11-06",
         "commit": "6ce9c8acec24a78a31b6ae1d0d93a14933f2159f",
         "title": "Rebuilt on the Supabase design system",

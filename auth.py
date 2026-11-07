@@ -83,6 +83,8 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import brevo_email
+
 _PROJECT_ROOT = Path(__file__).resolve().parent
 
 # Repointable (tests point this at temp paths to force local mode).
@@ -132,25 +134,6 @@ class EmailNotConfirmedError(AuthServiceError):
     catches this subclass FIRST and shows the inbox message instead
     of a wrong-password or service error — an unconfirmed email is
     neither.
-    """
-
-
-#: Plain-word message shown when Supabase rejects a login or sign-up
-#: over the security check (Turnstile CAPTCHA). The raw Supabase error
-#: ("captcha verification failed" and friends) must never reach the
-#: user — see _classify_error and CaptchaFailedError below.
-CAPTCHA_FAILED_MESSAGE = ("Security check failed — please complete the "
-                          "check and try again.")
-
-
-class CaptchaFailedError(AuthServiceError):
-    """Supabase rejected the Turnstile security check.
-
-    A subclass of AuthServiceError (so every existing
-    ``except AuthServiceError`` still catches it), raised only when a
-    sign-up or sign-in fails on captcha verification — a spent or
-    missing token, or a failed check. The app catches this subclass
-    FIRST and shows CAPTCHA_FAILED_MESSAGE instead of a raw error.
     """
 
 
@@ -321,6 +304,18 @@ def _local_init_db(conn: sqlite3.Connection) -> None:
             expires_at TEXT NOT NULL
         );
         CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+        CREATE TABLE IF NOT EXISTS email_login_codes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email TEXT NOT NULL,
+            code_hash TEXT NOT NULL,
+            salt TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            attempts INTEGER NOT NULL DEFAULT 0,
+            used INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_login_codes_email
+            ON email_login_codes(email);
         """
     )
     # Profile: display name (added later than the original schema, so
@@ -598,10 +593,6 @@ def _classify_error(exc: Exception, action: str) -> AuthServiceError:
             f"{SETUP_MESSAGE} (failed while {action})."
         )
     msg = str(exc) or type(exc).__name__
-    if "captcha" in msg.lower():
-        # Supabase rejected the Turnstile check (spent/missing token
-        # or a failed verification). Never expose the raw error.
-        return CaptchaFailedError(CAPTCHA_FAILED_MESSAGE)
     if "invalid api key" in msg.lower() or "jwt" in msg.lower():
         return AuthServiceError(
             "Supabase rejected the anon key — check supabase_config.json "
@@ -719,20 +710,13 @@ def _sb_upsert_profile(user_id: str, email: str) -> dict:
     return _sb_user_dict(user_id, email, None)
 
 
-def _sb_create_user(email, password, captcha_token=None) -> tuple[bool, str | None]:
+def _sb_create_user(email, password) -> tuple[bool, str | None]:
     if not isinstance(email, str) or not _EMAIL_RE.match(email):
         return False, "Enter a valid email address."
     if not isinstance(password, str) or len(password) < 8:
         return False, "Password must be at least 8 characters."
     client = _get_client()
-    # The token rides INSIDE the credentials dict, under options.
-    # captcha_token is NotRequired in supabase-py's types: omit
-    # `options` entirely when there is no token (local runs and
-    # deploys without Turnstile configured must send exactly what
-    # they sent before).
     credentials = {"email": email, "password": password}
-    if captcha_token:
-        credentials["options"] = {"captcha_token": captcha_token}
     try:
         resp = client.auth.sign_up(credentials)
     except Exception as exc:  # noqa: BLE001 - classified below
@@ -767,24 +751,19 @@ def _sb_create_user(email, password, captcha_token=None) -> tuple[bool, str | No
     return True, None
 
 
-def _sb_authenticate(email, password, captcha_token=None) -> dict | None:
+def _sb_authenticate(email, password) -> dict | None:
     """Sign in via Supabase Auth.
 
     Returns the user dict on success, None on wrong email/password.
     Raises EmailNotConfirmedError (an AuthServiceError subclass) when
-    the email is not confirmed yet, CaptchaFailedError when the
-    Turnstile check fails, and AuthServiceError if Supabase is
-    unreachable/misconfigured — neither is a wrong password and
+    the email is not confirmed yet, and AuthServiceError if Supabase
+    is unreachable/misconfigured — neither is a wrong password and
     each must be shown as its own message.
     """
     if not isinstance(email, str) or not isinstance(password, str):
         return None
     client = _get_client()
-    # Same shape as sign-up: the token rides in options, omitted
-    # entirely when there is none.
     credentials = {"email": email, "password": password}
-    if captcha_token:
-        credentials["options"] = {"captcha_token": captcha_token}
     try:
         resp = client.auth.sign_in_with_password(credentials)
     except Exception as exc:  # noqa: BLE001 - classified below
@@ -871,7 +850,7 @@ def _sb_get_user_by_id(user_id) -> dict | None:
 # BACKEND-AGNOSTIC PUBLIC API
 # ---------------------------------------------------------------------------
 
-def create_user(username_or_email, password, captcha_token=None) -> tuple[bool, str | None]:
+def create_user(username_or_email, password) -> tuple[bool, str | None]:
     """Sign up. Local mode: identifier is a username (3-30 [a-zA-Z0-9_]).
     Supabase mode: identifier is an email address. Returns (ok, error).
 
@@ -881,30 +860,23 @@ def create_user(username_or_email, password, captcha_token=None) -> tuple[bool, 
     never returns that marker.
 
     Raises AuthServiceError in Supabase mode when the service is
-    unreachable or the tables are not set up yet. Raises
-    CaptchaFailedError when the Turnstile check fails (Supabase mode
-    with CAPTCHA on). `captcha_token` is ignored in local mode, which
-    has no security check.
+    unreachable or the tables are not set up yet.
     """
     if get_auth_backend() == "supabase":
-        return _sb_create_user(username_or_email, password,
-                               captcha_token=captcha_token)
+        return _sb_create_user(username_or_email, password)
     return _local_create_user(username_or_email, password)
 
 
-def authenticate(email_or_username, password, captcha_token=None) -> dict | None:
+def authenticate(email_or_username, password) -> dict | None:
     """Log in. Returns the user dict, or None for wrong credentials.
 
     Raises EmailNotConfirmedError (an AuthServiceError subclass) when
-    the email is registered but not confirmed yet, CaptchaFailedError
-    when the Turnstile check fails, and AuthServiceError when the
-    Supabase backend is configured but unreachable — the app must
-    show each as its own message, not as a wrong-password message.
-    `captcha_token` is ignored in local mode.
+    the email is registered but not confirmed yet, and AuthServiceError
+    when the Supabase backend is configured but unreachable — the app
+    must show each as its own message, not as a wrong-password message.
     """
     if get_auth_backend() == "supabase":
-        return _sb_authenticate(email_or_username, password,
-                                captcha_token=captcha_token)
+        return _sb_authenticate(email_or_username, password)
     return _local_authenticate(email_or_username, password)
 
 
@@ -944,6 +916,267 @@ def get_user_by_id(user_id) -> dict | None:
     if get_auth_backend() == "supabase":
         return _sb_get_user_by_id(user_id)
     return _local_get_user_by_id(user_id)
+
+
+# ---------------------------------------------------------------------------
+# Email login codes (6-digit, Brevo) — every cloud password login
+# ---------------------------------------------------------------------------
+
+#: A login code lives 10 minutes, allows 5 wrong tries, and a new one
+#: can be requested no sooner than 60 seconds after the last; at most
+#: 5 codes per email per hour. Only a salted SHA-256 hash is ever
+#: stored — the plain code exists only in memory and in the email
+#: itself, and is never logged.
+CODE_TTL = timedelta(minutes=10)
+CODE_MAX_ATTEMPTS = 5
+CODE_RESEND_COOLDOWN = timedelta(seconds=60)
+CODE_HOURLY_CAP = 5
+
+#: Shown when Brevo is not configured (no key or sender). The login
+#: is refused outright — the code check is never bypassed.
+BREVO_SETUP_MESSAGE = ("Email verification isn't set up yet — add your "
+                       "Brevo API key in Streamlit secrets.")
+
+
+def email_code_required() -> bool:
+    """True when a password login must pass the email-code step.
+
+    Cloud (Supabase) mode only: local accounts are usernames, not
+    email addresses, so no code can be delivered there — local mode
+    is a single-machine dev fallback and the check does not apply.
+    Every cloud password login requires the code, confirmed users
+    included. Google OAuth is exempt (Google already verified the
+    email) and never calls this.
+    """
+    return get_auth_backend() == "supabase"
+
+
+def generate_login_code() -> str:
+    """One random 6-digit code (100000-999999), from `secrets`."""
+    return f"{secrets.randbelow(900000) + 100000:06d}"
+
+
+def _hash_login_code(code: str, salt: str) -> str:
+    """SHA-256 hex of salt + code. The salt is a per-code random hex
+    string; the plain code is never stored or logged."""
+    return hashlib.sha256((salt + code).encode("utf-8")).hexdigest()
+
+
+def request_login_code(email) -> tuple[bool, str]:
+    """Generate a code, store only its salted hash, and email it.
+
+    Returns (True, "ok") when the code was sent, else (False, status)
+    where status is "not_configured" (Brevo key/sender missing),
+    "too_soon" (a code was requested <60s ago), "hourly_limit" (5
+    codes in the last hour) or "send_failed" (Brevo rejected the send
+    — the stored code is invalidated so the user can retry at once).
+    Raises AuthServiceError when the code store is unreachable, and
+    ValueError for an empty identifier. The plain code is never
+    stored or logged.
+    """
+    if not isinstance(email, str) or not email.strip():
+        raise ValueError("request_login_code needs a non-empty email")
+    email = email.strip().lower()
+    if brevo_email.get_brevo_config() is None:
+        return False, "not_configured"
+    code = generate_login_code()
+    salt = secrets.token_hex(16)
+    code_hash = _hash_login_code(code, salt)
+    status = _store_login_code(email, code_hash, salt, _utcnow() + CODE_TTL)
+    if status != "ok":
+        return False, status
+    try:
+        brevo_email.send_login_code(email, code)
+    except brevo_email.BrevoNotConfiguredError:
+        _invalidate_login_code(email)
+        return False, "not_configured"
+    except brevo_email.BrevoSendError:
+        _invalidate_login_code(email)
+        return False, "send_failed"
+    return True, "ok"
+
+
+def verify_login_code(email, code) -> tuple[bool, str]:
+    """Check a code. Returns (True, "ok") or (False, status) where
+    status is "wrong", "expired", "too_many" or "not_found". Wrong
+    tries are counted server-side; 5 wrong tries invalidates the
+    code. Never raises for a bad code — only AuthServiceError when
+    the store is unreachable."""
+    if not isinstance(email, str) or not email.strip():
+        return False, "not_found"
+    if not isinstance(code, str) or not code.strip():
+        return False, "wrong"
+    email = email.strip().lower()
+    code = code.strip().replace(" ", "")
+    if get_auth_backend() == "supabase":
+        return _sb_verify_login_code(email, code)
+    return _local_verify_login_code(email, code)
+
+
+def _store_login_code(email, code_hash, salt, expires_at) -> str:
+    """Store a code hash; returns "ok", "too_soon" or "hourly_limit"."""
+    if get_auth_backend() == "supabase":
+        return _sb_store_login_code(email, code_hash, salt, expires_at)
+    return _local_store_login_code(email, code_hash, salt, expires_at)
+
+
+def _invalidate_login_code(email) -> None:
+    """Mark any active code for the email used (a send that failed).
+    Best-effort: a failed invalidation only means the code stays
+    usable until expiry."""
+    try:
+        if get_auth_backend() == "supabase":
+            _sb_rpc("app_invalidate_login_code", {"p_email": email},
+                    "invalidating the login code")
+        else:
+            _local_invalidate_login_code(email)
+    except Exception:  # noqa: BLE001 - invalidation must never break login
+        pass
+
+
+def _sb_store_login_code(email, code_hash, salt, expires_at) -> str:
+    data = _sb_rpc(
+        "app_request_login_code",
+        {"p_email": email, "p_code_hash": code_hash, "p_salt": salt,
+         "p_expires_at": _iso(expires_at)},
+        "requesting the login code",
+    )
+    if isinstance(data, str) and data in ("ok", "too_soon", "hourly_limit"):
+        return data
+    raise AuthServiceError(
+        "Supabase answered the code request with an unexpected result."
+    )
+
+
+def _sb_verify_login_code(email, code) -> tuple[bool, str]:
+    data = _sb_rpc(
+        "app_verify_login_code",
+        {"p_email": email, "p_code": code},
+        "checking the login code",
+    )
+    if isinstance(data, str) and data in (
+            "ok", "wrong", "expired", "too_many", "not_found"):
+        return data == "ok", data
+    raise AuthServiceError(
+        "Supabase answered the code check with an unexpected result."
+    )
+
+
+def _local_store_login_code(email, code_hash, salt, expires_at) -> str:
+    now = _utcnow()
+    try:
+        conn = _local_ensure_db()
+        try:
+            # Cooldown: only an ACTIVE code imposes one. A used row
+            # (consumed by a successful login, or invalidated after
+            # a failed Brevo send) must not block the next request —
+            # a failed send retries at once.
+            last = conn.execute(
+                "SELECT created_at FROM email_login_codes WHERE email = ?"
+                " AND used = 0 ORDER BY created_at DESC LIMIT 1",
+                (email,),
+            ).fetchone()
+            if last is not None:
+                last_created = _parse_iso(last["created_at"])
+                if (last_created is not None
+                        and now - last_created < CODE_RESEND_COOLDOWN):
+                    return "too_soon"
+            hour_ago = _iso(now - timedelta(hours=1))
+            count = conn.execute(
+                "SELECT COUNT(*) FROM email_login_codes"
+                " WHERE email = ? AND created_at >= ?",
+                (email, hour_ago),
+            ).fetchone()[0]
+            if count >= CODE_HOURLY_CAP:
+                return "hourly_limit"
+            conn.execute(
+                "UPDATE email_login_codes SET used = 1"
+                " WHERE email = ? AND used = 0",
+                (email,),
+            )
+            conn.execute(
+                "INSERT INTO email_login_codes"
+                " (email, code_hash, salt, expires_at, attempts, used,"
+                " created_at) VALUES (?, ?, ?, ?, 0, 0, ?)",
+                (email, code_hash, salt, _iso(expires_at), _iso(now)),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    except sqlite3.Error as exc:
+        raise AuthServiceError(
+            "Could not store the login code (database error)."
+        ) from exc
+    return "ok"
+
+
+def _local_verify_login_code(email, code) -> tuple[bool, str]:
+    now = _utcnow()
+    try:
+        conn = _local_ensure_db()
+        try:
+            row = conn.execute(
+                "SELECT id, code_hash, salt, expires_at, attempts"
+                " FROM email_login_codes WHERE email = ? AND used = 0"
+                " ORDER BY created_at DESC LIMIT 1",
+                (email,),
+            ).fetchone()
+            if row is None:
+                return False, "not_found"
+            expires = _parse_iso(row["expires_at"])
+            if expires is None or expires <= now:
+                conn.execute(
+                    "UPDATE email_login_codes SET used = 1 WHERE id = ?",
+                    (row["id"],))
+                conn.commit()
+                return False, "expired"
+            if row["attempts"] >= CODE_MAX_ATTEMPTS:
+                conn.execute(
+                    "UPDATE email_login_codes SET used = 1 WHERE id = ?",
+                    (row["id"],))
+                conn.commit()
+                return False, "too_many"
+            if secrets.compare_digest(
+                    _hash_login_code(code, row["salt"]), row["code_hash"]):
+                conn.execute(
+                    "UPDATE email_login_codes SET used = 1 WHERE id = ?",
+                    (row["id"],))
+                conn.commit()
+                return True, "ok"
+            attempts = row["attempts"] + 1
+            if attempts >= CODE_MAX_ATTEMPTS:
+                conn.execute(
+                    "UPDATE email_login_codes SET used = 1, attempts = ?"
+                    " WHERE id = ?",
+                    (attempts, row["id"]))
+                conn.commit()
+                return False, "too_many"
+            conn.execute(
+                "UPDATE email_login_codes SET attempts = ? WHERE id = ?",
+                (attempts, row["id"]))
+            conn.commit()
+            return False, "wrong"
+        finally:
+            conn.close()
+    except sqlite3.Error as exc:
+        raise AuthServiceError(
+            "Could not check the login code (database error)."
+        ) from exc
+
+
+def _local_invalidate_login_code(email) -> None:
+    try:
+        conn = _local_ensure_db()
+        try:
+            conn.execute(
+                "UPDATE email_login_codes SET used = 1"
+                " WHERE email = ? AND used = 0",
+                (email,))
+            conn.commit()
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        pass
 
 
 # ---------------------------------------------------------------------------

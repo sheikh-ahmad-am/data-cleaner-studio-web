@@ -393,9 +393,6 @@ div[data-testid="stRadio"] div[role="radiogroup"] label:focus-within {
 .stApp input:focus, .stApp textarea:focus, .stApp select:focus {
   outline: none;
   box-shadow: 0 0 0 2px #fdfdfd, 0 0 0 6px #30ba798c; }
-/* ---- Turnstile container area: etched like any other panel ---- */
-div[data-testid="stCustomComponentV1"] { background-color: #ffffff;
-  border: 1px solid #e8e8e8; border-radius: 12px; }
 /* ---- empty state: centred, calm, guided ---- */
 .dcs-empty { text-align: center; padding: 2.5rem 1rem;
   background-color: #ffffff; border: 1px solid #e8e8e8;
@@ -421,8 +418,6 @@ div[data-testid="stCustomComponentV1"] { background-color: #ffffff;
 #   * the focus-ring gap is the dark surface #1b1d1c, not #fdfdfd, so
 #     the 2px gap still reads; the halo stays #30ba798c in both themes.
 #   * code blocks stay panel-dark (#232625 / #262928), never pure black.
-#   * the Turnstile iframe itself is untouched (its internals are not
-#     ours); only its container area gets the dark panel treatment.
 #   * Streamlit's native dropdown menus render in a baseweb portal, so
 #     the dark menu rules at the end are best-effort — the native theme
 #     in .streamlit/config.toml stays light (first-paint base only).
@@ -633,9 +628,6 @@ div[data-testid="stRadio"] div[role="radiogroup"] label:focus-within {
 .stApp input:focus, .stApp textarea:focus, .stApp select:focus {
   outline: none;
   box-shadow: 0 0 0 2px #1b1d1c, 0 0 0 6px #30ba798c; }
-/* ---- Turnstile container area: dark panel, iframe internals untouched ---- */
-div[data-testid="stCustomComponentV1"] { background-color: #232625;
-  border: 1px solid #2e2e2e; border-radius: 12px; }
 /* ---- native dropdown menus (baseweb portal): best-effort dark ---- */
 div[data-baseweb="popover"] { background-color: #232625; }
 div[data-baseweb="menu"] li[role="option"] { color: #edefee; }

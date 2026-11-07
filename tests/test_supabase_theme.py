@@ -242,8 +242,7 @@ def test_motion_and_focus_ring_both_themes():
 
 def test_dark_stylesheet_covers_surfaces():
     """The dark stylesheet restyles every surface the light one does:
-    sidebar, topbar, tables, KPI tiles, pills, code blocks, alerts and
-    the Turnstile container area (its iframe internals untouched)."""
+    sidebar, topbar, tables, KPI tiles, pills, code blocks and alerts."""
     dark = ui_design.theme_css("dark")
     for selector in ('section[data-testid="stSidebar"]', ".dcs-topbar",
                      'div[data-testid="stDataFrame"]', ".dcs-kpi",
@@ -251,7 +250,6 @@ def test_dark_stylesheet_covers_surfaces():
                      ".dcs-pill-grey", ".dcs-pill-danger",
                      'div[data-testid="stCodeBlock"]',
                      'div[data-testid="stAlert"]',
-                     'div[data-testid="stCustomComponentV1"]',
                      ".dcs-empty", ".dcs-storage"):
         assert selector in dark, f"dark CSS missing {selector}"
     print("dark stylesheet covers all surfaces OK")

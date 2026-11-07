@@ -89,7 +89,6 @@ import feat_status
 import feat_tutorial
 import scheduler
 import storage
-import turnstile_component
 import ui_design
 import ui_loading
 
@@ -314,9 +313,6 @@ div[data-testid="stRadio"] div[role="radiogroup"] label:focus-within {
 .stApp input:focus, .stApp textarea:focus, .stApp select:focus {
   outline: none;
   box-shadow: 0 0 0 2px #fdfdfd, 0 0 0 6px #30ba798c; }
-/* ---- Turnstile container area: etched like any other panel ---- */
-div[data-testid="stCustomComponentV1"] { background-color: #ffffff;
-  border: 1px solid #e8e8e8; border-radius: 12px; }
 /* ---- empty state: centred, calm, guided ---- */
 .dcs-empty { text-align: center; padding: 2.5rem 1rem;
   background-color: #ffffff; border: 1px solid #e8e8e8;
@@ -491,6 +487,7 @@ def _apply_user_paths(user: dict, skey: str) -> dict:
 for key, default in [
     ("auth_token", None), ("current_user", None), ("storage_key", None),
     ("user_paths", None), ("auth_mode", "Log in"),
+    ("pending_code", None),
 ]:
     if key not in st.session_state:
         st.session_state[key] = default
@@ -645,7 +642,7 @@ def _do_logout():
         pass
     _cookie_clear(_AUTH_COOKIE)
     for _k in ("auth_token", "current_user", "storage_key", "user_paths",
-               "raw", "clean", "actions", "kpis"):
+               "raw", "clean", "actions", "kpis", "pending_code"):
         st.session_state[_k] = None
     # The Account radio ("Log in" / "Sign up") sticks on "Sign up"
     # after a sign-up: without this, logging out lands the user on the
@@ -804,24 +801,6 @@ def _google_oauth_enabled() -> bool:
     return raw in ("true", "True", "1")
 
 
-def _turnstile_site_key() -> str | None:
-    """The Cloudflare Turnstile site key, or None when the check is off.
-
-    Delegates to turnstile_component.get_site_key(): Streamlit secret
-    TURNSTILE_SITE_KEY first, then the environment — the same shape
-    as _google_oauth_enabled above. The key is public by design (it
-    ships in the page); the secret key never lives here — it belongs
-    in the Supabase dashboard (Authentication -> Attack Protection)
-    and only matters once CAPTCHA is switched on there. Until a key
-    is configured the login screen behaves exactly as before, with
-    no widget and no token sent.
-    """
-    try:
-        return turnstile_component.get_site_key()
-    except Exception:  # noqa: BLE001 - no key, no widget
-        return None
-
-
 def _consume_oauth_callback() -> None:
     """Consume an OAuth redirect (?code=...) once, if one ever arrives.
 
@@ -911,6 +890,106 @@ if st.session_state.get("auth_token"):
 if _current_user is not None:
     _ensure_login_cookie()
 
+
+def _start_code_step(email, user, purpose):
+    """Request the 6-digit login code and park the pending login.
+
+    Called after the password passed (log in) or after the account
+    was created and signed in (sign up). On success the pending
+    login is stored in session state and the run reruns onto the
+    code screen — no session exists yet. On failure the error is
+    shown and nothing is parked (this function returns False; the
+    success path never returns, it reruns).
+    """
+    try:
+        _ok, _status = auth.request_login_code(email)
+    except AuthServiceError as exc:
+        st.error(f"Account service error: {exc}")
+        return False
+    if not _ok:
+        if _status == "not_configured":
+            st.error(auth.BREVO_SETUP_MESSAGE)
+        elif _status == "too_soon":
+            st.error("A code was just sent — wait a minute before "
+                     "requesting a new one.")
+        elif _status == "hourly_limit":
+            st.error("Too many codes requested — try again in an hour.")
+        else:
+            st.error("Could not send the login code — try again in a moment.")
+        return False
+    st.session_state["pending_code"] = {
+        "email": email, "user": user, "purpose": purpose,
+    }
+    st.rerun()
+
+
+def _code_step_ui(pending):
+    """The 6-digit email-code screen (password already passed).
+
+    `pending` is {"email", "user", "purpose"} from _start_code_step.
+    A correct code logs the user in through _log_user_in — the same
+    session path as a direct login — and reruns; anything else stays
+    on this screen with a clear error. No session exists yet at this
+    point: the code is the last gate before one is created.
+    """
+    _email = pending.get("email", "")
+    _user = pending.get("user") or {}
+    st.title("Check your email")
+    st.write(f"We sent a 6-digit code to **{_email}**. Enter it below "
+             "to finish signing in — it expires in 10 minutes.")
+    _code = st.text_input("6-digit code", key="email_code_input",
+                          max_chars=6,
+                          help="The 6 numbers from the email we just sent.")
+    if st.button("Verify code", key="email_code_verify_btn", type="primary"):
+        _typed = (_code or "").strip().replace(" ", "")
+        if not _typed:
+            st.error("Enter the 6-digit code from the email.")
+        else:
+            try:
+                _ok, _status = auth.verify_login_code(_email, _typed)
+            except AuthServiceError as exc:
+                st.error(f"Account service error: {exc}")
+                _ok, _status = False, None
+            if _ok:
+                if pending.get("purpose") == "signup":
+                    st.session_state["just_signed_up"] = True
+                st.session_state["pending_code"] = None
+                if _log_user_in(_user):
+                    st.rerun()
+            elif _status == "wrong":
+                st.error("Wrong code — try again.")
+            elif _status == "expired":
+                st.error("That code expired — request a new one below.")
+            elif _status == "too_many":
+                st.error("Too many wrong tries — that code no longer works. "
+                         "Request a new one below.")
+            elif _status == "not_found":
+                st.error("No active code for this email — request a new "
+                         "one below.")
+            else:
+                st.error("Could not check the code — try again.")
+    if st.button("Resend code", key="email_code_resend_btn"):
+        try:
+            _ok, _status = auth.request_login_code(_email)
+        except AuthServiceError as exc:
+            st.error(f"Account service error: {exc}")
+            _ok, _status = False, None
+        if _ok:
+            st.success(f"A new code is on its way to {_email}.")
+        elif _status == "too_soon":
+            st.error("A code was just sent — wait a minute before "
+                     "requesting a new one.")
+        elif _status == "hourly_limit":
+            st.error("Too many codes requested — try again in an hour.")
+        elif _status == "not_configured":
+            st.error(auth.BREVO_SETUP_MESSAGE)
+        else:
+            st.error("Could not send a new code — try again in a moment.")
+    if st.button("Back to login", key="email_code_cancel_btn"):
+        st.session_state["pending_code"] = None
+        st.rerun()
+
+
 if _current_user is None:
     if not _cookie_read_resolved() and not st.session_state.get("_cookie_wait_done"):
         # The cookie read has not resolved yet (no request cookies
@@ -954,6 +1033,11 @@ if _current_user is None:
             st.caption("Cloud accounts are active.")
         if st.session_state.get("google_error"):
             st.error(st.session_state.pop("google_error"))
+        # Email-code step: the password already passed and a code is
+        # waiting — show only the code screen, not the login form.
+        if st.session_state.get("pending_code") is not None:
+            _code_step_ui(st.session_state["pending_code"])
+            st.stop()
         mode = st.radio("Account", ["Log in", "Sign up"], key="auth_mode",
                         horizontal=True)
         id_label = "Email" if backend != "local" else "Username"
@@ -963,39 +1047,15 @@ if _current_user is None:
         password = st.text_input("Password", type="password",
                                  key="auth_pw_input",
                                  help="At least 8 characters.")
-        # Turnstile security check (cloud mode + key configured only; local
-        # mode has no check). One widget serves both Log in and Sign up:
-        # it sits above the buttons, and its token rides to Supabase with
-        # the submit. Tokens are single-use, so after every attempt the
-        # counter below remounts the widget for a fresh token.
-        _turnstile_key = _turnstile_site_key() if backend != "local" else None
-        _turnstile_token = None
-        if _turnstile_key:
-            if "turnstile_counter" not in st.session_state:
-                st.session_state["turnstile_counter"] = 0
-            _turnstile_token = turnstile_component.turnstile_token(
-                _turnstile_key,
-                key=f"turnstile-{st.session_state['turnstile_counter']}",
-                reset=st.session_state["turnstile_counter"],
-                # The widget follows the app theme (dcs_theme, "light"
-                # by default): a light-only widget would show as a
-                # white box on the dark page.
-                theme=st.session_state.get("dcs_theme") or "light",
-            )
         if mode == "Log in":
             if st.button("Log in", key="auth_login_btn", type="primary"):
                 if not ident.strip() or not password:
                     st.error("Enter your email/username and password.")
-                elif _turnstile_key and not _turnstile_token:
-                    st.error("Complete the security check above first.")
                 else:
                     _unconfirmed = False
-                    _captcha_failed = False
                     with st.spinner("Logging you in…"):
                         try:
-                            user = auth.authenticate(
-                                ident.strip(), password,
-                                captcha_token=_turnstile_token)
+                            user = auth.authenticate(ident.strip(), password)
                         except auth.EmailNotConfirmedError:
                             # Registered but the email is not confirmed yet:
                             # neither a wrong password nor a service error.
@@ -1003,21 +1063,16 @@ if _current_user is None:
                                      "link first, then log in.")
                             user = None
                             _unconfirmed = True
-                        except auth.CaptchaFailedError:
-                            st.error(auth.CAPTCHA_FAILED_MESSAGE)
-                            user = None
-                            _captcha_failed = True
                         except AuthServiceError as exc:
                             st.error(f"Account service error: {exc}")
                             user = None
-                    # The token is spent now (single-use): the next
-                    # attempt gets a fresh widget.
-                    if _turnstile_key:
-                        st.session_state["turnstile_counter"] = (
-                            st.session_state.get("turnstile_counter", 0) + 1)
                     if user is None:
-                        if not _unconfirmed and not _captcha_failed:
+                        if not _unconfirmed:
                             st.error("Wrong email/username or password. Try again.")
+                    elif auth.email_code_required():
+                        # Cloud accounts: the 6-digit email code is the
+                        # last gate — no session exists until it passes.
+                        _start_code_step(ident.strip(), user, "login")
                     elif _log_user_in(user):
                         st.rerun()
         else:
@@ -1025,76 +1080,50 @@ if _current_user is None:
                 if not ident.strip() or not password:
                     st.error("Enter an email/username and a password "
                              "(at least 8 characters).")
-                elif _turnstile_key and not _turnstile_token:
-                    st.error("Complete the security check above first.")
                 else:
-                    _captcha_failed = False
                     with st.spinner("Creating your account…"):
                         try:
-                            ok, error = auth.create_user(
-                                ident.strip(), password,
-                                captcha_token=_turnstile_token)
-                        except auth.CaptchaFailedError:
-                            st.error(auth.CAPTCHA_FAILED_MESSAGE)
-                            ok, error = False, None
-                            _captcha_failed = True
+                            ok, error = auth.create_user(ident.strip(), password)
                         except AuthServiceError as exc:
                             st.error(f"Account service error: {exc}")
                             ok, error = False, None
-                    # The token is spent now (single-use): the next
-                    # attempt gets a fresh widget.
-                    if _turnstile_key:
-                        st.session_state["turnstile_counter"] = (
-                            st.session_state.get("turnstile_counter", 0) + 1)
                     if not ok:
-                        if not _captcha_failed:
-                            st.error(error or "Could not create the account.")
+                        st.error(error or "Could not create the account.")
                     elif error == auth.SIGNUP_NEEDS_CONFIRMATION:
                         # The account exists but the email is not confirmed
                         # yet ("Confirm email" is on): no auto-login and no
                         # session cookie — the user must click the link in
-                        # their inbox first.
+                        # their inbox first. (The merge gate switches
+                        # "Confirm email" off, so this branch should not
+                        # fire on the live app.)
                         st.success(f"Account created for {ident} — check "
                                    "your inbox and click the verification "
                                    "link first, then log in here.")
                     else:
                         # Confirmed account (or local mode, which has no
-                        # confirmation step): log the new user straight in,
-                        # on the same session path the Log in button uses.
-                        # If that ever fails, fall back to the old
-                        # "switch to Log in" message.
+                        # confirmation step): sign in, then the email
+                        # code — the code is both the verification and
+                        # the login check. If the sign-in fails, fall
+                        # back to the old "switch to Log in" message.
                         _unconfirmed = False
-                        _captcha_spent = False
                         with st.spinner("Logging you in…"):
                             try:
-                                # Same token as the sign-up call: with
-                                # CAPTCHA still off in Supabase it is
-                                # ignored and the login succeeds; with
-                                # CAPTCHA on it is spent (single-use) and
-                                # the login asks for a fresh check instead
-                                # — the account already exists, so the
-                                # user just logs in with a new check.
-                                user = auth.authenticate(
-                                    ident.strip(), password,
-                                    captcha_token=_turnstile_token)
+                                user = auth.authenticate(ident.strip(), password)
                             except auth.EmailNotConfirmedError:
                                 user = None
                                 _unconfirmed = True
-                            except auth.CaptchaFailedError:
-                                user = None
-                                _captcha_spent = True
                             except AuthServiceError:
                                 user = None
-                        if user is not None and _log_user_in(user):
-                            st.session_state["just_signed_up"] = True
-                            st.rerun()
+                        if user is not None:
+                            if auth.email_code_required():
+                                _start_code_step(ident.strip(), user, "signup")
+                            elif _log_user_in(user):
+                                st.session_state["just_signed_up"] = True
+                                st.rerun()
                         elif _unconfirmed:
                             st.success(f"Account created for {ident} — check "
                                        "your inbox and click the verification "
                                        "link first, then log in here.")
-                        elif _captcha_spent:
-                            st.success(f"Account created — log in with your "
-                                       f"new account. ({ident})")
                         else:
                             st.success(f"Account created — switch to 'Log in' "
                                        f"above and log in as {ident}.")

@@ -385,5 +385,5 @@ def test_sql_setup_has_new_profile_functions():
                "app_delete_account_data(uuid)"):
         assert f"grant execute on function public.{fn} to anon, authenticated" in lowered
         assert f"revoke execute on function public.{fn} from public" in lowered
-    assert "8 security definer functions" in lowered
+    assert "11 security definer functions" in lowered
     assert "service_role" not in lowered, "SQL must not mention service_role"
