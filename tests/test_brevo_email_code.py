@@ -546,6 +546,66 @@ def test_brevo_client_payload():
     print("Brevo client payload OK")
 
 
+def test_login_code_email_carries_site_design():
+    """The v2 login-code email (approved 2026-11-07): minimal,
+    Supabase-email style — logo, welcome line, the code plain and
+    large in the one green, one expiry line, one security line, tiny
+    footer with a hairline. No card, no code box. The plain-text
+    fallback matches. The logo is assets/logo-email.png (240x240,
+    rendered from the user's logo) via the public raw URL."""
+    payload = brevo_email.build_login_code_email(
+        "sender@example.com", "user@example.com", "123456")
+    assert payload["subject"] == "Your Data Cleaner Studio login code"
+    html = payload["htmlContent"]
+    text = payload["textContent"]
+    # Logo: the public raw URL, alt text for blocked images.
+    assert brevo_email.LOGO_EMAIL_URL in html
+    assert brevo_email.LOGO_EMAIL_URL == (
+        "https://raw.githubusercontent.com/sheikh-ahmad-am/"
+        "data-cleaner-studio-web/main/assets/logo-email.png")
+    assert 'alt="Data Cleaner Studio"' in html
+    # Welcome line + code + theme tokens + tagline.
+    welcome = ("Welcome to Data Cleaner Studio — here's your code "
+               "to finish signing in.")
+    assert welcome in html and welcome in text
+    assert "123456" in html and "123456" in text
+    for token in ("#fdfdfd", "#117f50", "#e8e8e8", "#030303",
+                  "#696969", "#4d4d4d"):
+        assert token in html, f"theme token {token} missing from the email"
+    assert "letter-spacing: 8px" in html, "code must be letter-spaced"
+    assert "font-size: 32px" in html, "code must be large"
+    assert "monospace" in html, "code must be monospace"
+    tagline = ("Put in a messy file. Get the cleaned file back, with "
+               "its KPIs, charts and a one-page report.")
+    assert tagline in html and tagline in text
+    assert "It expires in 10 minutes." in html
+    assert "It expires in 10 minutes." in text
+    assert "If you didn't ask for this code, ignore this email." in html
+    assert "If you didn't ask for this code, ignore this email." in text
+    # v2 has NO card and NO code box (v1 had both).
+    assert "border-radius: 12px" not in html, \
+        "v2 must not have the v1 card"
+    assert "border: 1px solid #117f50" not in html, \
+        "v2 must not box the code in a green border"
+    # The logo file itself: a valid 240x240 PNG rendered from the
+    # user's mark (dark green #004E2C ink, same as assets/logo.png).
+    from PIL import Image
+    logo = Image.open(PROJECT_ROOT / "assets" / "logo-email.png")
+    assert logo.size == (240, 240), "the email logo must be 240x240"
+    assert logo.mode == "RGBA"
+    px = logo.convert("RGBA").load()
+    counts = {}
+    for y in range(0, 240, 2):
+        for x in range(0, 240, 2):
+            r, g, b, a = px[x, y]
+            if a > 200:
+                counts[(r, g, b)] = counts.get((r, g, b), 0) + 1
+    dominant = max(counts.items(), key=lambda kv: kv[1])[0]
+    assert all(abs(a - b) <= 3 for a, b in zip(dominant, (0, 78, 44))), \
+        f"the email logo must carry the user's dark green, got {dominant}"
+    print("login-code email v2 design OK")
+
+
 def test_brevo_missing_blocks_login():
     """With Brevo unconfigured: get_brevo_config() is None,
     request_login_code refuses with 'not_configured', the setup
@@ -789,6 +849,7 @@ def main():
     test_hourly_cap_enforced()
     test_send_failure_invalidates_code()
     test_brevo_client_payload()
+    test_login_code_email_carries_site_design()
     test_brevo_missing_blocks_login()
     test_supabase_mode_code_flow_via_fake_rpc()
     test_turnstile_fully_gone()

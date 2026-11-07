@@ -24,6 +24,13 @@ import httpx
 
 BREVO_API_URL = "https://api.brevo.com/v3/smtp/email"
 
+# The logo in the email: assets/logo-email.png (240x240, rendered
+# from the user's logo) served from the public repo raw URL, with alt
+# text for blocked images. The file must be on main for the URL to
+# resolve — the email merge always follows the logo merge.
+LOGO_EMAIL_URL = ("https://raw.githubusercontent.com/sheikh-ahmad-am/"
+                  "data-cleaner-studio-web/main/assets/logo-email.png")
+
 
 class BrevoNotConfiguredError(Exception):
     """BREVO_API_KEY or BREVO_SENDER_EMAIL is missing."""
@@ -55,23 +62,59 @@ def get_brevo_config() -> tuple[str, str] | None:
 
 
 def build_login_code_email(sender: str, recipient: str, code: str) -> dict:
-    """The Brevo API payload for one login-code email."""
+    """The Brevo API payload for one login-code email.
+
+    v2 design (approved 2026-11-07): minimal, Supabase-email style —
+    no card, no code box. The logo, the welcome line, the code plain
+    and large (monospace, letter-spaced, the one green #117f50), one
+    expiry line, one security line, a tiny footer with a hairline.
+    Same near-white page (#fdfdfd) and Inter + system fallback as
+    the site. The code stays plain text (not an image), so it renders
+    even where images are blocked."""
     subject = "Your Data Cleaner Studio login code"
     text = (
-        f"Your Data Cleaner Studio login code is: {code}\n\n"
-        "It expires in 10 minutes. Enter it on the login screen to "
-        "finish signing in.\n\n"
-        "If you didn't request this code, ignore this email — no one "
-        "can sign in without it.\n"
+        "Welcome to Data Cleaner Studio — here's your code to finish "
+        "signing in.\n\n"
+        f"Your login code is: {code}\n\n"
+        "It expires in 10 minutes.\n\n"
+        "If you didn't ask for this code, ignore this email.\n\n"
+        "—\n"
+        "Data Cleaner Studio\n"
+        "Put in a messy file. Get the cleaned file back, with its "
+        "KPIs, charts and a one-page report.\n"
     )
     html = (
-        "<p>Your Data Cleaner Studio login code is:</p>"
-        f"<p style=\"font-size: 28px; font-weight: bold; "
-        f"letter-spacing: 4px;\">{code}</p>"
-        "<p>It expires in 10 minutes. Enter it on the login screen to "
-        "finish signing in.</p>"
-        "<p>If you didn't request this code, ignore this email — no one "
-        "can sign in without it.</p>"
+        "<!DOCTYPE html><html><head><meta charset=\"utf-8\">"
+        "<meta name=\"viewport\" content=\"width=device-width, "
+        "initial-scale=1\"></head>"
+        "<body style=\"margin: 0; padding: 0; background-color: #fdfdfd; "
+        "font-family: Inter, -apple-system, 'Segoe UI', Roboto, "
+        "Helvetica, Arial, sans-serif;\">"
+        "<div style=\"max-width: 480px; margin: 0 auto; "
+        "text-align: center; padding: 32px 16px;\">"
+        f"<img src=\"{LOGO_EMAIL_URL}\" width=\"120\" height=\"120\" "
+        "alt=\"Data Cleaner Studio\" "
+        "style=\"display: block; margin: 0 auto 16px; border: 0;\">"
+        "<div style=\"font-size: 22px; font-weight: 600; "
+        "color: #030303;\">Data Cleaner Studio</div>"
+        "<p style=\"font-size: 15px; line-height: 1.6; color: #4d4d4d; "
+        "margin: 12px 0 0;\">Welcome to Data Cleaner Studio — here's "
+        "your code to finish signing in.</p>"
+        "<div style=\"font-family: ui-monospace, 'SF Mono', Menlo, "
+        "Consolas, monospace; font-size: 32px; font-weight: 700; "
+        "letter-spacing: 8px; color: #117f50; margin-top: 24px;\">"
+        f"{code}</div>"
+        "<p style=\"font-size: 14px; line-height: 1.6; color: #4d4d4d; "
+        "margin: 20px 0 0;\">It expires in 10 minutes.</p>"
+        "<p style=\"font-size: 13px; line-height: 1.6; color: #696969; "
+        "margin: 12px 0 0;\">If you didn't ask for this code, ignore "
+        "this email.</p>"
+        "<div style=\"border-top: 1px solid #e8e8e8; margin-top: 32px; "
+        "padding-top: 16px; font-size: 12px; line-height: 1.6; "
+        "color: #696969;\">Data Cleaner Studio · Put in a messy file. "
+        "Get the cleaned file back, with its KPIs, charts and a "
+        "one-page report.</div>"
+        "</div></body></html>"
     )
     return {
         "sender": {"name": "Data Cleaner Studio", "email": sender},
