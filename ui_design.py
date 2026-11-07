@@ -416,6 +416,15 @@ div[data-testid="stRadio"] div[role="radiogroup"] label:focus-within {
 .dcs-console-status::before { content: ""; width: 8px; height: 8px;
   border-radius: 50%; background: #117f50; display: inline-block;
   flex: none; }
+/* "What's inside" — three plain lines under the login form (variant C):
+   hairline divider, small muted text, green dot markers. */
+.dcs-console-inside { border-top: 1px solid #e8e8e8; margin-top: 1.5rem;
+  padding-top: 1rem; font-size: 13px; color: #696969; }
+.dcs-console-inside div { display: flex; align-items: flex-start; gap: 8px;
+  margin: 0 0 6px; }
+.dcs-console-inside div::before { content: ""; width: 6px; height: 6px;
+  border-radius: 50%; background: #117f50; display: inline-block;
+  flex: none; margin-top: 6px; }
 input[maxlength="6"] { font-family: monospace; font-size: 18px;
   letter-spacing: .35em; }
 /* tertiary buttons render as plain text links — used only by the login
@@ -727,6 +736,15 @@ div[data-baseweb="menu"] li[role="option"]:hover {
 .dcs-console-status::before { content: ""; width: 8px; height: 8px;
   border-radius: 50%; background: #4acd8b; display: inline-block;
   flex: none; }
+/* "What's inside" — dark twin of the light rules above: same layout,
+   dark tokens only (hairline #2e2e2e, muted #989a99, dot #4acd8b). */
+.dcs-console-inside { border-top: 1px solid #2e2e2e; margin-top: 1.5rem;
+  padding-top: 1rem; font-size: 13px; color: #989a99; }
+.dcs-console-inside div { display: flex; align-items: flex-start; gap: 8px;
+  margin: 0 0 6px; }
+.dcs-console-inside div::before { content: ""; width: 6px; height: 6px;
+  border-radius: 50%; background: #4acd8b; display: inline-block;
+  flex: none; margin-top: 6px; }
 input[maxlength="6"] { font-family: monospace; font-size: 18px;
   letter-spacing: .35em; }
 div[data-testid="stButton"] > button[kind="tertiary"] {

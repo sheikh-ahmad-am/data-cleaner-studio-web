@@ -335,6 +335,15 @@ div[data-testid="stRadio"] div[role="radiogroup"] label:focus-within {
 .dcs-console-status::before { content: ""; width: 8px; height: 8px;
   border-radius: 50%; background: #117f50; display: inline-block;
   flex: none; }
+/* "What's inside" — three plain lines under the login form (variant C):
+   hairline divider, small muted text, green dot markers. */
+.dcs-console-inside { border-top: 1px solid #e8e8e8; margin-top: 1.5rem;
+  padding-top: 1rem; font-size: 13px; color: #696969; }
+.dcs-console-inside div { display: flex; align-items: flex-start; gap: 8px;
+  margin: 0 0 6px; }
+.dcs-console-inside div::before { content: ""; width: 6px; height: 6px;
+  border-radius: 50%; background: #117f50; display: inline-block;
+  flex: none; margin-top: 6px; }
 input[maxlength="6"] { font-family: monospace; font-size: 18px;
   letter-spacing: .35em; }
 /* tertiary buttons render as plain text links — used only by the login
@@ -1282,6 +1291,21 @@ if _current_user is None:
                            "For now, use email and password above.")
             # else: Supabase is up but GOOGLE_OAUTH_ENABLED is off (the
             # default) — the button stays hidden, no dead end, no note.
+            # "What's inside" — three plain lines under the form, so a
+            # new visitor feels what the app does. Same narrow column,
+            # hairline divider, small muted text, green dot markers.
+            # (Not the tagline: the approved variant C preview has no
+            # tagline on the login screen; these lines carry the same
+            # meaning in fresh words.) Shows in both Log in and
+            # Sign up modes; the code screen stops before this point.
+            st.markdown(
+                '<div class="dcs-console-inside">'
+                "<div>Messy CSV, Excel or JSON in — a clean file out.</div>"
+                "<div>KPIs, charts, and a one-page report with every "
+                "clean.</div>"
+                "<div>Private to your account. Nothing shared.</div>"
+                "</div>",
+                unsafe_allow_html=True)
         st.stop()
 
 # ---- logged in from here on. ----

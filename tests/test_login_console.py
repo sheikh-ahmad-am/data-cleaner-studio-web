@@ -41,8 +41,17 @@ _CONSOLE_SELECTORS = (
     ".dcs-console-h2",
     ".dcs-code-email",
     ".dcs-console-status",
+    ".dcs-console-inside",
     'input[maxlength="6"]',
     'button[kind="tertiary"]',
+)
+
+# The "What's inside" lines under the login form (fresh words for the
+# product promise — the exact tagline sentence stays off this screen).
+_WHATS_INSIDE_LINES = (
+    "Messy CSV, Excel or JSON in — a clean file out.",
+    "KPIs, charts, and a one-page report with every clean.",
+    "Private to your account. Nothing shared.",
 )
 
 
@@ -212,7 +221,59 @@ def test_login_screen_console_layout(_tmp_env):
     assert not any("Put in a messy file" in v
                    for v in vals(at.markdown)), \
         "variant C login screen must not show the tagline"
+    # "What's inside" — the three fresh lines, not the tagline.
+    for line in _WHATS_INSIDE_LINES:
+        assert any(line in v for v in vals(at.markdown)), \
+            f"login screen must show {line!r}"
     print("login screen console layout OK")
+
+
+def test_whats_inside_shows_in_both_modes(_tmp_env):
+    """AppTest: the "What's inside" block shows under the form in both
+    the Log in and the Sign up modes (it sits after the mode branch),
+    and the exact tagline sentence stays absent in both."""
+    at = AppTest.from_file(APP)
+    at.run()
+    assert not at.exception, f"startup exception: {at.exception}"
+    for line in _WHATS_INSIDE_LINES:
+        assert any(line in v for v in vals(at.markdown)), \
+            f"Log in mode must show {line!r}"
+    at.radio[0].set_value("Sign up").run()
+    assert not at.exception, f"exception switching mode: {at.exception}"
+    assert any(b.label == "Create account" for b in at.button), \
+        "Sign up mode must show the Create account button"
+    for line in _WHATS_INSIDE_LINES:
+        assert any(line in v for v in vals(at.markdown)), \
+            f"Sign up mode must show {line!r}"
+    assert not any("Put in a messy file" in v
+                   for v in vals(at.markdown)), \
+        "variant C login screen must not show the tagline"
+    print("whats inside shows in both modes OK")
+
+
+def test_theme_toggle_label_matches_theme(_tmp_env):
+    """AppTest: the theme link label always names the theme it switches
+    TO — in dark it reads "Switch to light theme", in light "Switch to
+    dark theme". A live screenshot once showed "Switch to dark" on a
+    dark page; that was a stale render — the label logic is correct
+    and is pinned here for both starting themes."""
+    at = AppTest.from_file(APP)
+    at.run()
+    assert not at.exception, f"startup exception: {at.exception}"
+    assert any(b.label == "Switch to dark theme" for b in at.button), \
+        "light theme must offer 'Switch to dark theme'"
+    assert not any(b.label == "Switch to light theme" for b in at.button), \
+        "light theme must not offer 'Switch to light theme'"
+    at_dark = AppTest.from_file(APP)
+    at_dark.session_state["dcs_theme"] = "dark"
+    at_dark.run()
+    assert not at_dark.exception, \
+        f"startup exception (dark): {at_dark.exception}"
+    assert any(b.label == "Switch to light theme" for b in at_dark.button), \
+        "dark theme must offer 'Switch to light theme'"
+    assert not any(b.label == "Switch to dark theme" for b in at_dark.button), \
+        "dark theme must not offer 'Switch to dark theme'"
+    print("theme toggle label matches theme OK")
 
 
 def test_code_screen_console_layout(_tmp_env):
