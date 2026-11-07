@@ -256,7 +256,17 @@ def _matches(sel, el, ancestors):
     describes a marker div + a following sibling block; a linear
     ancestor chain cannot express siblings, so when the element (or an
     ancestor) carries danger=True that portion is treated as satisfied
-    and the rest of the selector is matched normally."""
+    and the rest of the selector is matched normally.
+
+    Combinators are honoured exactly: `A > B` only matches when B's
+    immediate parent is A. The combinator between tokens[i] and
+    tokens[i+1] is stored on tokens[i+1] (see _split_selector), so
+    when we have matched tokens[i+1] we read ITS comb to find
+    tokens[i]. The previous version read tokens[i]'s own comb — the
+    combinator one step further left — so `>` silently behaved like a
+    descendant and the 705ca1f fix "passed" this simulation while
+    failing live. That is the round-2 lesson: the matcher must be
+    stricter than the CSS, or the proof is vacuous."""
     if ":has(.dcs-danger-zone)" in sel:
         if not (el.get("danger") or any(a.get("danger") for a in ancestors)):
             return False
@@ -267,16 +277,18 @@ def _matches(sel, el, ancestors):
     if not _match_simple(tokens[-1][1], el):
         return False
     anc = list(ancestors)
-    for comb, part in reversed(tokens[:-1]):
+    for idx in range(len(tokens) - 2, -1, -1):
+        comb = tokens[idx + 1][0]
+        part = tokens[idx][1]
         if comb == ">":
             if not anc or not _match_simple(part, anc[0]):
                 return False
             anc = anc[1:]
         elif comb == " ":
             found = None
-            for idx, a in enumerate(anc):
+            for j, a in enumerate(anc):
                 if _match_simple(part, a):
-                    found = idx
+                    found = j
                     break
             if found is None:
                 return False
@@ -285,9 +297,9 @@ def _matches(sel, el, ancestors):
             if not (el.get("danger") or any(a.get("danger") for a in anc)):
                 return False
             found = None
-            for idx, a in enumerate(anc):
+            for j, a in enumerate(anc):
                 if _match_simple(part, a):
-                    found = idx
+                    found = j
                     break
             if found is None:
                 return False
@@ -320,6 +332,13 @@ def _cascade_rules(theme):
 
 
 # The DOM elements under test (Streamlit 1.66 hooks, see the header).
+# NOTE (round 2, 2026-11-07): this model is the SIMPLIFIED one — it
+# omits the intermediate div Streamlit 1.66 nests between the
+# stButton wrapper and the <button> on the icon/help path (verified
+# from the real frontend chunks). The live-faithful model lives in
+# tests/test_fixup_round2.py and is the proof that catches the `>`
+# bug; the tests below pin the sheet tokens under this model and
+# still pass. Do not "simplify" the round-2 model back to this one.
 _SIDEBAR = [_el("div", ["stButton"], {"data-testid": "stButton"}),
             _el("div"), _el("section", [], {"data-testid": "stSidebar"}),
             _el("div", ["stApp"])]
@@ -757,6 +776,7 @@ def test_gap5_branded_spinner_renders_and_clears():
     never imported (its top level runs the whole app)."""
     import ast
     import contextlib
+    import time
 
     source = (PROJECT_ROOT / "app.py").read_text(encoding="utf-8")
     tree = ast.parse(source)
@@ -784,11 +804,12 @@ def test_gap5_branded_spinner_renders_and_clears():
 
     ns = {"st": _FakeSt(), "ui_design": ui_design,
           "_loader_logo_path": lambda: str(PROJECT_ROOT / "assets" / "logo.png"),
-          "contextlib": contextlib}
+          "contextlib": contextlib, "time": time,
+          "_BRANDED_SPINNER_MIN_SECONDS": 0.7}
     exec(compile(ast.Module(body=[node], type_ignores=[]),
                  str(PROJECT_ROOT / "app.py"), "exec"), ns)
     spinner = ns["branded_spinner"]
-    with spinner("Loading the sample file…"):
+    with spinner("Loading the sample file…", min_seconds=0):
         assert rendered and "dcs-loader" in rendered[0], \
             "spinner must render the branded loader during the wait"
         assert "Loading the sample file" in rendered[0]

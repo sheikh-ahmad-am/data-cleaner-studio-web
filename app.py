@@ -65,6 +65,7 @@ import json
 import os
 import re
 import secrets
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -332,6 +333,12 @@ div[data-testid="stMetricLabel"], div[data-testid="stMetricLabel"] * {
 .dcs-kpi .dcs-kpi-value { font-size: 20px; font-weight: 500;
   color: #030303; font-family: ui-monospace, "SF Mono", Menlo, monospace; }
 .dcs-kpi .dcs-kpi-sub { font-size: 13px; color: #696969; }
+/* Strip label: the same 11px uppercase micro-label as the KPI tiles,
+   for the Dashboard "Get connected" strip heading (it was missing —
+   the strip rendered its six cells with no visible label). */
+.dcs-strip-label { font-size: 11px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase; color: #696969;
+  margin-bottom: 0.5rem; }
 /* ---- file-uploader dropzone + uploaded-file chips: ink on white ---- */
 div[data-testid="stFileUploader"], div[data-testid="stFileUploader"] * {
   color: #030303 !important; }
@@ -1317,20 +1324,38 @@ def _loader_logo_path():
         else "logo.png")
 
 
+#: Minimum time the branded loader stays visible (seconds). A fast
+#: local wait (loading the sample file) finishes in milliseconds, and
+#: Streamlit coalesces the placeholder's create + clear within one
+#: script run — so the loader never painted and the live check saw no
+#: `.dcs-loader` element at any point during the load. Holding the
+#: loader for at least this long guarantees the browser paints it.
+#: Slow waits (login, sheet loads, cleaning) already exceed it, so
+#: they pay nothing extra.
+_BRANDED_SPINNER_MIN_SECONDS = 0.7
+
+
 @contextlib.contextmanager
-def branded_spinner(status):
+def branded_spinner(status, min_seconds=_BRANDED_SPINNER_MIN_SECONDS):
     """Branded wait state, replacing bare st.spinner wherever a user
     waits: the logo mark animating (bars rising, checkmark drawing,
     then a gentle pulse) + the status text + a thin shimmer bar.
-    A placeholder is cleared on exit, exactly like st.spinner."""
+    A placeholder is cleared on exit, exactly like st.spinner — but
+    not before the loader has been visible for at least ``min_seconds``
+    (default 0.7s), so a fast wait still shows the mark instead of
+    flashing past unseen."""
     _ph = st.empty()
     _ph.markdown(
         ui_design.loader_block_html(_loader_logo_path(), status,
                                     size="compact"),
         unsafe_allow_html=True)
+    _started = time.monotonic()
     try:
         yield
     finally:
+        _remaining = min_seconds - (time.monotonic() - _started)
+        if _remaining > 0:
+            time.sleep(_remaining)
         _ph.empty()
 
 
@@ -2612,7 +2637,8 @@ if _active_tab == "clean":
         "drop_dupes": st.checkbox("Drop duplicate rows", value=True),
         "fill_missing": st.checkbox("Fill missing values", value=True),
     }
-    if st.button(_t("clean_my_data"), type="primary", key="clean_btn"):
+    if ui_design.icon_button(_t("clean_my_data"), "clean", kind="primary",
+                             key="clean_btn"):
         feat_automate.push_snapshot(st.session_state, "Before cleaning")
         _opts = feat_automate.to_engine_opts(opts)
         with branded_spinner("Cleaning your data…"):

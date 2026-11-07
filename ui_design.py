@@ -627,6 +627,12 @@ div[data-testid="stMetricLabel"], div[data-testid="stMetricLabel"] * {
 .dcs-kpi .dcs-kpi-value { font-size: 20px; font-weight: 500;
   color: #030303; font-family: ui-monospace, "SF Mono", Menlo, monospace; }
 .dcs-kpi .dcs-kpi-sub { font-size: 13px; color: #696969; }
+/* Strip label: the same 11px uppercase micro-label as the KPI tiles,
+   for the Dashboard "Get connected" strip heading (it was missing —
+   the strip rendered its six cells with no visible label). */
+.dcs-strip-label { font-size: 11px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase; color: #696969;
+  margin-bottom: 0.5rem; }
 /* ---- file-uploader dropzone + uploaded-file chips: ink on white ---- */
 div[data-testid="stFileUploader"], div[data-testid="stFileUploader"] * {
   color: #030303 !important; }
@@ -971,74 +977,78 @@ div[data-testid="stVerticalBlock"] > div { gap: 0.75rem; }
    the light stylesheet — the gap is not a colour). */
 section[data-testid="stMain"] div[data-testid="stVerticalBlock"] {
   gap: 0.75rem; }
-/* ---- buttons: primary deepened green, subtle vertical gradient ---- */
-.stApp .stButton > button[kind="primary"],
-div[data-testid="stButton"] > button[kind="primary"] {
-  background-color: #006338;
-  background: linear-gradient(180deg, #007243 0%, #006338 100%);
-  color: #ffffff; border: 1px solid #006338; border-radius: 999px;
-  font-weight: 500; }
-.stApp .stButton > button[kind="primary"]:hover,
-div[data-testid="stButton"] > button[kind="primary"]:hover {
-  background-color: #007243;
-  background: linear-gradient(180deg, #007a4d 0%, #007243 100%);
-  border-color: #007243; color: #ffffff; }
-/* ---- secondary buttons: dark panel, 1px border, bright text ---- */
-.stApp .stButton > button[kind="secondary"],
-div[data-testid="stButton"] > button[kind="secondary"] {
-  background-color: #232625; color: #edefee; border: 1px solid #363636;
-  border-radius: 6px; font-weight: 500; }
-.stApp .stButton > button[kind="secondary"]:hover,
-div[data-testid="stButton"] > button[kind="secondary"]:hover {
-  background-color: #2a2d2c; color: #edefee; border-color: #363636; }
-/* Danger buttons (delete / clear / reset / remove) are secondary buttons
-   (type="secondary", never primary). See the light stylesheet for why
-   the danger colour lives on this .dcs-danger hook. */
-.dcs-danger button[kind="secondary"] { color: #ff6369 !important;
-  border-color: #ff6369 !important; }
-div[data-testid="stDownloadButton"] > button {
-  background-color: #232625; color: #edefee; border: 1px solid #363636;
-  border-radius: 6px; }
-div[data-testid="stDownloadButton"] > button:hover {
-  background-color: #2a2d2c; color: #edefee; border-color: #363636; }
-/* ---- button colours, testid-anchored (fix-up 2026-11-07) ----
-   Dark twin of the light block above: same anchoring, dark tokens.
-   Without it every button falls back to Streamlit's native
-   light-theme white in dark mode (white pills, pale-grey text). */
-div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"],
-div[data-testid="stDownloadButton"] > button {
+/* ---- buttons: dark panel, bright text (round 2, 2026-11-07) ----
+   The [kind="…"] rules that were here are gone: Streamlit 1.66 puts
+   no `kind` attribute on the rendered <button> (emotion filters the
+   prop), so they never matched — dead rules that only looked like a
+   fix. The live rules are the descendant selectors below. */
+/* ---- button colours, descendant selectors (round 2, 2026-11-07) ----
+   The first fix-up anchored on
+   `div[data-testid="stButton"] > button[data-testid="stBaseButton-…"]`
+   and "proved" it with a cascade simulation — but it matched NOTHING
+   live. The shipped Streamlit 1.66.1 frontend nests an intermediate
+   element between the stButton wrapper div and the <button> (the
+   Button component renders Tooltip → intermediate node → BaseButton),
+   so the `>` child combinator never matches; the download-button
+   component nests differently, which is why its `>` rule was the only
+   one that worked — and why the one plain st.button without icon/help
+   ("Clean my data") rendered the dark gradient while every icon/help
+   button stayed a white pill. These rules use DESCENDANT selectors
+   and never depend on the button's own testid, so they match whatever
+   the nesting is. Specificity (0,1,2)+ beats mobile_css's blanket
+   `.stButton > button` (0,1,1), which is injected after this sheet —
+   including when that sheet is a theme behind. */
+div[data-testid="stButton"] button,
+div[data-testid="stDownloadButton"] button,
+div[data-testid="stFormSubmitButton"] button,
+div[data-testid="stFileUploader"] button {
   background-color: #232625 !important; color: #edefee !important;
   border: 1px solid #363636 !important; border-radius: 6px;
   font-weight: 500; }
-div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"] *,
-div[data-testid="stDownloadButton"] > button * {
+div[data-testid="stButton"] button *,
+div[data-testid="stDownloadButton"] button *,
+div[data-testid="stFormSubmitButton"] button *,
+div[data-testid="stFileUploader"] button * {
   color: #edefee !important; }
-div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"]:hover,
-div[data-testid="stDownloadButton"] > button:hover {
+div[data-testid="stButton"] button:hover,
+div[data-testid="stDownloadButton"] button:hover,
+div[data-testid="stFormSubmitButton"] button:hover,
+div[data-testid="stFileUploader"] button:hover {
   background-color: #2a2d2c !important; color: #edefee !important;
   border-color: #363636 !important; }
-div[data-testid="stButton"] > button[data-testid="stBaseButton-primary"] {
+/* Primary buttons: the green pill, white text — more specific than the
+   blanket above, so it wins for primary buttons. */
+div[data-testid="stButton"] button[data-testid="stBaseButton-primary"] {
   background-color: #006338 !important;
   background: linear-gradient(180deg, #007243 0%, #006338 100%) !important;
   color: #ffffff !important; border: 1px solid #006338 !important;
   border-radius: 999px; font-weight: 500; }
-div[data-testid="stButton"] > button[data-testid="stBaseButton-primary"] * {
+div[data-testid="stButton"] button[data-testid="stBaseButton-primary"] * {
   color: #ffffff !important; }
-/* Sidebar nav rows + the active (disabled) pill, same anchoring. */
-section[data-testid="stSidebar"] div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"] {
+/* Sidebar nav rows + the active (disabled) pill, same anchoring.
+   Full-width left-aligned rows (Load sheet, Try the messy sample,
+   Quick jump picks) — Supabase's sidebar actions are rows, not
+   centred pills. The avatar trigger is a stPopoverButton, not an
+   stButton, so it is untouched by this rule. */
+section[data-testid="stSidebar"] div[data-testid="stButton"] button {
+  width: 100%; justify-content: flex-start;
   background-color: #232625 !important; color: #edefee !important;
   border: 1px solid #363636 !important; }
-section[data-testid="stSidebar"] div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"] * {
+section[data-testid="stSidebar"] div[data-testid="stButton"] button * {
   color: #edefee !important; }
-section[data-testid="stSidebar"] div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"]:disabled {
+section[data-testid="stSidebar"] div[data-testid="stButton"] button:disabled {
   background-color: #2a2d2c !important; color: #edefee !important;
-  border: 1px solid #363636 !important; opacity: 1 !important; }
-section[data-testid="stSidebar"] div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"]:disabled * {
+  border: 1px solid #363636 !important; opacity: 1 !important;
+  border-left: 2px solid #edefee !important; font-weight: 600 !important; }
+section[data-testid="stSidebar"] div[data-testid="stButton"] button:disabled * {
   color: #edefee !important; }
-/* Danger-zone buttons: red text + border on the dark secondary panel. */
-div[data-testid="stVerticalBlock"] > div:has(.dcs-danger-zone) ~ div div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"] {
+/* Danger-zone buttons: red text + border on the dark secondary panel.
+   The `> div:has(.dcs-danger-zone) ~ div` head is kept: the marker div
+   IS a direct child of the vertical block, so that part is true —
+   only the tail was broken (it used the `>` + testid chain). */
+div[data-testid="stVerticalBlock"] > div:has(.dcs-danger-zone) ~ div div[data-testid="stButton"] button {
   color: #ff6369 !important; border-color: #ff6369 !important; }
-div[data-testid="stVerticalBlock"] > div:has(.dcs-danger-zone) ~ div div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"] * {
+div[data-testid="stVerticalBlock"] > div:has(.dcs-danger-zone) ~ div div[data-testid="stButton"] button * {
   color: #ff6369 !important; }
 /* ---- inputs: dark panel, 6px radius, hairline border ---- */
 .stApp input, .stApp textarea, .stApp select {
@@ -1062,12 +1072,6 @@ section[data-testid="stSidebar"] a { color: #4acd8b; }
 .dcs-nav-row:hover { background-color: #262928; color: #4acd8b; }
 .dcs-nav-row.dcs-nav-active { background-color: #2a2d2c;
   font-weight: 600; color: #edefee; border-left: 2px solid #edefee; }
-/* ---- sidebar buttons read as full-width rows (Load sheet, Try the
-   messy sample, Quick jump picks) — Supabase's sidebar actions are
-   rows, not centred pills. The avatar trigger is a stPopoverButton,
-   not an stButton, so it is untouched by this rule. ---- */
-section[data-testid="stSidebar"] div[data-testid="stButton"] > button[kind="secondary"] {
-  width: 100%; justify-content: flex-start; }
 /* ---- sidebar collapse control: the chevron that hides / shows the
    sidebar — muted by default, quiet wash on hover, same 6px radius
    as everything (see the light stylesheet for the selector note). */
@@ -1100,13 +1104,13 @@ div[data-testid="stPopoverBody"] { background-color: #232625;
 /* Avatar menu rows: the Profile / theme / Log out buttons inside the
    popover are menu rows, not pills — full-width, left-aligned, no
    border, quiet wash on hover (see the light stylesheet). */
-div[data-testid="stPopoverBody"] .stButton > button[kind="secondary"] {
+div[data-testid="stPopoverBody"] div[data-testid="stButton"] button {
   width: 100% !important; justify-content: flex-start !important;
   background: transparent !important; background-color: transparent !important;
   border: none !important; box-shadow: none !important;
   border-radius: 6px !important; padding: 0.35rem 0.75rem !important;
   font-weight: 400 !important; color: #edefee !important; }
-div[data-testid="stPopoverBody"] .stButton > button[kind="secondary"]:hover {
+div[data-testid="stPopoverBody"] div[data-testid="stButton"] button:hover {
   background-color: #262928 !important; color: #edefee !important; }
 /* Menu divider: one hairline between the email, the actions and Log out. */
 .dcs-menu-divider { border-top: 1px solid #2e2e2e; margin: 0.35rem 0; }
@@ -1139,6 +1143,10 @@ div[data-testid="stMetricLabel"], div[data-testid="stMetricLabel"] * {
 .dcs-kpi .dcs-kpi-value { font-size: 20px; font-weight: 500;
   color: #edefee; font-family: ui-monospace, "SF Mono", Menlo, monospace; }
 .dcs-kpi .dcs-kpi-sub { font-size: 13px; color: #989a99; }
+/* Strip label: dark twin of the light rule above. */
+.dcs-strip-label { font-size: 11px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase; color: #989a99;
+  margin-bottom: 0.5rem; }
 /* ---- file-uploader dropzone + uploaded-file chips: bright on dark ---- */
 div[data-testid="stFileUploader"], div[data-testid="stFileUploader"] * {
   color: #edefee !important; }
@@ -1214,14 +1222,14 @@ div[data-testid="stDataFrame"] td, div[data-testid="stTable"] td {
    Every hover above is a colour/border change only (no scale, no
    shadow, no movement) and every one of those elements carries this
    transition, so the hover never snaps. */
-.stApp .stButton > button, .stApp a, .dcs-nav-row,
+.stApp .stButton button, .stApp a, .dcs-nav-row,
 div[data-testid="stRadio"] div[role="radiogroup"] label,
 .stApp input, .stApp textarea, .stApp select,
 .dcs-card, .dcs-kpi, .dcs-console-inside div,
-div[data-testid="stDownloadButton"] > button,
+div[data-testid="stDownloadButton"] button,
 div[data-testid="stExpander"],
 div[data-testid="stFileUploaderDropzone"],
-div[data-testid="stPopoverBody"] .stButton > button,
+div[data-testid="stPopoverBody"] div[data-testid="stButton"] button,
 div[data-testid="stPopover"] button[data-testid="stPopoverButton"],
 div[data-testid="collapsedControl"],
 section[data-testid="stSidebar"] [data-testid="stSidebarCollapseButton"],
@@ -1231,8 +1239,8 @@ div[data-baseweb="menu"] li[role="option"] {
     border-color 0.2s cubic-bezier(0.22, 1, 0.36, 1),
     color 0.2s cubic-bezier(0.22, 1, 0.36, 1); }
 /* ---- focus: one shared ring — 2px dark gap + 4px translucent green halo ---- */
-.stApp .stButton > button:focus-visible,
-div[data-testid="stDownloadButton"] > button:focus-visible,
+.stApp .stButton button:focus-visible,
+div[data-testid="stDownloadButton"] button:focus-visible,
 div[data-testid="stPopover"] button[data-testid="stPopoverButton"]:focus-visible,
 div[data-testid="collapsedControl"] button:focus-visible,
 section[data-testid="stSidebar"] [data-testid="stSidebarCollapseButton"]:focus-visible,
@@ -1290,13 +1298,16 @@ div[data-baseweb="menu"] li[role="option"]:hover {
 .dcs-dot--muted { background: #989a99; }
 input[maxlength="6"] { font-family: monospace; font-size: 18px;
   letter-spacing: .35em; }
-div[data-testid="stButton"] > button[kind="tertiary"] {
-  background: transparent; border: none; box-shadow: none;
-  color: #4acd8b; font-size: 13px; padding: 0.25rem 0; min-height: 0; }
-div[data-testid="stButton"] > button[kind="tertiary"]:hover {
-  background: transparent; color: #4acd8b; text-decoration: underline; }
+div[data-testid="stButton"] button[data-testid="stBaseButton-tertiary"] {
+  background: transparent !important; border: none !important;
+  box-shadow: none !important;
+  color: #4acd8b !important; font-size: 13px; padding: 0.25rem 0;
+  min-height: 0; }
+div[data-testid="stButton"] button[data-testid="stBaseButton-tertiary"]:hover {
+  background: transparent !important; color: #4acd8b !important;
+  text-decoration: underline; }
 div[data-testid="stHorizontalBlock"] div[data-testid="column"]:last-child
-  div[data-testid="stButton"]:has(> button[kind="tertiary"]) {
+  div[data-testid="stButton"]:has(button[data-testid="stBaseButton-tertiary"]) {
   display: flex; justify-content: flex-end; }
 /* ---- branded loader: dark twin of the light rules above — same
    mark, same keyframes, same timing; only the text/shimmer colours
@@ -1371,15 +1382,6 @@ div[data-testid="stPopoverBody"] div[data-testid="stRadio"] div[role="radiogroup
   background-color: #262928 !important; }
 div[data-testid="stPopoverBody"] div[data-testid="stRadio"] div[role="radiogroup"] label:has(input:checked) {
   background-color: #2a2d2c !important; font-weight: 600 !important; }
-/* ---- sidebar nav: the active row is a DISABLED secondary button — it
-   renders as the active pill (see the light stylesheet for why). */
-section[data-testid="stSidebar"] div[data-testid="stButton"] > button[kind="secondary"]:disabled {
-  background-color: #2a2d2c; color: #edefee; font-weight: 600;
-  border-left: 2px solid #edefee; opacity: 1; }
-/* ---- danger zone: a .dcs-danger-zone marker colours every secondary
-   button after it red (the Delete buttons). */
-div[data-testid="stVerticalBlock"] > div:has(.dcs-danger-zone) ~ div div[data-testid="stButton"] > button[kind="secondary"] {
-  color: #ff6369 !important; border-color: #ff6369 !important; }
 /* ---- headings / cards: colours in the stylesheet, never inline hex ---- */
 .dcs-section-heading { font-size: 17px; font-weight: 500; color: #edefee; }
 .dcs-section-sub { font-size: 13px; color: #989a99; }
@@ -1934,7 +1936,12 @@ def connect_strip(cells) -> str | None:
     a muted subtitle. ``cells`` is a list of dicts with ``key``,
     ``icon`` (an ``icon_button`` name), ``title`` and ``subtitle``.
     Clicking a cell returns its key — the caller navigates
-    (pending_tab + rerun). Returns None when nothing was clicked."""
+    (pending_tab + rerun). Returns None when nothing was clicked.
+    The strip carries its visible "Get connected" label above the
+    cells (the label was missing — the strip rendered with no heading).
+    """
+    st.markdown('<div class="dcs-strip-label">Get connected</div>',
+                unsafe_allow_html=True)
     clicked = None
     with st.container(border=True):
         _cols = st.columns(len(cells)) if cells else []

@@ -317,10 +317,14 @@ def test_stylesheet_rules_pinned():
                       ("dark", ui_design.DARK_CSS)):
         assert _brace_depth(css) == 0, \
             f"{name} stylesheet has unbalanced braces"
-        assert 'button[kind="primary"]' in css, \
+        # Primary-button rule: light uses the [kind=...] hook, dark the
+        # testid hook (round 2 — [kind=...] never matches live).
+        primary_sel = ('button[kind="primary"]' if name == "light"
+                       else 'button[data-testid="stBaseButton-primary"]')
+        assert primary_sel in css, \
             f"{name}: primary button rule missing"
         primary = re.search(
-            r'button\[kind="primary"\] \{(.*?)\}', css, re.DOTALL)
+            re.escape(primary_sel) + r" \{(.*?)\}", css, re.DOTALL)
         assert primary and "border-radius: 999px" in primary.group(1), \
             f"{name}: primary buttons must be pills (999px)"
         assert "font-size: 11px" in css and "text-transform: uppercase" in css, \

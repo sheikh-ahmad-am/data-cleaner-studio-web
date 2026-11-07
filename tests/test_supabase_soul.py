@@ -37,26 +37,38 @@ APP = str(PROJECT_ROOT / "app.py")
 SAMPLE = PROJECT_ROOT / "sample_data" / "messy_sales.csv"
 
 # Hover rules the soul pass adds, with the token each theme must use.
-# (selector, light colour, dark colour)
+# (light selector, dark selector, light colour, dark colour). The two
+# button hovers differ by theme — light still uses the `>`-chained
+# form, dark the descendant form (round 2: the `>` chain never matches
+# the icon/help buttons live).
 _HOVER_RULES = (
-    (".dcs-card:hover", "#d0d0d0", "#4a4d4c"),
-    (".dcs-kpi:hover", "#d0d0d0", "#4a4d4c"),
+    (".dcs-card:hover", ".dcs-card:hover", "#d0d0d0", "#4a4d4c"),
+    (".dcs-kpi:hover", ".dcs-kpi:hover", "#d0d0d0", "#4a4d4c"),
     ('div[data-testid="stDownloadButton"] > button:hover',
+     'div[data-testid="stDownloadButton"] button:hover',
      "#f8f8f8", "#2a2d2c"),
-    ('div[data-testid="stExpander"]:hover', "#d0d0d0", "#4a4d4c"),
+    ('div[data-testid="stExpander"]:hover',
+     'div[data-testid="stExpander"]:hover', "#d0d0d0", "#4a4d4c"),
     ('div[data-testid="stPopoverBody"] .stButton > button'
-     '[kind="secondary"]:hover', "#f8f8f8", "#262928"),
-    ('div[data-testid="collapsedControl"]:hover', "#f8f8f8", "#262928"),
+     '[kind="secondary"]:hover',
+     'div[data-testid="stPopoverBody"] div[data-testid="stButton"]'
+     ' button:hover',
+     "#f8f8f8", "#262928"),
+    ('div[data-testid="collapsedControl"]:hover',
+     'div[data-testid="collapsedControl"]:hover', "#f8f8f8", "#262928"),
     ('div[data-baseweb="menu"] li[role="option"]:hover',
+     'div[data-baseweb="menu"] li[role="option"]:hover',
      "#f8f8f8", "#2a2d2c"),
-    (".dcs-console-inside div:hover", "#030303", "#edefee"),
-    (".dcs-menu-divider", "#e8e8e8", "#2e2e2e"),
-    (".dcs-dot", "#117f50", "#4acd8b"),
-    (".dcs-dot--warn", "#e69344", "#f3ba63"),
-    (".dcs-dot--muted", "#696969", "#989a99"),
+    (".dcs-console-inside div:hover", ".dcs-console-inside div:hover",
+     "#030303", "#edefee"),
+    (".dcs-menu-divider", ".dcs-menu-divider", "#e8e8e8", "#2e2e2e"),
+    (".dcs-dot", ".dcs-dot", "#117f50", "#4acd8b"),
+    (".dcs-dot--warn", ".dcs-dot--warn", "#e69344", "#f3ba63"),
+    (".dcs-dot--muted", ".dcs-dot--muted", "#696969", "#989a99"),
     ('div[data-testid="stFileUploaderDropzone"]:hover',
+     'div[data-testid="stFileUploaderDropzone"]:hover',
      "#d0d0d0", "#4a4d4c"),
-    (".stApp input:hover", "#d0d0d0", "#4a4d4c"),
+    (".stApp input:hover", ".stApp input:hover", "#d0d0d0", "#4a4d4c"),
 )
 
 # Selectors that must ride the shared 0.2s transition (the "motion,
@@ -75,6 +87,13 @@ _TRANSITION_SELECTORS = (
     'section[data-testid="stSidebar"] button[kind="header"]',
     'div[data-baseweb="menu"] li[role="option"]',
 )
+# Dark twins of the two button entries above (round 2 descendant form).
+_TRANSITION_SELECTORS_DARK = {
+    'div[data-testid="stDownloadButton"] > button':
+        'div[data-testid="stDownloadButton"] button',
+    'div[data-testid="stPopoverBody"] .stButton > button':
+        'div[data-testid="stPopoverBody"] div[data-testid="stButton"] button',
+}
 
 
 @pytest.fixture
@@ -141,7 +160,8 @@ def test_soul_hover_rules_both_themes():
     twin — switching themes never drops a hover."""
     for theme, idx in (("light", 1), ("dark", 2)):
         css = ui_design.theme_css(theme)
-        for selector, light, dark in _HOVER_RULES:
+        for light_sel, dark_sel, light, dark in _HOVER_RULES:
+            selector = light_sel if theme == "light" else dark_sel
             assert selector in css, \
                 f"{theme}: hover rule {selector} missing"
             colour = light if theme == "light" else dark
@@ -152,11 +172,15 @@ def test_soul_hover_rules_both_themes():
             assert body, f"{theme}: {selector} has no rule body"
             assert colour in body.group(1), \
                 f"{theme}: {selector} must use {colour}, got {body.group(1)!r}"
-    # Sidebar buttons are full-width rows in both themes.
+    # Sidebar buttons are full-width rows in both themes. Light uses
+    # the `>`-chained form, dark the descendant form (round 2).
     for theme in ("light", "dark"):
         css = ui_design.theme_css(theme)
         rule = ('section[data-testid="stSidebar"] '
-                'div[data-testid="stButton"] > button[kind="secondary"]')
+                'div[data-testid="stButton"] > button[kind="secondary"]'
+                if theme == "light" else
+                'section[data-testid="stSidebar"] '
+                'div[data-testid="stButton"] button')
         assert rule in css, f"{theme}: sidebar row-button rule missing"
         body = re.search(re.escape(rule) + r"[^{]*\{([^}]*)\}", css)
         assert body and "width: 100%" in body.group(1), \
@@ -178,6 +202,8 @@ def test_soul_transition_and_focus_both_themes():
         css = ui_design.theme_css(theme)
         selectors = _transition_selectors(css)
         for sel in _TRANSITION_SELECTORS:
+            if theme == "dark":
+                sel = _TRANSITION_SELECTORS_DARK.get(sel, sel)
             assert re.sub(r"\s+", " ", sel) in selectors, \
                 f"{theme}: transition must cover {sel}"
         assert 'stPopoverButton"]:focus-visible' in css, \

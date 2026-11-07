@@ -43,8 +43,15 @@ _CONSOLE_SELECTORS = (
     ".dcs-console-status",
     ".dcs-console-inside",
     'input[maxlength="6"]',
-    'button[kind="tertiary"]',
 )
+# The tertiary rule's selector differs by theme: light still uses the
+# [kind=...] hook, dark uses the testid hook (round 2 — the [kind=...]
+# rules never match live, Streamlit puts no kind attribute on the
+# rendered button).
+_TERTIARY_SELECTOR = {
+    "light": 'button[kind="tertiary"]',
+    "dark": 'button[data-testid="stBaseButton-tertiary"]',
+}
 
 # The "What's inside" lines under the login form (fresh words for the
 # product promise — the exact tagline sentence stays off this screen).
@@ -92,6 +99,8 @@ def test_console_css_in_both_themes():
         css = ui_design.theme_css(theme)
         for selector in _CONSOLE_SELECTORS:
             assert selector in css, f"{theme} CSS missing {selector}"
+        assert _TERTIARY_SELECTOR[theme] in css, \
+            f"{theme} CSS missing {_TERTIARY_SELECTOR[theme]}"
     light = ui_design.theme_css("light")
     dark = ui_design.theme_css("dark")
     assert "#117f50" in light and "#4acd8b" in dark, \
