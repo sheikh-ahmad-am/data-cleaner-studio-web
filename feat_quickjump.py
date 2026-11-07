@@ -28,7 +28,8 @@ Integration (for the coordinator — app.py change, one call):
          import feat_quickjump
 
   2. In the sidebar, right after the sidebar nav renders
-     (``ui_design.sidebar_nav(_nav_sections, active=_nav_active)``),
+     (``ui_design.sidebar_nav(_nav_items, active=_nav_active,
+     collapsed=_rail_collapsed)``),
      add::
 
          feat_quickjump.render_quick_jump(st)

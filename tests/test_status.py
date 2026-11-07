@@ -97,6 +97,18 @@ def find_text_input(at, label):
     raise AssertionError(f"text input {label!r} missing")
 
 
+def expand_rail(at):
+    """Open the sidebar rail (it starts collapsed — the dashboard's
+    own default, icon-only) so the full sidebar is visible: theme
+    selectbox, labelled nav rows, uploader, sample button. The rail
+    tests in test_supabase_rail.py cover the collapsed state itself;
+    the older helpers below need the expanded sidebar to do their
+    jobs."""
+    at.session_state["dcs_rail_collapsed"] = False
+    at.run()
+    assert not at.exception, f"exception expanding rail: {at.exception}"
+
+
 def signup(at, username, password="password123"):
     """Sign up (auto-login); the app must show the data screen after."""
     at.radio[0].set_value("Sign up").run()
@@ -104,6 +116,7 @@ def signup(at, username, password="password123"):
     find_text_input(at, "Password").set_value(password).run()
     find_button(at, "Create account").click().run()
     assert not at.exception, f"exception on signup: {at.exception}"
+    expand_rail(at)
     assert any(b.label == "Try the messy sample" for b in at.button), \
         "signup should log the user straight in"
 
@@ -128,7 +141,10 @@ def sidebar_nav_labels(at):
     dcs_nav_<section>).
 
     Match the rendered buttons, not the stylesheet — the injected CSS
-    also mentions dcs-nav rows."""
+    also mentions dcs-nav rows. The rail starts collapsed (icon-only,
+    empty labels), so open it first — the rows carry their labels
+    only when expanded, the way a user would see them."""
+    expand_rail(at)
     return [b.label for b in at.button
             if (b.key or "").startswith("dcs_nav_")]
 

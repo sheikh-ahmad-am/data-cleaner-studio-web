@@ -767,6 +767,11 @@ def test_apptest_login_shows_code_step_then_logs_in():
         assert not at.exception, f"exception on correct code: {at.exception}"
         assert at.session_state.get("auth_token") is not None, \
             "the correct code must create a session"
+        # The rail starts collapsed (the dashboard's default) — open
+        # it so the full sidebar's sample button is visible below.
+        at.session_state["dcs_rail_collapsed"] = False
+        at.run()
+        assert not at.exception, f"exception expanding rail: {at.exception}"
         assert any(b.label == "Try the messy sample" for b in at.button), \
             "the correct code must log the user in"
     finally:

@@ -106,14 +106,33 @@ def _goto_section(at, label):
     return at
 
 
+def _expand_rail(at):
+    """Open the sidebar rail (it starts collapsed — the dashboard's
+    own default, icon-only) so the full sidebar is visible: theme
+    selectbox, labelled nav rows, uploader, sample button. The rail
+    tests in test_supabase_rail.py cover the collapsed state itself;
+    the older helpers below need the expanded sidebar to do their
+    jobs."""
+    at.session_state["dcs_rail_collapsed"] = False
+    at.run()
+    assert not at.exception, f"exception expanding rail: {at.exception}"
+
+
 def _signup_and_login(at, username="alice1", password="password123"):
-    """Sign up (auto-login now) and assert the app opens straight away."""
+    """Sign up (auto-login now) and assert the app opens straight away.
+
+    Does NOT expand the rail: the signup run's transient "Account
+    created" note must still be visible to the caller (an extra rerun
+    clears it). The login check accepts either sample entry — the
+    sidebar button (expanded rail) or the empty state's CTA
+    (collapsed rail)."""
     _find_text_input(at, "Username").set_value(username).run()
     _find_text_input(at, "Password").set_value(password).run()
     at.radio[0].set_value("Sign up").run()
     _find_button(at, "Create account").click().run()
     assert not at.exception, f"exception on signup: {at.exception}"
-    assert any(b.label == "Try the messy sample" for b in at.button), \
+    assert any(b.label in ("Try the messy sample", "Try the sample data")
+               for b in at.button), \
         "signup must log the user straight in (no manual login step)"
     assert at.session_state.get("current_user", {}).get("username") == username
     return at
@@ -124,12 +143,16 @@ def _login(at, username="alice1", password="password123"):
     _find_text_input(at, "Password").set_value(password).run()
     _find_button(at, "Log in").click().run()
     assert not at.exception, f"exception on login: {at.exception}"
-    assert any(b.label == "Try the messy sample" for b in at.button), \
+    assert any(b.label in ("Try the messy sample", "Try the sample data")
+               for b in at.button), \
         "login should open the app"
     return at
 
 
 def _load_sample(at):
+    # The file uploader lives in the expanded sidebar — open the rail
+    # first (the rail starts collapsed, the dashboard's default).
+    _expand_rail(at)
     up = next(f for f in at.file_uploader if f.label == "Upload a file")
     up.set_value([("messy_sales.csv", SAMPLE.read_bytes(), "text/csv")]).run()
     assert not at.exception, f"exception on upload: {at.exception}"

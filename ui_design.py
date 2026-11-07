@@ -266,6 +266,7 @@ MATERIAL_ICONS = {
     "warning": ":material/warning:",
     "more": ":material/more_vert:",
     "chevron_right": ":material/chevron_right:",
+    "chevron_left": ":material/chevron_left:",
     "open": ":material/open_in_new:",
     "undo": ":material/undo:",
     "bolt": ":material/electric_bolt:",
@@ -1499,7 +1500,20 @@ def render_theme_toggle(st_module=None) -> str:
     def _on_change():
         st_mod.session_state["dcs_theme"] = normalize_theme(
             st_mod.session_state.get(THEME_SELECT_KEY, current))
+        # The avatar menu's radio is created earlier in the run (top
+        # bar), so its key cannot be written here — it is re-synced
+        # by sync_theme_widgets at the top of the next run, and by
+        # the re-sync inside render_avatar_menu before the radio is
+        # created. The selectbox key below is re-synced the same way.
 
+    # Re-sync immediately before creating the selectbox: the theme
+    # may have flipped earlier in this run (avatar-menu radio), and
+    # the top-of-run sync predates that flip — without this, the
+    # dropdown can show the old theme while the page is already the
+    # new one (the 2026-11-07 screenshot: dark page, "Light"
+    # dropdown). Writing the key before creation is the legal
+    # moment; after creation it would raise.
+    st_mod.session_state[THEME_SELECT_KEY] = current
     st_mod.sidebar.selectbox(
         "Theme", options=list(THEMES),
         format_func=lambda t: "Dark" if t == "dark" else "Light",
@@ -1526,8 +1540,15 @@ def render_login_theme_toggle(st_module=None) -> None:
     label = ("Switch to light theme" if current == "dark"
              else "Switch to dark theme")
     if st_mod.button(label, key="dcs_theme_login_toggle", type="tertiary"):
-        st_mod.session_state["dcs_theme"] = (
-            "light" if current == "dark" else "dark")
+        _new = "light" if current == "dark" else "dark"
+        st_mod.session_state["dcs_theme"] = _new
+        # Both theme widgets are re-synced from dcs_theme by
+        # sync_theme_widgets at the top of the next run; write them
+        # here too so no run can ever show a stale control (neither
+        # widget exists on the login screen, so writing their keys
+        # here is safe).
+        st_mod.session_state[THEME_SELECT_KEY] = _new
+        st_mod.session_state[THEME_RADIO_KEY] = _new
         st_mod.rerun()
 
 
@@ -1661,41 +1682,183 @@ def topbar(title: str, breadcrumb: str = "", user=None,
             "help": bool(_help), "search_col": cols[1]}
 
 
-def sidebar_nav(sections, active: str | None = None,
-                st_module=None):
-    """Render grouped sidebar nav rows as clickable icon buttons.
+# ---------------------------------------------------------------------------
+# The sidebar rail — Supabase's real nav (page-by-page study §0/§9, live
+# walk appendix). The dashboard's first nav layer is a narrow icon-only
+# rail (~60px) that expands to a labelled sidebar (~260px) after a
+# click; the rail never shows labels and never shows section headers.
+# Our old sidebar was icon + label rows under DATA / ANALYSE / OUTPUT /
+# WORKSPACE headers — that is not Supabase's sidebar, and a restyle of
+# Streamlit's hide/unhide chevron did not satisfy the user, so the rail
+# is rebuilt here as a real two-state nav:
+#
+#   * collapsed (default — Supabase's own default): the sidebar is
+#     forced to 60px and holds ONLY icon buttons (nav + the collapse
+#     toggle). The buttons are created with empty labels — Streamlit
+#     renders an icon-only button for an empty label with an icon
+#     set — and each carries its plain label as its ``help`` tooltip,
+#     the only place the label appears in this state. The theme
+#     selectbox, status pill, file uploader and banner are not
+#     rendered in this state (the theme lives in the avatar menu,
+#     the upload lives behind the top-bar Upload pill).
+#   * expanded: the sidebar is forced to 260px and holds the full
+#     sidebar (theme selectbox, icon + label nav rows, toggle, status
+#     pill, uploader) — the same content as before, minus the section
+#     headers, which Supabase's rail does not have.
+#
+# The width is forced with author !important rules: Streamlit 1.66.1
+# sets the sidebar width as an inline style (resizable wrapper, width
+# also kept in localStorage) with min/max-width from the emotion
+# class, and author !important beats both. The layout is flex row
+# with the main area flex:1 (verified in the 1.66.1 frontend bundle),
+# so the main area grows into the freed space on its own. The content
+# padding (~24px each side) is overridden to 6px in the collapsed
+# state or it would eat the whole 60px rail. The state lives in
+# session state (``dcs_rail_collapsed``, default True) and is
+# remembered across reruns the way dcs_theme is.
+# ---------------------------------------------------------------------------
+RAIL_COLLAPSED_KEY = "dcs_rail_collapsed"
+RAIL_WIDTH_COLLAPSED = "60px"
+RAIL_WIDTH_EXPANDED = "260px"
 
-    ``sections`` is a list of ``(label, items)`` where ``label`` is the
-    tiny uppercase section heading (e.g. "Data") and ``items`` is a
-    list of ``(key, label)`` pairs — or plain label strings, in which
-    case the label itself is the key. Every row carries the section's
-    line icon left of its label (the dashboard's icon + label rows)
-    and a ``help`` tooltip naming it. The row for ``active`` is a
+
+def rail_collapsed(st_module=None) -> bool:
+    """True when the sidebar rail is in its collapsed (icon-only)
+    state. Defaults to True — Supabase's own default, and the state
+    the user asked for. Anything stored that is not a bool reads as
+    collapsed when truthy, expanded when falsy."""
+    st_mod = st_module or st
+    return bool(st_mod.session_state.get(RAIL_COLLAPSED_KEY, True))
+
+
+def rail_css(collapsed: bool, theme) -> str:
+    """The rail stylesheet for one state + theme, as a ``<style>``
+    block. Injected per run (after the design system) so the width
+    follows the session-state rail state — the base stylesheets never
+    change, and the app.py literal stays the verbatim light paste.
+
+    Collapsed: 60px sidebar, 6px content padding, 4px gaps, rail
+    buttons as 40px borderless squares with a centred icon, a subtle
+    wash on hover (the dashboard's buttons show NO colour change
+    live — only the cursor — so the wash is deliberately quiet) and
+    the active (disabled) icon in a rounded-square highlight. The
+    button rules repeat the base sheet's five selectors (button,
+    button *, :hover, :disabled, :disabled *) with the rail values,
+    so they win on equal specificity by coming later in the page.
+    Expanded: 260px sidebar; the nav rows keep the base sheet's
+    icon + label row styling."""
+    _tokens = (DARK_TOKENS if normalize_theme(theme) == "dark"
+               else TOKENS)
+    _width = (RAIL_WIDTH_COLLAPSED if collapsed
+              else RAIL_WIDTH_EXPANDED)
+    _ink = _tokens["ink"]
+    _hover = _tokens["hover"]
+    _active = _tokens["active_nav"]
+    _css = [
+        "<style>",
+        "/* ---- sidebar rail: Supabase icon rail / labelled sidebar ---- */",
+        'section[data-testid="stSidebar"] {',
+        f"  width: {_width} !important; min-width: {_width} !important;",
+        f"  max-width: {_width} !important; flex: 0 0 {_width} !important;",
+        "  transition: transform 300ms, min-width 300ms,",
+        "    max-width 300ms, width 300ms !important; }",
+    ]
+    if collapsed:
+        _css += [
+            'section[data-testid="stSidebar"] div[data-testid="stSidebarContent"] {',
+            "  padding-left: 6px !important; padding-right: 6px !important; }",
+            'section[data-testid="stSidebar"] div[data-testid="stVerticalBlock"] {',
+            "  gap: 4px !important; }",
+            'section[data-testid="stSidebar"] div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"] {',
+            "  width: 100% !important; height: 40px !important;",
+            "  min-height: 40px !important; padding: 0 !important;",
+            "  border: none !important; border-radius: 8px !important;",
+            "  background: transparent !important;",
+            "  background-color: transparent !important;",
+            "  justify-content: center !important; }",
+            'section[data-testid="stSidebar"] div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"] * {',
+            f"  color: {_ink} !important; }}",
+            'section[data-testid="stSidebar"] div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"]:hover {',
+            f"  background-color: {_hover} !important;",
+            "  border: none !important; }",
+            'section[data-testid="stSidebar"] div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"]:disabled {',
+            f"  background-color: {_active} !important;",
+            "  border: none !important; opacity: 1 !important; }",
+            'section[data-testid="stSidebar"] div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"]:disabled * {',
+            f"  color: {_ink} !important; }}",
+        ]
+    _css.append("</style>")
+    return "\n".join(_css)
+
+
+def sidebar_nav(items, active: str | None = None, collapsed: bool = False,
+                st_module=None):
+    """Render the sidebar nav as Supabase's rail rows.
+
+    ``items`` is a flat list of ``(key, label)`` pairs — or plain
+    label strings, in which case the label itself is the key. Grouped
+    ``(section, items)`` input is still accepted and flattened (the
+    old call shape), but NO section headers are rendered: Supabase's
+    rail has none, and the DATA / ANALYSE / OUTPUT / WORKSPACE
+    headers are gone. Every row carries its line icon left of its
+    label (the dashboard's icon + label rows) and a ``help`` tooltip
+    with the plain label — the tooltip is the only place the label
+    appears in the collapsed state. The row for ``active`` is a
     DISABLED button — you are already there, so it cannot be clicked
     — and the stylesheet renders a disabled sidebar button as the
-    active pill (pale fill, semibold ink, dark left edge). Clicking
-    any other row returns its key; the caller sets ``pending_tab``
-    and reruns (the radio below is the authority, and pending_tab is
-    how every programmatic switch reaches it). Returns the clicked
-    key, or None when nothing was clicked. Call inside
-    ``with st.sidebar:`` — the buttons render wherever the caller
-    puts them.
-    """
+    active pill (light) / rounded-square highlight (collapsed).
+    Clicking any other row returns its key; the caller sets
+    ``pending_tab`` and reruns (the radio below is the authority,
+    and pending_tab is how every programmatic switch reaches it).
+    Returns the clicked key, or None when nothing was clicked. Call
+    inside ``with st.sidebar:`` — the buttons render wherever the
+    caller puts them.
+
+    ``collapsed`` renders icon-only buttons (empty label — Streamlit
+    renders an icon-only button for an empty label with an icon set,
+    which is the dashboard's rail). The widget keys and tooltips are
+    identical in both states, so tests and navigation do not depend
+    on which state the rail is in."""
     st_mod = st_module or st
     clicked = None
-    for section_label, items in sections:
-        st_mod.markdown(
-            f'<div class="dcs-section-label">{html.escape(section_label)}'
-            f"</div>",
-            unsafe_allow_html=True)
-        for item in items:
-            key, label = item if isinstance(item, tuple) else (item, item)
-            if st_mod.button(
-                    str(label), icon=icon_for(NAV_ICONS.get(key, "diamond")),
-                    key=f"dcs_nav_{key}", help=str(label),
-                    type="secondary", disabled=(key == active)):
-                clicked = key
+    _flat = []
+    for _item in items:
+        if (isinstance(_item, tuple) and len(_item) == 2
+                and isinstance(_item[1], (list, tuple))):
+            _flat.extend(_item[1])
+        else:
+            _flat.append(_item)
+    for _item in _flat:
+        key, label = (_item if isinstance(_item, tuple)
+                      else (_item, _item))
+        if st_mod.button(
+                "" if collapsed else str(label),
+                icon=icon_for(NAV_ICONS.get(key, "diamond")),
+                key=f"dcs_nav_{key}", help=str(label),
+                type="secondary", disabled=(key == active)):
+            clicked = key
     return clicked
+
+
+def render_rail_toggle(st_module=None) -> bool:
+    """Render the rail's collapse / expand toggle as an icon button
+    and return True when it was clicked (the caller flips
+    ``dcs_rail_collapsed`` and reruns). Collapsed: a right chevron,
+    icon-only, "Expand sidebar". Expanded: a left chevron with the
+    label "Collapse sidebar". Call inside ``with st.sidebar:``,
+    right after the nav rows — the toggle belongs to the rail, so it
+    sits directly under the nav in both states. Streamlit's own
+    sidebar collapse chevron (top of the bar) is untouched and keeps
+    working alongside this one."""
+    st_mod = st_module or st
+    if rail_collapsed(st_mod):
+        return bool(st_mod.button(
+            "", icon=icon_for("chevron_right"), key="dcs_rail_toggle",
+            help="Expand sidebar", type="secondary"))
+    return bool(st_mod.button(
+        "Collapse sidebar", icon=icon_for("chevron_left"),
+        key="dcs_rail_toggle", help="Collapse sidebar",
+        type="secondary"))
 
 
 def avatar_initial(user) -> str:
@@ -1777,9 +1940,22 @@ def render_avatar_menu(st_module=None, user=None, container=None):
                         unsafe_allow_html=True)
 
         def _on_theme():
-            st_mod.session_state["dcs_theme"] = normalize_theme(
+            _new = normalize_theme(
                 st_mod.session_state.get(THEME_RADIO_KEY, current))
+            st_mod.session_state["dcs_theme"] = _new
+            # The sidebar selectbox is created later in the run (it
+            # lives below the top bar), so its key can be written
+            # here — it then shows the new theme on this very run
+            # instead of one run behind (the 2026-11-07 screenshot:
+            # dark page, "Light" dropdown). Writing it after the
+            # selectbox exists would raise, which is why this lives
+            # in the radio's callback and not the selectbox's.
 
+        # Re-sync immediately before creating the radio, for the
+        # same reason as the selectbox re-sync in
+        # render_theme_toggle: the theme may have flipped earlier in
+        # this run, and the top-of-run sync predates that flip.
+        st_mod.session_state[THEME_RADIO_KEY] = current
         st_mod.radio(
             "Theme", options=list(THEMES),
             format_func=lambda t: "Dark" if t == "dark" else "Light",

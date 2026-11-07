@@ -183,7 +183,11 @@ def _run_flow() -> None:
         raise AssertionError(f"text input {label!r} missing")
 
     def logged_in(at):
-        return any(b.label == "Try the messy sample" for b in at.button)
+        # Either sample entry proves the app opened: the sidebar
+        # button (expanded rail) or the empty state's CTA (collapsed
+        # rail — the sidebar button is hidden until the rail opens).
+        return any(b.label in ("Try the messy sample", "Try the sample data")
+                   for b in at.button)
 
     def login_screen(at):
         return any(b.label == "Log in" for b in at.button)

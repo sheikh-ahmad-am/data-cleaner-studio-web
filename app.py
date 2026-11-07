@@ -658,6 +658,16 @@ ui_design.sync_theme_widgets()
 DESIGN_SYSTEM_CSS = ui_design.theme_css(
     st.session_state.get("dcs_theme") or "light")
 st.markdown(DESIGN_SYSTEM_CSS, unsafe_allow_html=True)
+# Sidebar rail state + stylesheet (ui_design.rail_css): the collapsed
+# icon rail is Supabase's default, so the rail starts collapsed and
+# remembers its state across reruns in session state, like dcs_theme.
+# Injected right after the design system so its rules win on equal
+# specificity.
+st.session_state.setdefault("dcs_rail_collapsed", True)
+st.markdown(ui_design.rail_css(
+    ui_design.rail_collapsed(),
+    st.session_state.get("dcs_theme") or "light"),
+    unsafe_allow_html=True)
 # Rhythm (ui_loading): 1280px container cap + section-gap helpers,
 # injected once per run right after the design system.
 ui_loading.inject_rhythm()
@@ -1663,14 +1673,11 @@ _nav_labels = {"preview": _t("preview"), "join": _t("join"),
                "report": _t("report"), "tools": _t("tools"),
                "tutorial": _t("tutorial"), "settings": "Settings",
                "profile": "Profile", "status": "Status"}
-# Sidebar nav groups (Supabase shell: tiny uppercase labels over plain
-# rows). Only the tabs the current mode offers are shown — client mode
-# hides the advanced ones; the radio below is the authority on that.
-_nav_groups = [("Data", ["preview", "clean", "join"]),
-               ("Analyse", ["kpis", "dashboard", "compare"]),
-               ("Output", ["report"]),
-               ("Workspace", ["tools", "tutorial", "settings", "profile",
-                              "status"])]
+# The sidebar nav is a flat rail (Supabase's icon rail / labelled
+# sidebar) — NO section headers, so there are no nav groups. Only
+# the tabs the current mode offers are shown — client mode hides the
+# advanced ones; the radio below is the authority on that. The flat
+# list is built where the nav renders, from _nav_keys below.
 # A "Go to the Clean tab" empty-state button (or any other code) asks
 # for a section switch by setting pending_tab, then rerunning: apply it
 # here, BEFORE the top bar and the sidebar nav render — writing the
@@ -1703,6 +1710,11 @@ feat_quickjump.render_quick_jump(
     st, container=_top_actions["search_col"], compact=True)
 if _top_actions["upload"]:
     st.session_state["pending_tab"] = "preview"
+    # Upload means "I want to upload" — open the rail too, so the
+    # file uploader (which lives in the expanded sidebar) is visible
+    # instead of landing on Preview with a collapsed rail and no
+    # visible way to pick a file.
+    st.session_state["dcs_rail_collapsed"] = False
     st.rerun()
 if _top_actions["help"]:
     st.session_state["pending_tab"] = "tutorial"
@@ -1875,10 +1887,18 @@ def _restore_cleaned_state(source_name):
 # not here. The nav rows navigate via pending_tab + rerun; the
 # section radio further down is the authority, and pending_tab is
 # how every programmatic switch reaches it.
-# Theme toggle (sidebar): Light/Dark switch writing
-# st.session_state["dcs_theme"]; the stylesheet injected at the top of
-# this file follows it on the next rerun.
-ui_design.render_theme_toggle()
+# Rail state for this run (session state, default collapsed — the
+# dashboard's own default). The collapsed rail holds ONLY the nav
+# icons and the collapse toggle; everything else in the sidebar
+# (theme selectbox, status pill, banner, uploader, sample button,
+# saved files) renders only when the rail is expanded.
+_rail_collapsed = ui_design.rail_collapsed()
+if not _rail_collapsed:
+    # Theme toggle (sidebar): Light/Dark switch writing
+    # st.session_state["dcs_theme"]; the stylesheet injected at the top of
+    # this file follows it on the next rerun. In the collapsed rail the
+    # theme control lives in the avatar menu (top bar).
+    ui_design.render_theme_toggle()
 # Sync client_mode from the toggle widget BEFORE the sidebar nav
 # renders: the toggle itself (feat_analyse.render_client_mode_toggle)
 # only runs later in this script, after the upload block, and it is
@@ -1897,34 +1917,43 @@ _nav_keys = (["preview", "clean", "kpis", "dashboard", "report",
              ["preview", "clean", "join", "kpis", "dashboard", "compare",
               "report", "tools", "tutorial", "settings", "profile",
               "status"])
-_nav_sections = [
-    (label, [(k, _nav_labels[k]) for k in keys if k in _nav_keys])
-    for label, keys in _nav_groups]
-_nav_sections = [(label, items) for label, items in _nav_sections if items]
+# Flat rail list, same pages in the same order — no section headers
+# (Supabase's rail has none).
+_nav_items = [(k, _nav_labels[k]) for k in _nav_keys if k in _nav_labels]
 _nav_active = next(
     (k for k, v in _nav_labels.items() if v == _top_active), "preview")
 with st.sidebar:
-    _nav_clicked = ui_design.sidebar_nav(_nav_sections,
-                                         active=_nav_active)
+    _nav_clicked = ui_design.sidebar_nav(_nav_items, active=_nav_active,
+                                         collapsed=_rail_collapsed)
     if _nav_clicked is not None:
         st.session_state["pending_tab"] = _nav_clicked
         st.rerun()
-    # Quiet status pill (feat_status): the app's own health — the
-    # mode in local mode, "All systems operational" only when the
-    # cloud health check genuinely passed.
-    feat_status.render_status_pill(st)
-_banner = auth.get_local_mode_banner()
-if _banner:
-    st.sidebar.info(_banner)
+    if ui_design.render_rail_toggle():
+        st.session_state["dcs_rail_collapsed"] = not _rail_collapsed
+        st.rerun()
+    if not _rail_collapsed:
+        # Quiet status pill (feat_status): the app's own health — the
+        # mode in local mode, "All systems operational" only when the
+        # cloud health check genuinely passed.
+        feat_status.render_status_pill(st)
+if _rail_collapsed:
+    # Collapsed rail: no uploader — the file picker lives in the
+    # expanded sidebar (and the top-bar Upload pill expands the rail
+    # when clicked). Nothing to upload this run.
+    uploaded = None
+else:
+    _banner = auth.get_local_mode_banner()
+    if _banner:
+        st.sidebar.info(_banner)
 
-st.sidebar.markdown(
-    f'<div class="dcs-micro-label">{html.escape(_t("load") + " your data")}'
-    "</div>",
-    unsafe_allow_html=True)
+    st.sidebar.markdown(
+        f'<div class="dcs-micro-label">{html.escape(_t("load") + " your data")}'
+        "</div>",
+        unsafe_allow_html=True)
 
-uploaded = st.sidebar.file_uploader(
-    "Upload a file", type=["csv", "xlsx", "xls", "json", "parquet"],
-    help="CSV, Excel, JSON or Parquet. Up to 1000MB.")
+    uploaded = st.sidebar.file_uploader(
+        "Upload a file", type=["csv", "xlsx", "xls", "json", "parquet"],
+        help="CSV, Excel, JSON or Parquet. Up to 1000MB.")
 if uploaded is not None and st.session_state.get("last_upload") != uploaded.name:
     try:
         storage.save_upload(_skey, uploaded.name, uploaded.getvalue())
@@ -1949,7 +1978,7 @@ if uploaded is not None and st.session_state.get("last_upload") != uploaded.name
         except Exception as e:  # noqa: BLE001 - show the error, don't crash
             st.sidebar.error(f"Could not read {uploaded.name}: {e}")
 
-if st.session_state.get("pending_excel"):
+if st.session_state.get("pending_excel") and not _rail_collapsed:
     ex_name, ex_bytes = st.session_state["pending_excel"]
     try:
         ex_sheets = feat_combine.list_excel_sheets(ex_bytes)
@@ -1976,7 +2005,8 @@ if st.session_state.get("pending_excel"):
                 st.sidebar.error(f"Could not load the '{ex_choice}' sheet "
                                  f"from {ex_name}: {e}")
 
-if st.sidebar.button(_t("try_sample"), key="sample_btn"):
+if not _rail_collapsed and st.sidebar.button(
+        _t("try_sample"), key="sample_btn"):
     _sample_path = _APP_DIR / "sample_data" / "messy_sales.csv"
     ui_loading.skeleton_table(rows=5, columns=4)
     with branded_spinner("Loading the sample file…"):
@@ -1990,7 +2020,7 @@ try:
     _saved_uploads = storage.list_files(_skey, "uploads")
 except Exception:  # noqa: BLE001
     _saved_uploads = []
-if _saved_uploads:
+if _saved_uploads and not _rail_collapsed:
     with st.sidebar.expander("Your saved files"):
         _saved_pick = st.sidebar.selectbox(
             "Open a saved upload", [""] + _saved_uploads,
@@ -2027,48 +2057,49 @@ if _saved_uploads:
             except Exception as e:  # noqa: BLE001
                 st.sidebar.error(f"Could not delete that file: {e}")
 
-with st.sidebar.expander("More ways to load"):
-    sheet_url = st.text_input(
-        "Google Sheets link (public sheet)",
-        help="File -> Share -> Anyone with the link. Paste the link here.")
-    if st.button("Load sheet", key="sheet_btn"):
-        if not sheet_url.strip():
-            st.error("Paste a Google Sheets link first — "
-                     "File -> Share -> Anyone with the link, then "
-                     "paste the link here.")
-        else:
-            try:
-                ui_loading.skeleton_table(rows=5, columns=4)
-                with branded_spinner("Loading that sheet…"):
-                    _set_raw(engine.load_sheets_url(sheet_url.strip()), "Google Sheet",
-                             kind="sheets", url=sheet_url.strip())
-                st.session_state["last_upload"] = None
-            except Exception as e:  # noqa: BLE001
-                st.error(f"Could not load that Google Sheet — check the "
-                         "link and sharing settings: {e}")
-
-    st.write("... or a database file")
-    db_file = st.file_uploader(
-        "SQLite database (.db)", type=["db", "sqlite", "sqlite3"],
-        help="A SQLite database file — pick one of its tables to load.")
-    if db_file is not None:
-        try:
-            tables = engine.list_sqlite_tables(db_file.getvalue())
-        except Exception as e:  # noqa: BLE001
-            st.error(f"Could not read that database file ({db_file.name}): {e}")
-            tables = []
-        if tables:
-            table = st.selectbox("Table", tables, key="db_table")
-            if st.button("Load table", key="db_load"):
+if not _rail_collapsed:
+    with st.sidebar.expander("More ways to load"):
+        sheet_url = st.text_input(
+            "Google Sheets link (public sheet)",
+            help="File -> Share -> Anyone with the link. Paste the link here.")
+        if st.button("Load sheet", key="sheet_btn"):
+            if not sheet_url.strip():
+                st.error("Paste a Google Sheets link first — "
+                         "File -> Share -> Anyone with the link, then "
+                         "paste the link here.")
+            else:
                 try:
                     ui_loading.skeleton_table(rows=5, columns=4)
-                    with branded_spinner("Loading that table…"):
-                        _set_raw(engine.load_sqlite(db_file.getvalue(), table),
-                                 f"{db_file.name} : {table}")
+                    with branded_spinner("Loading that sheet…"):
+                        _set_raw(engine.load_sheets_url(sheet_url.strip()), "Google Sheet",
+                                 kind="sheets", url=sheet_url.strip())
                     st.session_state["last_upload"] = None
                 except Exception as e:  # noqa: BLE001
-                    st.error(f"Could not load the '{table}' table from "
-                             f"{db_file.name}: {e}")
+                    st.error(f"Could not load that Google Sheet — check the "
+                             "link and sharing settings: {e}")
+
+        st.write("... or a database file")
+        db_file = st.file_uploader(
+            "SQLite database (.db)", type=["db", "sqlite", "sqlite3"],
+            help="A SQLite database file — pick one of its tables to load.")
+        if db_file is not None:
+            try:
+                tables = engine.list_sqlite_tables(db_file.getvalue())
+            except Exception as e:  # noqa: BLE001
+                st.error(f"Could not read that database file ({db_file.name}): {e}")
+                tables = []
+            if tables:
+                table = st.selectbox("Table", tables, key="db_table")
+                if st.button("Load table", key="db_load"):
+                    try:
+                        ui_loading.skeleton_table(rows=5, columns=4)
+                        with branded_spinner("Loading that table…"):
+                            _set_raw(engine.load_sqlite(db_file.getvalue(), table),
+                                     f"{db_file.name} : {table}")
+                        st.session_state["last_upload"] = None
+                    except Exception as e:  # noqa: BLE001
+                        st.error(f"Could not load the '{table}' table from "
+                                 f"{db_file.name}: {e}")
 
 _last_raw_bytes = uploaded.getvalue() if uploaded is not None else None
 # Recent files belongs to the Preview tab only: it used to render on
@@ -2093,8 +2124,9 @@ if _reopened is not None:
 
 feat_analyse.render_client_mode_toggle(st)
 
-with st.sidebar.expander("Settings (API key)"):
-    ai_settings.render_settings(st)
+if not _rail_collapsed:
+    with st.sidebar.expander("Settings (API key)"):
+        ai_settings.render_settings(st)
 
 # Theme toggle: the sidebar Light/Dark switch
 # (ui_design.render_theme_toggle, wired just below the Profile / Log

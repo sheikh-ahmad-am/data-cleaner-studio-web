@@ -104,10 +104,17 @@ def main():
     find_text_input(at, "Password").set_value("password123").run()
     find_button(at, "Create account").click().run()
     assert not at.exception, f"exception on signup: {at.exception}"
-    assert any(b.label == "Try the messy sample" for b in at.button), \
-        "signup should log the user straight in"
     assert any("Account created" in v for v in vals(at.success)), \
         "signup should confirm the account was created"
+    # The rail starts collapsed (the dashboard's default) — open it
+    # so the full sidebar (sample button, uploader) is visible below.
+    # (After the "Account created" check: that note is transient and
+    # an extra rerun clears it.)
+    at.session_state["dcs_rail_collapsed"] = False
+    at.run()
+    assert not at.exception, f"exception expanding rail: {at.exception}"
+    assert any(b.label == "Try the messy sample" for b in at.button), \
+        "signup should log the user straight in"
     assert at.session_state.get("current_user", {}).get("username") == "alice1"
     print("signup -> logged in straight away (auto-login)")
 
@@ -218,6 +225,11 @@ def main():
     find_text_input(bob, "Password").set_value("password123").run()
     find_button(bob, "Log in").click().run()
     assert not bob.exception, f"exception on bob login: {bob.exception}"
+    # The rail starts collapsed (the dashboard's default) — open it
+    # so the full sidebar is visible below.
+    bob.session_state["dcs_rail_collapsed"] = False
+    bob.run()
+    assert not bob.exception, f"exception expanding rail: {bob.exception}"
     assert any(b.label == "Try the messy sample" for b in bob.button), \
         "bob should reach the app"
     assert not any("alice_secret.csv" in str(o)
@@ -226,6 +238,9 @@ def main():
     print("user isolation works: bob cannot list or read alice's files")
 
     # ---- 8. Log out returns to the login screen. ----
+    # The "Log out" button lives on the Profile page (the avatar menu
+    # says "Sign out" instead) — go there first.
+    goto_section(at, "Profile")
     find_button(at, "Log out").click().run()
     assert not at.exception, f"exception on logout: {at.exception}"
     assert any(b.label == "Log in" for b in at.button), \
