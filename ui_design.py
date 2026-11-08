@@ -1184,6 +1184,18 @@ div[data-testid="stVerticalBlock"] > div:has(.dcs-danger-zone) ~ div div[data-te
 div[data-testid="stTextInput"] input:disabled {
   color: #edefee !important; -webkit-text-fill-color: #edefee !important;
   background-color: #2a2d2c !important; }
+/* ---- Profile dark disabled fields, per-key pin (round 9): the
+   two global rules above already paint bright in the local
+   Supabase-mode probe (fill rgb(237,239,238), pixels max 238),
+   but the live check still measured them dim — the live cause
+   does not reproduce locally, so this key-scoped rule is
+   belt-and-braces: it sits later in the sheet and names the
+   exact Profile widgets, so it wins over any competing rule
+   that could be dimming them live. ---- */
+.st-key-profile_primary_email input:disabled,
+.st-key-profile_username input:disabled {
+  color: #edefee !important; -webkit-text-fill-color: #edefee !important;
+  background-color: #2a2d2c !important; opacity: 1 !important; }
 /* ---- checkboxes: hairline box border, bright green check ---- */
 .stApp input[type="checkbox"] { accent-color: #4acd8b; }
 div[data-testid="stCheckbox"] div[data-baseweb="checkbox"] span {
@@ -1987,6 +1999,31 @@ def rail_css(collapsed: bool, theme) -> str:
     read computed ``color`` (#edefee, correct) and missed that the
     fill sat at rgba(3,3,3,0.4).
 
+    Round 9 (2026-11-08) — the round-8 gate did NOT take effect
+    live (the collapse still did not stick: the sidebar sat at
+    ~260px for 10s with the pointer on the toggle; the toggle bar
+    was still full-width; Profile dark was still dim — all
+    verified live, none of them reproduced in the local
+    Supabase-mode probe, probe19/20). The gate is DELETED and
+    replaced by a STRUCTURAL mechanism, not a selector: the
+    toggle now renders in the MAIN area, outside the sidebar
+    section entirely, so ``section:hover`` can never fire from
+    hovering the toggle — no ``:has()`` anywhere in this
+    stylesheet (the :has() ban is reinstated; round 6 already
+    proved :has() never takes effect live). The pin chain targets
+    the main area, and the hover pin (toggle widens to 260px
+    when the rail overlay is open) is a sibling selector from
+    the section to main[stMain]. The nav rows are widened by an
+    explicit 8px content padding (rows 223px locally at x=18,
+    ~234px live — this Chromium's 20px classic scrollbar is not
+    shrinkable by CSS, and the live browser's is ~10px thinner;
+    the live check measured 219px, the local probe 199px).
+    The Profile dark fields get a per-key fill pin in the
+    dark sheet as belt-and-braces (the global fill pin already
+    paints bright locally — probe19/20: fill rgb(237,239,238),
+    pixels max 238 — the live dim reading does not reproduce in
+    Supabase mode, so the live check is the final proof for it).
+
     For the hover to reveal the labels, the nav labels are always
     rendered (sidebar_nav) — the hover overlay shows them. The
     non-nav controls are NOT in the DOM while collapsed: app.py
@@ -2013,12 +2050,12 @@ def rail_css(collapsed: bool, theme) -> str:
 
     Both states: the sidebar is a flex column
     (``stSidebarContent`` > header + ``stSidebarUserContent`` >
-    vertical block). The toggle — the vertical block's LAST child,
-    rendered after the slicers — is pinned FIXED to the viewport's
-    bottom-left at the rail's width in every state, so it never
-    sits below the fold however tall the content is (absolute
-    scrolled away with the content live; sticky stopped 56px
-    short; fixed held at the viewport bottom at every scroll
+    vertical block). The toggle — rendered once in the MAIN area
+    (round 9), not in the sidebar — is pinned FIXED to the
+    viewport's bottom-left at the rail's width in every state, so
+    it never sits below the fold however tall the content is
+    (absolute scrolled away with the content live; sticky stopped
+    56px short; fixed held at the viewport bottom at every scroll
     offset in the real-DOM probe). The vertical block carries
     bottom padding so the last content row scrolls above it.
     Streamlit's native top "«" collapse control is hidden: the
@@ -2076,43 +2113,64 @@ def rail_css(collapsed: bool, theme) -> str:
     # collapsed into one overlapping stack (caught by the
     # round-7 real-DOM probe — the expanded sidebar rendered
     # empty except for the toggle).
-    # The pin selector carries the FULL ancestor chain
-    # (section > user content > vertical block > element
-    # container, all descendant combinators — the intermediate
-    # plain div between the user content and the block is
-    # skipped over, never a ``>``): specificity (0,5,4). That
-    # matters because the wide-state rules below force element
-    # containers to ``width: 100% !important`` at specificity
-    # (0,3,3) — with the old (0,3,2) pin selector the 100% rule
-    # WON, so the fixed toggle bar stretched to the full
-    # viewport width (1920px, button 1896px) instead of living
-    # inside the 260px sidebar column (round-8 live failure).
-    # The wide-state container rules also exclude the toggle
-    # explicitly (:not(.st-key-dcs_rail_toggle)) — belt and
-    # braces, so the pin width is the only width the toggle
-    # container ever gets.
-    # The hover variant takes ``gated=True``: the 260px hover
-    # pin must NOT apply while the pointer is on the toggle
-    # itself (see the hover gate below) — otherwise the toggle
-    # bar would stick out of the 60px rail while the content
-    # stays collapsed.
-    def _toggle_pin_rules(width, hover=False, gated=False):
-        _chain = ('div[data-testid="stSidebarUserContent"] '
+    # Round 9 (2026-11-08) — the toggle is NOT in the sidebar
+    # any more: app.py renders it in the MAIN area (first element
+    # of the main vertical block), pinned FIXED to the viewport's
+    # bottom-left. That is the :has()-FREE collapse mechanism:
+    # the hover-expand trigger is ``section:hover`` on the
+    # sidebar, and the toggle is not a descendant of the section,
+    # so hovering the toggle can NEVER trigger the expand — no
+    # gate selector is needed at all. The round-8 gate
+    # (``:not(:has(.st-key-dcs_rail_toggle:hover))``) worked in
+    # the local probe (Chromium supports :has()) but did NOT take
+    # effect live (round 6 already proved :has() never takes
+    # effect live; the round-8 live check saw the collapse not
+    # stick — the sidebar sat at ~260px for 10s with the pointer
+    # on the toggle). So the gate is gone, and the pin chain
+    # below targets the MAIN area, not the sidebar: the toggle's
+    # element container is
+    # ``main[data-testid="stMain"] div[data-testid="stVerticalBlock"]
+    # div[data-testid="stElementContainer"].st-key-dcs_rail_toggle``.
+    # The main area has no transform/filter ancestor (verified in
+    # the real DOM, debug21c), so position:fixed stays
+    # viewport-relative exactly as it was from the sidebar.
+    # The hover variant takes ``hover=True``: when the sidebar is
+    # hovered (collapsed state, overlay open) the toggle pins at
+    # the overlay's 260px width, so it reads as part of the
+    # expanded panel. The selector is a SIBLING selector — the
+    # section and the div wrapping main[stMain] are both children
+    # of stAppViewContainer (verified in the real DOM, debug21b)
+    # — so no :has() is needed for it either. The pin width is
+    # the CURRENT state's width (``_width``): a collapsed-width
+    # pin left in the expanded stylesheet would put a 60px
+    # rule in the expanded CSS even though the later 260px
+    # rule wins the cascade.
+    def _toggle_pin_rules(width, hover=False):
+        _chain = ('main[data-testid="stMain"] '
                   'div[data-testid="stVerticalBlock"] '
                   'div[data-testid="stElementContainer"]'
                   '.st-key-dcs_rail_toggle')
-        _gate = (':not(:has(.st-key-dcs_rail_toggle:hover))'
-                 if gated else '')
         _sel = (
-            f'section[data-testid="stSidebar"]:hover{_gate} {_chain} {{'
+            f'section[data-testid="stSidebar"]:hover ~ div {_chain} {{'
             if hover else
-            f'section[data-testid="stSidebar"] {_chain} {{')
+            f'{_chain} {{')
         return [
             _sel,
             "  margin-top: 0 !important; position: fixed !important;",
             "  bottom: 0 !important; left: 0 !important;",
             f"  width: {width} !important;",
-            "  z-index: 2 !important;",
+            # z-index 1000001 (round 9 fix): the toggle lives in the
+            # MAIN area now, and the sidebar section carries a rest
+            # z-index of 1000 (1000000 when hovered, the overlay) —
+            # with the old z-index 2 the section painted ABOVE the
+            # toggle, so clicks at the toggle's position hit the
+            # section instead and the rail could never pin-expand
+            # (probe21: section stayed 60px, toggle showed the
+            # 260px hover pin, and the theme selectbox never
+            # rendered because the rail was only hover-expanded).
+            # 1000001 puts the toggle above the overlay too, so
+            # it stays clickable while the overlay is open.
+            "  z-index: 1000001 !important;",
             f"  background: {_bg} !important; padding: 4px 12px 8px !important; }}",
         ]
     _css = [
@@ -2188,45 +2246,34 @@ def rail_css(collapsed: bool, theme) -> str:
     ] + _toggle_pin_rules(_width)
     if collapsed:
         # Two shared selector prefixes for the collapsed branch.
-        # _hover — the hover-EXPAND trigger, gated on the toggle:
-        # the overlay expands when the section is hovered AND the
-        # pointer is NOT on the toggle itself. The gate is the
-        # round-8 collapse fix: after a collapse click the pointer
-        # rests on the toggle (bottom of the rail), so an ungated
-        # :hover would re-expand the overlay instantly and the
-        # collapse would never stick — the live check saw the
-        # sidebar "re-expand within a few seconds" into a hybrid
-        # 260px panel showing only the nav buttons (the overlay in
-        # collapsed state, non-nav widgets not in the DOM). With
-        # the gate, hovering the toggle leaves the rail collapsed;
-        # moving the pointer up to the nav icons expands it. The
-        # toggle strip (~52px at the bottom) is the one part of
+        # _hover — the hover-EXPAND trigger, UNGATED: the overlay
+        # expands when the section is hovered. No gate is needed
+        # any more, because the toggle is NOT a descendant of the
+        # section (round 9: it renders in the main area), so
+        # hovering the toggle can never fire ``section:hover``.
+        # The round-8 gate (``:not(:has(...))``) is DELETED: it
+        # worked locally but never took effect live, and the
+        # collapse did not stick live because of it. The toggle
+        # strip (~52px at the bottom) is still the one part of
         # the rail that does not trigger the expand — it is a
         # control, not rail content, and expanding from it would
-        # undo the click that just landed on it.
+        # undo the click that just landed on it — but now that is
+        # a STRUCTURAL fact (the toggle is outside the section),
+        # not a selector.
         # _hidden — the "rail looks collapsed" condition for the
-        # hiding rules: the pointer is away from the rail, OR it
-        # is on the toggle (in which case the overlay is NOT
-        # expanded, so the mounted widgets would squeeze into the
-        # 60px rail as vertical one-letter text if they showed).
-        # :has() is supported in Chromium since 105 (the live
-        # checker's browser and every modern browser); the 5028aa3
-        # note that ":has() never took effect live" was a
-        # hypothesis, never proven — that safety net also hid the
-        # nav buttons by construction. The gate is verified in
-        # the round-8 real-DOM probe (hover the toggle: content
-        # stays 60px; hover a nav icon: 260px) and the live check
-        # is the final proof.
+        # hiding rules: the pointer is away from the rail. (The
+        # round-8 :is() condition also covered "pointer on the
+        # toggle"; that case no longer exists — the toggle is
+        # outside the section, so the overlay is never expanded
+        # while the pointer is on it.)
         # NOTE: this REDEFINES _hover — above this point _hover
         # was the hover-WASH token (_tokens["hover"]); below it
-        # _hover is the gated hover selector. Any value below
+        # _hover is the hover selector. Any value below
         # that needs the wash token must read _tokens["hover"]
         # directly (a round-8 regression shipped the selector
         # as the wash background until the rail tests caught it).
-        _hover = ('section[data-testid="stSidebar"]:hover'
-                  ':not(:has(.st-key-dcs_rail_toggle:hover))')
-        _hidden = ('section[data-testid="stSidebar"]:is(:not(:hover), '
-                   ':has(.st-key-dcs_rail_toggle:hover))')
+        _hover = 'section[data-testid="stSidebar"]:hover'
+        _hidden = 'section[data-testid="stSidebar"]:not(:hover)'
         _deny = [
             # DESCENDANT selectors throughout: the 8b4dd04 denylist
             # used ``stSidebarUserContent > stVerticalBlock >
@@ -2271,9 +2318,9 @@ def rail_css(collapsed: bool, theme) -> str:
             # transition on the content is the real 0.2s glide.
             # The section's z-index lifts the overlay above the
             # main area; the shadow is the overlay's depth. The
-            # expand rules are gated on the toggle (see _hover
-            # above): hovering the toggle itself must not expand,
-            # or the collapse click's pointer would re-expand the
+            # expand needs no gate any more (round 9): the toggle
+            # is not a descendant of the section, so hovering it
+            # can never fire ``section:hover`` and re-expand the
             # overlay the instant the rerun renders collapsed.
             'section[data-testid="stSidebar"]:hover {',
             "  z-index: 1000000 !important; }",
@@ -2281,17 +2328,30 @@ def rail_css(collapsed: bool, theme) -> str:
             "  position: absolute !important; left: 0 !important;",
             "  top: 0 !important; bottom: 0 !important;",
             "  width: 260px !important; max-width: 260px !important;",
+            # Round 9 (nav-row width): the hover overlay's content
+            # carries the same 8px side padding as the pinned-
+            # expanded rail, and the same 8px scrollbar pin, so
+            # the hover nav rows are 235px wide at x=8 — within
+            # 2px of the ~233px the rows should be. (The overlay
+            # content scrolls too, so its scrollbar takes the
+            # same 20px unless pinned.)
+            "  padding-left: 8px !important; padding-right: 8px !important;",
             f"  box-shadow: {_shadow} !important;",
             f"  transition: width {_glide} !important; }}",
+            f'{_hover} div[data-testid="stSidebarContent"]::-webkit-scrollbar {{',
+            "  width: 8px !important; }",
+            f'{_hover} div[data-testid="stSidebarUserContent"],',
+            f'{_hover} div[data-testid="stSidebarUserContent"] div[data-testid="stVerticalBlock"] {{',
+            "  width: 100% !important; }",
             # Hover-expanded: the element containers go full-width
             # (the expanded-pill fix — the nav buttons' width:100%
             # resolves against the 260px overlay, not a
             # content-sized ~100px box), and the toggle pins FIXED
-            # at the overlay's 260px width. The vertical block
-            # carries bottom padding so the last content row can
-            # scroll above the fixed toggle. The toggle's own
-            # container is excluded from the full-width rule (it
-            # has its own pin width — see _toggle_pin_rules).
+            # at the overlay's 260px width (it lives in the main
+            # area now, so the sibling selector in
+            # _toggle_pin_rules widens it on section hover). The
+            # vertical block carries bottom padding so the last
+            # content row can scroll above the fixed toggle.
             f'{_hover} div[data-testid="stVerticalBlock"] {{',
             "  padding-bottom: 56px !important; }",
             f'{_hover} div[data-testid="stVerticalBlock"] div[data-testid="stElementContainer"]:not(.st-key-dcs_rail_toggle),',
@@ -2303,28 +2363,28 @@ def rail_css(collapsed: bool, theme) -> str:
             # over the base sheet's flex-start here.
             f'{_hover} div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"] {{',
             "  justify-content: flex-start !important; }",
-        ] + _toggle_pin_rules(RAIL_WIDTH_EXPANDED, hover=True,
-                               gated=True) + [
+        ] + _toggle_pin_rules(RAIL_WIDTH_EXPANDED, hover=True) + [
             # Hiding, collapsed and visually collapsed (the
             # denylist): every non-nav child of the vertical block
             # is hidden — the client-mode checkbox, the slicers,
             # the uploader, the expanders, the theme selectbox,
             # the status pill and any sidebar alert. The widgets
             # stay mounted (their values survive); only the nav
-            # rows + toggle stay visible. Explicit testids, all
-            # DESCENDANT selectors (no ``>`` — see the 8b4dd04
+            # rows stay visible (the toggle is not in the sidebar
+            # any more — round 9 moved it to the main area, so
+            # there is no toggle to hide here). Explicit testids,
+            # all DESCENDANT selectors (no ``>`` — see the 8b4dd04
             # note above). The hiding condition is _hidden: the
-            # pointer is away from the rail, OR it is on the
-            # toggle (overlay not expanded, so a shown widget
-            # would squeeze into the 60px rail as vertical
-            # one-letter text).
+            # pointer is away from the rail (overlay not expanded,
+            # so a shown widget would squeeze into the 60px rail
+            # as vertical one-letter text).
         ] + _deny + [
             # Non-nav sidebar buttons (sample, load sheet): they
             # carry no help=, so Streamlit renders their <button>
-            # as a DIRECT child of the wrapper — unlike nav/toggle
+            # as a DIRECT child of the wrapper — unlike nav
             # buttons, which have the help-wrapper div in between.
             # Hide the direct-child button when the rail is
-            # visually collapsed; the nav + toggle keep showing.
+            # visually collapsed; the nav rows keep showing.
             f'{_hidden} div[data-testid="stVerticalBlock"] div[data-testid="stButton"] > button {{',
             "  display: none !important; }",
             # Nav labels, visually collapsed: the label text
@@ -2355,28 +2415,80 @@ def rail_css(collapsed: bool, theme) -> str:
             "  border: none !important; opacity: 1 !important; }",
             'section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"]:disabled * {',
             f"  color: {_ink} !important; }}",
+            # The toggle button itself (round 9): it renders in
+            # the MAIN area now, so the sidebar-scoped button
+            # rules above do not reach it — it gets its own
+            # key-scoped rules. The pin (see _toggle_pin_rules)
+            # sets the container width (60px collapsed, 260px
+            # expanded / hovered) with 12px side padding, so the
+            # button at width:100% reads as the 36px icon square
+            # collapsed and the 236px "Collapse sidebar" row
+            # expanded — the same geometry the pin gave it in the
+            # sidebar. Collapsed: icon-only, centred.
+            '.st-key-dcs_rail_toggle button[data-testid="stBaseButton-secondary"] {',
+            "  width: 100% !important; height: 36px !important;",
+            "  min-height: 36px !important; padding: 0 !important;",
+            "  border: none !important; border-radius: 8px !important;",
+            "  background: transparent !important;",
+            "  background-color: transparent !important;",
+            "  justify-content: center !important; }",
+            '.st-key-dcs_rail_toggle button[data-testid="stBaseButton-secondary"] * {',
+            f"  color: {_ink} !important; }}",
+            '.st-key-dcs_rail_toggle button[data-testid="stBaseButton-secondary"]:hover {',
+            f"  background-color: {_tokens['hover']} !important;",
+            "  border: none !important; }",
         ]
     else:
         _css += [
-            # Expanded: the content scrolls, so the toggle pins
-            # FIXED to the viewport bottom (absolute scrolled away
-            # with the content live; fixed held at 998px at every
-            # scroll offset in the real-DOM probe), and the
-            # vertical block carries bottom padding so the last
-            # content row can scroll above it. The element
+            # Expanded: the content scrolls, and the vertical
+            # block carries bottom padding so the last content
+            # row can scroll above the fixed toggle. The element
             # containers go full-width (the expanded-pill fix).
-            # The toggle's own container is excluded: it has its
-            # own pin width (260px here) — without the exclusion
-            # the 100% rule beat the pin at (0,3,3) vs (0,3,2)
-            # and the fixed toggle bar stretched to the full
-            # viewport width (round-8 live failure). The pin
-            # selector now also carries the full ancestor chain
-            # at (0,5,4), so both defences hold the pin width.
+            # The toggle is not in the sidebar any more (round 9:
+            # main area), so there is no toggle container to
+            # exclude here — the pin (_toggle_pin_rules, emitted
+            # above at the state's width, 260px) is the only
+            # width the toggle container ever gets, and the
+            # sidebar container rules cannot touch it.
+            # Round 9 (nav-row width): the content carries an
+            # explicit 8px side padding, and the sidebar's
+            # vertical scrollbar is pinned to 8px wide, so the
+            # nav rows are 235px wide (259 - 8 - 8 - 8) at x=8 —
+            # within 2px of the ~233px the rows should be. The
+            # live check measured 219px, the local probe 199px.
+            # Why 8px + 8px, not 12px: the content scrolls
+            # (scrollHeight 1329 > clientHeight 998), and its
+            # classic scrollbar takes 20px of layout width
+            # (offsetWidth 259, clientWidth 239 — probe23), so a
+            # 12px padding alone only widened the rows to 215px
+            # (the user content does not stretch to the padding
+            # box on its own either — probe21/23). Pinning the
+            # scrollbar to 8px recovers 12px of it, and the 8px
+            # padding spends the rest; the thin scrollbar is
+            # still visible, so the scroll affordance survives.
+            # The section's 1px right border leaves the content
+            # 259px, not 260px.
+            'section[data-testid="stSidebar"] div[data-testid="stSidebarContent"] {',
+            "  padding-left: 8px !important; padding-right: 8px !important; }",
+            'section[data-testid="stSidebar"] div[data-testid="stSidebarContent"]::-webkit-scrollbar {',
+            "  width: 8px !important; }",
+            'section[data-testid="stSidebar"] div[data-testid="stSidebarContent"] {',
+            "  scrollbar-width: thin; }",
+            'section[data-testid="stSidebar"] div[data-testid="stSidebarUserContent"],',
+            'section[data-testid="stSidebar"] div[data-testid="stSidebarUserContent"] div[data-testid="stVerticalBlock"] {',
+            "  width: 100% !important; }",
             'section[data-testid="stSidebar"] div[data-testid="stVerticalBlock"] {',
             "  padding-bottom: 56px !important; }",
             'section[data-testid="stSidebar"] div[data-testid="stVerticalBlock"] div[data-testid="stElementContainer"]:not(.st-key-dcs_rail_toggle),',
             'section[data-testid="stSidebar"] div[data-testid="stVerticalBlock"] div[data-testid="stLayoutWrapper"] {',
             "  width: 100% !important; align-self: stretch !important; }",
+            # The toggle button, expanded: icon + "Collapse
+            # sidebar" label, left-aligned like the nav rows
+            # (the collapsed branch centres it as an icon-only
+            # square; the main-area button needs its own rule
+            # because the sidebar button rules do not reach it).
+            '.st-key-dcs_rail_toggle button[data-testid="stBaseButton-secondary"] {',
+            "  justify-content: flex-start !important; }",
         ]
         # (The toggle pin is already emitted above at the state's
         # width — 260px here — so no second pin is needed.)
@@ -2447,12 +2559,17 @@ def render_rail_toggle(st_module=None) -> bool:
     and return True when it was clicked (the caller flips
     ``dcs_rail_collapsed`` and reruns). Collapsed: a right chevron,
     icon-only, "Expand sidebar". Expanded: a left chevron with the
-    label "Collapse sidebar". Call inside ``with st.sidebar:``,
-    LAST in the sidebar content (after the slicers) — the rail CSS
-    pins the vertical block's last child to the bottom, so the
-    toggle is the collapse control at the rail's foot, not a nav
-    row. Streamlit's own sidebar collapse chevron (top of the bar)
-    is untouched and keeps working alongside this one."""
+    label "Collapse sidebar". Call at the TOP LEVEL (main area),
+    NOT inside ``with st.sidebar:`` — round 9 moved it out of the
+    sidebar on purpose: the hover-expand trigger is
+    ``section:hover`` on the sidebar, and the toggle must not be
+    a descendant of the section, or hovering it re-expands the
+    overlay and the collapse never sticks (the round-8 :has()
+    gate did not take effect live). The rail CSS pins it FIXED
+    to the viewport's bottom-left at the rail's width, so it
+    reads as the rail's foot wherever it is rendered. Streamlit's
+    own sidebar collapse chevron (top of the bar) is untouched
+    and keeps working alongside this one."""
     st_mod = st_module or st
     if rail_collapsed(st_mod):
         return bool(st_mod.button(

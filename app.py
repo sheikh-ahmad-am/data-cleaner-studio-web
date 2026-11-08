@@ -1990,7 +1990,9 @@ def _restore_cleaned_state(source_name):
 # render as vertical one-letter text (the 8b4dd04 live failure —
 # "Theme", the status pill, "Load your data", the uploader and the
 # client-mode checkbox all squeezed into single-letter columns).
-# The nav + toggle always render (they ARE the collapsed rail).
+# The nav always renders (it IS the collapsed rail). The rail
+# toggle renders once, in the main area (round 9) — pinned FIXED
+# to the viewport's bottom-left, not part of the sidebar.
 # Widget values persist in session state under their keys and are
 # picked back up when the rail re-opens; the rail CSS denylist stays
 # as a backstop for the widgets that must stay mounted (the Excel
@@ -2032,9 +2034,10 @@ with st.sidebar:
     if _nav_clicked is not None:
         st.session_state["pending_tab"] = _nav_clicked
         st.rerun()
-    # The rail toggle is NOT here: it renders last in the sidebar
-    # (after the slicers, below), so the rail CSS can pin it to the
-    # bottom of the rail.
+    # The rail toggle is NOT here: it renders once, in the main
+    # area (round 9), pinned FIXED to the viewport's bottom-left
+    # — it must not be a descendant of the sidebar, or hovering
+    # it re-expands the overlay and the collapse never sticks.
     # Quiet status pill (feat_status): the app's own health — the
     # mode in local mode, "All systems operational" only when the
     # cloud health check genuinely passed. Not rendered while the
@@ -2448,18 +2451,21 @@ def _render_dashboard_strips(st, clean, raw, storage_key):
             st.rerun()
 
 
-# Rail toggle for the EMPTY state (no data loaded): the script stops
-# at the empty state below, before the slicers and the late toggle,
-# so the toggle is rendered here too — same widget key, mutually
-# exclusive with the late one (this branch runs only when raw is
-# None, the late one only when raw is not None), so no duplicate-key
-# error. It is the last sidebar element in this state, so the rail
-# CSS's last-child pin still puts it at the rail's foot.
-if raw is None:
-    with st.sidebar:
-        if ui_design.render_rail_toggle():
-            st.session_state["dcs_rail_collapsed"] = not _rail_collapsed
-            st.rerun()
+# Rail toggle (round 9): ONE render, in the MAIN area (top level),
+# before the empty-state branches below — it must exist on every
+# logged-in run, empty or data-loaded, and before any st.stop().
+# It is deliberately NOT in the sidebar: the hover-expand trigger
+# is ``section:hover`` on the sidebar, and the toggle must not be
+# a descendant of the section, or hovering it re-expands the
+# overlay and the collapse never sticks (the round-8 :has() gate
+# did not take effect live, so the gate is gone and the toggle
+# moved out instead). The rail CSS pins it FIXED to the viewport's
+# bottom-left at the rail's width, so it reads as the rail's foot.
+# The old two sidebar renders (empty state + data-loaded) are
+# deleted: a single main-area render covers both states.
+if ui_design.render_rail_toggle():
+    st.session_state["dcs_rail_collapsed"] = not _rail_collapsed
+    st.rerun()
 
 if raw is None:
     # The Profile view needs no data: when the user asked for it
@@ -2641,17 +2647,9 @@ if clean is not None:
     if not _rail_collapsed:
         st.sidebar.caption(f"Showing {len(filtered):,} of {len(clean):,} rows")
 
-# Rail toggle LAST in the sidebar (after the slicers): the rail CSS
-# pins the vertical block's last child to the bottom (margin-top:auto
-# + sticky), so the collapse control is always reachable without
-# scrolling — it is the rail's foot, not a nav row, and it must never
-# sit above content that can push it below the fold. Data state
-# only: the empty state stops before this point and uses the early
-# toggle above (same key, mutually exclusive).
-with st.sidebar:
-    if ui_design.render_rail_toggle():
-        st.session_state["dcs_rail_collapsed"] = not _rail_collapsed
-        st.rerun()
+# (The rail toggle renders once, in the main area, before the
+# empty-state branches above — round 9 moved it out of the
+# sidebar so hovering it can never re-expand the overlay.)
 
 _client = bool(st.session_state.get("client_mode", False))
 # Main flow first (upload -> clean -> KPIs -> export), then the

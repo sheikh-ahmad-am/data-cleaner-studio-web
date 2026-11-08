@@ -17,6 +17,10 @@ only proof of the look itself:
   margin-top:auto + sticky) and is the LAST sidebar button, in
   both states; the collapsed buttons are 36px so 12 icons + toggle
   fit a 573px viewport and the scroll offset clamps to ~0.
+  (Round 9 SUPERSEDED this: the toggle now renders once in the
+  MAIN area, not the sidebar — the :has()-free collapse
+  mechanism — so it is no longer a sidebar button at all; the
+  last sidebar button is the last nav item.)
   Gap 3 — expanded nav rows are full-width rows (the old
   `button[kind="secondary"]` selector was dead — Streamlit renders
   no `kind` attribute).
@@ -360,9 +364,14 @@ def test_gap2_collapsed_fits_short_viewport():
 
 
 def test_gap2_toggle_is_last_sidebar_button(_tmp_env):
-    """The toggle renders after every other sidebar control (the
-    slicers are last in script order before it), so the rail CSS's
-    last-child pin targets the toggle — in both states."""
+    """Round 9 SUPERSEDED this test's premise: the toggle is no
+    longer a sidebar button at all — it renders once in the MAIN
+    area (the :has()-free collapse mechanism: the toggle is not
+    a descendant of the sidebar section, so hovering it can never
+    trigger the hover-expand). So the toggle must NOT be among the
+    sidebar buttons in either state, must render exactly once
+    among all buttons, and the last sidebar button is now the
+    last nav item (Status)."""
     at = AppTest.from_file(APP)
     at.run()
     signup(at, "alice1")
@@ -373,14 +382,26 @@ def test_gap2_toggle_is_last_sidebar_button(_tmp_env):
     assert at.session_state.get("dcs_rail_collapsed") is True
     collapsed_buttons = list(at.sidebar.button)
     assert collapsed_buttons, "collapsed rail must have sidebar buttons"
-    assert collapsed_buttons[-1].key == "dcs_rail_toggle", \
-        "the toggle must be the last sidebar button (collapsed)"
+    assert all(b.key != "dcs_rail_toggle" for b in collapsed_buttons), \
+        "the toggle must NOT be a sidebar button (collapsed, round 9)"
+    assert collapsed_buttons[-1].key == "dcs_nav_status", \
+        "the last sidebar button must now be the last nav item (collapsed)"
+    toggles = [b for b in at.button if b.key == "dcs_rail_toggle"]
+    assert len(toggles) == 1, \
+        f"the toggle must render exactly once (main area), found {len(toggles)}"
     # Expanded: uploader, sample button and the rest render before it.
+    # (The expanded sidebar's last button is the AI-key test
+    # control, not a nav item — the non-nav widgets only render
+    # expanded — so only the toggle's absence is asserted here.)
     expand_rail(at)
     expanded_buttons = list(at.sidebar.button)
-    assert expanded_buttons[-1].key == "dcs_rail_toggle", \
-        "the toggle must be the last sidebar button (expanded)"
-    print("gap 2 toggle is last sidebar button OK")
+    assert expanded_buttons, "expanded rail must have sidebar buttons"
+    assert all(b.key != "dcs_rail_toggle" for b in expanded_buttons), \
+        "the toggle must NOT be a sidebar button (expanded, round 9)"
+    toggles = [b for b in at.button if b.key == "dcs_rail_toggle"]
+    assert len(toggles) == 1, \
+        f"the toggle must render exactly once (main area), found {len(toggles)}"
+    print("gap 2 toggle is in the main area, not the sidebar OK")
 
 
 # ---------------------------------------------------------------------------

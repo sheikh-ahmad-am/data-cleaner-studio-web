@@ -65,6 +65,16 @@ proof; a stale module needs a reboot first.
 
 Run ONLY this file:  .test-venv-ui/bin/python -m pytest
 tests/test_fixup_round8.py -q   (from project root)
+
+Round 9 (2026-11-08) SUPERSEDED the :has() gate and the sidebar
+pin below: the gate never took effect live (round 6 already proved
+:has() never takes effect live), so the toggle moved OUT of the
+sidebar into the main area and the gate was deleted — see
+tests/test_fixup_round9.py for the new-mechanism tests. The three
+round-8 tests that asserted the gate / the :is() hidden condition /
+the sidebar pin chain were removed here and replaced there; the
+tests that still hold (dark fill, no-selector-value, hover wash,
+collapse survives a rerun) stay.
 """
 
 import sys
@@ -83,99 +93,21 @@ from streamlit.testing.v1 import AppTest  # noqa: E402
 
 APP = str(PROJECT_ROOT / "app.py")
 
-GATE = ":not(:has(.st-key-dcs_rail_toggle:hover))"
-HOVER = ('section[data-testid="stSidebar"]:hover' + GATE)
+# Round 9 superseded the :has() gate (GATE / HOVER constants) and
+# the sidebar pin chain — see tests/test_fixup_round9.py.
+
+# NOTE (round 9): the three tests that asserted the :has() gate, the
+# :is() hidden condition and the sidebar pin chain lived here and
+# were REMOVED — round 9 deleted the gate and moved the toggle to
+# the main area (see tests/test_fixup_round9.py). Do not re-add
+# a :has() gate: round 6 proved :has() never takes effect live.
 
 
 def _collapsed(theme="light"):
     return ui_design.rail_css(True, theme)
 
 
-def test_r8_hover_trigger_is_gated_on_the_toggle():
-    """The collapsed hover-expand rules fire on the section hover
-    EXCEPT while the pointer is on the toggle itself — otherwise
-    the collapse click's pointer re-expands the overlay the
-    instant the rerun renders collapsed (the live failure).
-    The section also carries a rest z-index so nothing painted
-    above it can steal pointer events from the rail (the live
-    narrow-strip trigger, hardened — the local probe shows the
-    trigger firing everywhere, so this is defence, not a
-    root-cause claim)."""
-    for theme in ("light", "dark"):
-        css = _collapsed(theme)
-        # Every hover-expand rule carries the gate.
-        for frag in (
-                f'{HOVER} div[data-testid="stSidebarContent"]',
-                f'{HOVER} div[data-testid="stVerticalBlock"]',
-                'div[data-testid="stElementContainer"]:not(.st-key-dcs_rail_toggle)'):
-            assert frag in css, \
-                f"collapsed {theme} rail must gate {frag!r} on the toggle"
-        # No ungated hover-expand rule may remain.
-        assert 'section[data-testid="stSidebar"]:hover ' \
-            'div[data-testid="stSidebarContent"]' not in css, \
-            f"collapsed {theme} rail must not carry an ungated " \
-            "hover overlay rule"
-        # The section sits above the main area at rest.
-        assert "z-index: 1000 !important" in css, \
-            f"collapsed {theme} rail section must carry a rest z-index"
-    print("round 8 hover trigger gated on the toggle OK")
 
-
-def test_r8_hidden_condition_covers_toggle_hover():
-    """The hiding rules (denylist, no-help buttons, nav label
-    spans) apply whenever the rail LOOKS collapsed: pointer away
-    from the rail, OR pointer on the toggle (overlay not expanded,
-    so a shown widget would squeeze into the 60px rail as
-    vertical one-letter text). All 12 denylisted testids must
-    appear under the :is() condition, still as descendant
-    selectors (no ``>`` — the 8b4dd04 lesson)."""
-    for theme in ("light", "dark"):
-        css = _collapsed(theme)
-        hidden = (':is(:not(:hover), '
-                  ':has(.st-key-dcs_rail_toggle:hover))')
-        assert hidden in css, \
-            f"collapsed {theme} rail must carry the :is() hidden " \
-            "condition"
-        for testid in _r7.DENYLISTED:
-            assert (f'div[data-testid="stVerticalBlock"] '
-                    f'div[data-testid="{testid}"]' in css), \
-                f"collapsed {theme} rail must hide {testid} by a " \
-                "descendant selector"
-        # The label-span and no-help-button hiding rules use it too.
-        assert (f'{hidden} div[data-testid="stButton"] button '
-                'span[style*="display: contents"]' in css), \
-            f"collapsed {theme} rail must hide nav labels under " \
-            "the same condition"
-    print("round 8 hidden condition covers toggle hover OK")
-
-
-def test_r8_toggle_pin_beats_container_width():
-    """The toggle pin's width must be the only width its container
-    ever gets: the pin selector carries the full ancestor chain
-    (section > user content > vertical block > element container)
-    at (0,5,4), beating the wide-state ``width: 100%`` container
-    rule at (0,3,3) — the old (0,3,2) pin lost, so the fixed bar
-    stretched to the full viewport width (1920px) live. The
-    container rules also exclude the toggle explicitly. Widths
-    stay 60px collapsed / 260px expanded."""
-    for collapsed in (True, False):
-        for theme in ("light", "dark"):
-            css = ui_design.rail_css(collapsed, theme)
-            assert ('div[data-testid="stSidebarUserContent"] '
-                    'div[data-testid="stVerticalBlock"] '
-                    'div[data-testid="stElementContainer"]'
-                    '.st-key-dcs_rail_toggle' in css), \
-                f"rail CSS ({collapsed=}, {theme}) must pin the " \
-                "toggle with the full ancestor chain"
-            assert ('div[data-testid="stElementContainer"]'
-                    ':not(.st-key-dcs_rail_toggle)' in css), \
-                f"rail CSS ({collapsed=}, {theme}) must exclude " \
-                "the toggle from the full-width container rules"
-    assert "width: 60px" in ui_design.rail_css(True, "light"), \
-        "collapsed rail toggle pin must be 60px wide"
-    assert "width: 260px" in ui_design.rail_css(False, "light"), \
-        "expanded rail toggle pin must be 260px wide"
-    print("round 8 toggle pin beats container width OK")
 
 
 def test_r8_dark_disabled_inputs_paint_bright():
