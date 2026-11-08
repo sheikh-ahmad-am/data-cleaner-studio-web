@@ -144,23 +144,45 @@ def _app_literal():
 # ---------------------------------------------------------------------------
 
 def test_gap1_collapsed_hides_non_nav_sidebar_content():
-    """The safety net: in the collapsed rail every direct child of
-    the vertical block that does not hold a button directly is
-    hidden — the client-mode checkbox, the auto-refresh expander,
-    the slicers and any sidebar toast. Only wrappers holding a
-    button directly (nav rows + toggle) stay visible. The rule is
-    collapsed-only: the expanded rail shows every control."""
+    """The denylist: in the collapsed rail every non-button direct
+    child of the vertical block is hidden by an explicit testid
+    list — the client-mode checkbox, the status pill, the banner,
+    the uploader, the expanders, the slicers and any sidebar
+    toast. Only the nav-button and toggle wrappers stay visible.
+    The old :has() safety net is gone: it matched the nav buttons
+    too (their direct child is the intermediate help-wrapper div,
+    not another stButton div) and never took effect live. The rule
+    is collapsed-only: the expanded rail shows every control."""
+    denylisted = ("stCheckbox", "stMarkdown", "stMultiSelect",
+                  "stDateInput", "stCaption", "stExpander",
+                  "stFileUploader", "stSelectbox", "stAlert",
+                  "stTextInput", "stRadio", "stNumberInput")
     for theme in ("light", "dark"):
         css = ui_design.rail_css(collapsed=True, theme=theme)
-        assert ('div:not(:has(> div[data-testid="stButton"]))'
-                in css), f"collapsed {theme} rail CSS missing the safety net"
+        assert ":has(" not in css, \
+            f"collapsed {theme} rail CSS must not use :has() at all"
+        for testid in denylisted:
+            assert (f'div[data-testid="{testid}"]' in css), \
+                f"collapsed {theme} rail CSS must hide {testid}"
         assert "display: none !important" in css, \
-            f"collapsed {theme} rail safety net must hide its targets"
+            f"collapsed {theme} rail denylist must hide its targets"
+        # Nav + toggle wrappers are NOT denylisted: no display:none
+        # selector may END with the stButton wrapper. (The no-help
+        # rule ends with `> button` — it hides the <button> inside
+        # the wrapper, not the wrapper itself.)
+        for rule in css.split("}"):
+            if "display: none !important" in rule:
+                selector = rule.split("{")[0]
+                for sel in selector.split(","):
+                    assert not sel.strip().endswith(
+                        'div[data-testid="stButton"]'), \
+                        f"collapsed {theme} rail must never hide the " \
+                        f"stButton wrapper: {sel.strip()!r}"
     for theme in ("light", "dark"):
         css = ui_design.rail_css(collapsed=False, theme=theme)
-        assert ":has(> div[data-testid=\"stButton\"])" not in css, \
+        assert "display: none !important" not in css, \
             f"expanded {theme} rail must show every sidebar control"
-    print("gap 1 collapsed safety net OK")
+    print("gap 1 collapsed denylist OK")
 
 
 def test_gap1_client_mode_survives_collapse(_tmp_env):
@@ -238,27 +260,38 @@ def test_gap1_slicer_survives_collapse(_tmp_env):
 # ---------------------------------------------------------------------------
 
 def test_gap2_toggle_pinned_to_rail_bottom():
-    """The sidebar is a flex column in both states and the toggle —
-    the vertical block's last child — takes the free space above it
-    (margin-top:auto) and sticks to the viewport bottom while the
-    rail scrolls (position:sticky; bottom:0), with the sidebar
-    surface behind it so scrolling rows never show through."""
-    for collapsed in (True, False):
-        for theme in ("light", "dark"):
-            css = ui_design.rail_css(collapsed, theme)
-            assert ("div[data-testid=\"stSidebarContent\"] {\n"
-                    "  display: flex !important; flex-direction: column"
-                    " !important; }" in css), \
-                f"rail CSS ({collapsed=}, {theme}) must make the " \
-                "sidebar content a flex column"
-            assert "margin-top: auto !important" in css, \
-                f"rail CSS ({collapsed=}, {theme}) must pin the toggle " \
-                "with margin-top:auto"
-            assert "position: sticky !important" in css, \
-                f"rail CSS ({collapsed=}, {theme}) must stick the toggle"
-            assert "bottom: 0 !important" in css, \
-                f"rail CSS ({collapsed=}, {theme}) must stick the toggle " \
-                "to the bottom"
+    """The toggle pin is per-state. Collapsed-and-not-hovered keeps
+    margin-top:auto + sticky (proven live — the collapsed rail is
+    short, so the flex column has free space). Expanded and
+    hover-expanded use an ABSOLUTE pin at the scroll container's
+    bottom — margin-top:auto has no free space when the content
+    overflows, and sticky did not hold live in the expanded state.
+    The vertical block carries bottom padding so the last rows are
+    not covered by the pinned toggle. The toggle wrapper carries
+    the sidebar surface so scrolling rows never show through it."""
+    for theme in ("light", "dark"):
+        collapsed_css = ui_design.rail_css(True, theme)
+        assert "margin-top: auto !important" in collapsed_css, \
+            f"collapsed {theme} rail must pin the toggle with " \
+            "margin-top:auto"
+        assert "position: sticky !important" in collapsed_css, \
+            f"collapsed {theme} rail must stick the toggle"
+        assert "bottom: 0 !important" in collapsed_css, \
+            f"collapsed {theme} rail must stick the toggle to the bottom"
+        assert "position: absolute !important" in collapsed_css, \
+            f"collapsed {theme} rail must carry the absolute pin for " \
+            "the hover-expanded state"
+        assert "padding-bottom: 56px !important" in collapsed_css, \
+            f"collapsed {theme} rail must pad the vertical block for " \
+            "the pinned toggle"
+        expanded_css = ui_design.rail_css(False, theme)
+        assert "position: absolute !important" in expanded_css, \
+            f"expanded {theme} rail must pin the toggle absolutely"
+        assert "bottom: 0 !important" in expanded_css, \
+            f"expanded {theme} rail must pin the toggle to the bottom"
+        assert "padding-bottom: 56px !important" in expanded_css, \
+            f"expanded {theme} rail must pad the vertical block for " \
+            "the pinned toggle"
     # The toggle wrapper carries the sidebar surface (light #fdfdfd,
     # dark #1b1d1c) so scrolling rows never show through it.
     assert "background: #fdfdfd !important" in ui_design.rail_css(
@@ -327,13 +360,18 @@ def test_gap3_expanded_nav_rows_full_width():
     # one selector — no duplicate): its body must carry the width
     # and the left alignment.
     rule = ('section[data-testid="stSidebar"] div[data-testid="stButton"]'
-            ' > button[data-testid="stBaseButton-secondary"]')
+            ' button[data-testid="stBaseButton-secondary"]')
     body = re.search(re.escape(rule) + r"\s*\{([^}]*)\}", css)
     assert body, "light sheet must have the sidebar button rule"
     assert "width: 100% !important" in body.group(1), \
         "light sheet must force sidebar secondary buttons full-width"
     assert "justify-content: flex-start !important" in body.group(1), \
         "light sheet must left-align sidebar secondary buttons"
+    assert ('section[data-testid="stSidebar"] div[data-testid="stButton"]'
+            ' > button[data-testid="stBaseButton-secondary"] {' not in css), \
+        "the child-combinator sidebar button rule must be gone — " \
+        "it matched 0 buttons (the help-wrapper div sits between " \
+        "the stButton div and the <button>)"
     assert ('section[data-testid="stSidebar"] div[data-testid="stButton"]'
             ' > button[kind="secondary"] {' not in css), \
         "the dead kind=\"secondary\" full-width rule must be gone"

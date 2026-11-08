@@ -65,8 +65,11 @@ _HOVER_RULES = (
     (".dcs-dot", ".dcs-dot", "#117f50", "#4acd8b"),
     (".dcs-dot--warn", ".dcs-dot--warn", "#e69344", "#f3ba63"),
     (".dcs-dot--muted", ".dcs-dot--muted", "#696969", "#989a99"),
-    ('div[data-testid="stFileUploaderDropzone"]:hover',
-     'div[data-testid="stFileUploaderDropzone"]:hover',
+    # Dropzone hover: unqualified testid — the dropzone is a
+    # <section>, not a <div>, so the div-qualified form never
+    # matched live (round 6).
+    ('[data-testid="stFileUploaderDropzone"]:hover',
+     '[data-testid="stFileUploaderDropzone"]:hover',
      "#d0d0d0", "#4a4d4c"),
     (".stApp input:hover", ".stApp input:hover", "#d0d0d0", "#4a4d4c"),
 )
@@ -79,7 +82,7 @@ _TRANSITION_SELECTORS = (
     ".dcs-console-inside div",
     'div[data-testid="stDownloadButton"] > button',
     'div[data-testid="stExpander"]',
-    'div[data-testid="stFileUploaderDropzone"]',
+    '[data-testid="stFileUploaderDropzone"]',
     'div[data-testid="stPopoverBody"] .stButton > button',
     'div[data-testid="stPopover"] button[data-testid="stPopoverButton"]',
     'div[data-testid="collapsedControl"]',
@@ -185,16 +188,19 @@ def test_soul_hover_rules_both_themes():
             assert body, f"{theme}: {selector} has no rule body"
             assert colour in body.group(1), \
                 f"{theme}: {selector} must use {colour}, got {body.group(1)!r}"
-    # Sidebar buttons are full-width rows in both themes. Light uses
-    # the `>`-chained form, dark the descendant form (round 2). The
-    # light selector is the testid form — the old `[kind="secondary"]`
+    # Sidebar buttons are full-width rows in both themes, both with
+    # the descendant form (round 2 fixed dark; round 6 fixed light —
+    # the `>`-chained form matched 0 buttons because the
+    # help-wrapper div sits between the stButton div and the
+    # <button>). Light anchors on the button's testid; dark uses the
+    # plain `button` form (round 2). The old `[kind="secondary"]`
     # form was dead (kind lives in data-testid, not an attribute),
     # so round 5 replaced it.
     for theme in ("light", "dark"):
         css = ui_design.theme_css(theme)
         rule = ('section[data-testid="stSidebar"] '
-                'div[data-testid="stButton"] > '
-                'button[data-testid="stBaseButton-secondary"]'
+                'div[data-testid="stButton"] button'
+                '[data-testid="stBaseButton-secondary"]'
                 if theme == "light" else
                 'section[data-testid="stSidebar"] '
                 'div[data-testid="stButton"] button')

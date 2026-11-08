@@ -181,7 +181,13 @@ def test_rail_css_collapsed_light():
     for dark_hex in ("#1b1d1c", "#232625", "#2a2d2c", "#006338", "#4acd8b"):
         assert dark_hex not in css, \
             f"light rail CSS must not leak dark hex {dark_hex}"
-    assert "260px" not in css, "collapsed rail CSS must not mention 260px"
+    # 260px IS present in the collapsed sheet now — it is the HOVER
+    # overlay width (hover expands the rail to 260px as an overlay).
+    # The pinned base width must still be 60px.
+    assert "width: 260px !important" in css, \
+        "collapsed rail CSS must carry the 260px hover-overlay width"
+    assert "section[data-testid=\"stSidebar\"]:hover" in css, \
+        "collapsed rail CSS must carry the hover-expand rule"
     print("rail CSS collapsed light OK")
 
 
@@ -207,7 +213,7 @@ def test_rail_css_collapsed_dark():
         "dark collapsed rail must still be 60px"
     assert "background-color: #262928 !important" in css, \
         "dark collapsed hover wash must be the dark hover token"
-    assert "background-color: #2a2d2c !important" in css, \
+    assert "background-color: #343837 !important" in css, \
         "dark collapsed active highlight must be the dark active token"
     assert "#edefee" in css, "dark rail ink must be the dark ink"
     for light_hex in ("#fdfdfd", "#f3f3f3", "#117f50", "#f8f8f8"):
@@ -251,8 +257,11 @@ def test_sidebar_nav_collapsed_icon_only():
     rows = [b for b in at.button if (b.key or "").startswith("dcs_nav_")]
     assert len(rows) == 3, f"collapsed nav must render 3 rows, got {len(rows)}"
     for b in rows:
-        assert b.label == "", \
-            f"collapsed nav row {b.key} must be icon-only, got label {b.label!r}"
+        # Hover rail: the label IS in the DOM when collapsed (the rail
+        # CSS hides it until hover) — the old empty-label behaviour
+        # made the hover expand impossible.
+        assert b.label in ("Preview", "Clean", "Join"), \
+            f"collapsed nav row {b.key} must carry its label in the DOM, got {b.label!r}"
         assert b.proto.icon.startswith(":material/"), \
             f"collapsed nav row {b.key} must carry a Material icon"
         assert b.help, f"collapsed nav row {b.key} must carry its tooltip"
@@ -406,7 +415,7 @@ def test_theme_sync_screenshot_state_full_app(_tmp_env):
         f"selectbox must read dark when the page is dark, got {sel.value!r}"
     # The dark rail stylesheet is the one injected (dark active token).
     page = "\n".join(vals(at.markdown))
-    assert "#2a2d2c" in page, "the dark rail sheet must be injected"
+    assert "#343837" in page, "the dark rail sheet must be injected"
     print("theme sync screenshot state full app OK")
 
 
@@ -485,8 +494,11 @@ def test_rail_default_collapsed_after_signup(_tmp_env):
     assert [b.key for b in rows] == [f"dcs_nav_{k}" for k in NAV_ORDER], \
         f"collapsed rail must list the 12 pages in order, got {[b.key for b in rows]!r}"
     for b in rows:
-        assert b.label == "", \
-            f"collapsed nav row {b.key} must be icon-only, got {b.label!r}"
+        # Hover rail: the label is in the DOM when collapsed (CSS hides
+        # it until hover); the icon and tooltip are still the rail's
+        # visible face.
+        assert b.label == NAV_LABELS[b.key.removeprefix("dcs_nav_")], \
+            f"collapsed nav row {b.key} must carry its label in the DOM, got {b.label!r}"
         assert b.proto.icon.startswith(":material/"), \
             f"collapsed nav row {b.key} must carry its icon"
         assert b.help == "Go to " + NAV_LABELS[b.key.removeprefix("dcs_nav_")], \
@@ -496,12 +508,15 @@ def test_rail_default_collapsed_after_signup(_tmp_env):
     toggle = find_button_by_key(at, "dcs_rail_toggle")
     assert toggle.label == "" and toggle.help == "Expand sidebar", \
         "collapsed rail must show the expand toggle"
-    assert not list(at.sidebar.selectbox), \
-        "collapsed rail must not render the theme selectbox"
-    assert not list(at.sidebar.file_uploader), \
-        "collapsed rail must not render the file uploader"
-    assert not any(b.label == "Try the messy sample" for b in at.button), \
-        "collapsed rail must not render the sidebar sample button"
+    # Hover rail: the controls ARE in the DOM when collapsed (the
+    # rail CSS hides them until hover) — that is what makes the hover
+    # expand able to reveal them with no rerun.
+    assert list(at.sidebar.selectbox), \
+        "collapsed rail must render the theme selectbox in the DOM"
+    assert list(at.sidebar.file_uploader), \
+        "collapsed rail must render the file uploader in the DOM"
+    assert any(b.label == "Try the messy sample" for b in at.button), \
+        "collapsed rail must render the sidebar sample button in the DOM"
     assert not any('<div class="dcs-section-label"' in v
                    for v in vals(at.sidebar.markdown)), \
         "the rail must not render section headers"
@@ -546,10 +561,13 @@ def test_rail_toggle_expands_and_collapses(_tmp_env):
     assert not at.exception, f"exception collapsing rail: {at.exception}"
     assert at.session_state.get("dcs_rail_collapsed") is True, \
         "clicking the expanded toggle must collapse the rail"
-    assert all(b.label == "" for b in nav_buttons(at)), \
-        "collapsed rail must go back to icon-only rows"
-    assert not list(at.sidebar.selectbox), \
-        "collapsed rail must hide the theme selectbox again"
+    # Hover rail: collapsing keeps the labels in the DOM (CSS hides
+    # them); the rail state itself is what flips back.
+    assert [b.label for b in nav_buttons(at)] == \
+        [NAV_LABELS[k] for k in NAV_ORDER], \
+        "collapsed rail must keep its labels in the DOM"
+    assert list(at.sidebar.selectbox), \
+        "collapsed rail must keep the theme selectbox in the DOM"
     print("rail toggle expands and collapses OK")
 
 
@@ -570,8 +588,9 @@ def test_rail_persists_across_reruns(_tmp_env):
     at.run()
     assert at.session_state.get("dcs_rail_collapsed") is True, \
         "collapsed rail must stay collapsed across a rerun"
-    assert all(b.label == "" for b in nav_buttons(at)), \
-        "collapsed rail must keep its icons across a rerun"
+    assert [b.label for b in nav_buttons(at)] == \
+        [NAV_LABELS[k] for k in NAV_ORDER], \
+        "collapsed rail must keep its labels in the DOM across a rerun"
     print("rail persists across reruns OK")
 
 
@@ -583,7 +602,7 @@ def test_rail_nav_click_collapsed_navigates(_tmp_env):
     signup(at, "alice1")
     assert at.session_state.get("dcs_rail_collapsed") is True
     clean = find_button_by_key(at, "dcs_nav_clean")
-    assert clean.label == "" and clean.help == "Go to Clean"
+    assert clean.label == "Clean" and clean.help == "Go to Clean"
     clean.click().run()
     assert not at.exception, f"exception clicking Clean icon: {at.exception}"
     assert at.session_state.get("active_tab") == "Clean", \

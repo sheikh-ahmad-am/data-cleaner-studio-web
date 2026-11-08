@@ -154,8 +154,15 @@ def test_topbar_actions():
     # The bar carries the logo slot + workspace + screen title.
     assert any("dcs-topbar-left" in v for v in vals(at.markdown)), \
         "top bar must render its left block (logo + workspace + title)"
-    assert any("Preview" in v for v in vals(at.markdown)), \
-        "top bar must show the current screen title"
+    # A breadcrumb is passed here ('Workspace'), so the breadcrumb
+    # renders INSTEAD of the title span (round 6, item 6: the
+    # breadcrumb is the file name only when one is loaded, the page
+    # name only when none is — never both). The title-shows case is
+    # pinned by test_fixup_round6::test_r6_breadcrumb_file_only_or_page_only.
+    assert any("Workspace" in v for v in vals(at.markdown)), \
+        "top bar must show the breadcrumb when one is passed"
+    assert not any("dcs-topbar-title" in v for v in vals(at.markdown)), \
+        "top bar must not render the title span when a breadcrumb is present"
     # The green primary pill + the icon-only Help button.
     find_button(at, "Upload", key="topbar_upload")
     help_btn = find_button(at, "", key="topbar_help")

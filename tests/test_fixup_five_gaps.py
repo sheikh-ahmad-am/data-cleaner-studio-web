@@ -398,7 +398,7 @@ def test_gap1_dark_buttons_are_dark_panels():
     rules = _cascade_rules("dark")
     expected = {
         "sidebar nav (enabled)": ("#232625", "#edefee"),
-        "sidebar nav (active/disabled)": ("#2a2d2c", "#edefee"),
+        "sidebar nav (active/disabled)": ("#343837", "#edefee"),
         "Help button": ("#232625", "#edefee"),
         "Log out": ("#232625", "#edefee"),
         "Delete my account": ("#232625", "#ff6369"),

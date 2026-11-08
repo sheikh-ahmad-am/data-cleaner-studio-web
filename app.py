@@ -198,25 +198,31 @@ div[data-testid="stDownloadButton"] > button:hover {
    itself), carry !important, and out-specify the mobile stylesheet's
    blanket `.stButton > button` rule, so they win even when that sheet
    is a theme behind. The `*` rules pin the label + icon colour too —
-   a pale icon on a white pill reads as "no icon". */
-div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"],
+   a pale icon on a white pill reads as "no icon". The selectors are
+   DESCENDANT (no `>`): a button with an icon or a help tooltip has
+   an intermediate plain div between the wrapper and the <button>
+   (the $u help wrapper renders a div only when help is set —
+   verified in the 1.66.1 frontend bundle), so `>` never matches
+   those buttons and the rules would be dead — exactly the live
+   failure round 6 fixed (compact pills, no active highlight). */
+div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"],
 div[data-testid="stDownloadButton"] > button {
   background-color: #ffffff !important; color: #030303 !important;
   border: 1px solid #e5e5e5 !important; border-radius: 6px;
   font-weight: 500; }
-div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"] *,
+div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"] *,
 div[data-testid="stDownloadButton"] > button * {
   color: #030303 !important; }
-div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"]:hover,
+div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"]:hover,
 div[data-testid="stDownloadButton"] > button:hover {
   background-color: #f3f3f3 !important; color: #030303 !important;
   border-color: #d4d4d4 !important; }
-div[data-testid="stButton"] > button[data-testid="stBaseButton-primary"] {
+div[data-testid="stButton"] button[data-testid="stBaseButton-primary"] {
   background-color: #117f50 !important;
   background: linear-gradient(180deg, #118050 0%, #0e7d4e 100%) !important;
   color: #ffffff !important; border: 1px solid #117f50 !important;
   border-radius: 999px; font-weight: 500; }
-div[data-testid="stButton"] > button[data-testid="stBaseButton-primary"] * {
+div[data-testid="stButton"] button[data-testid="stBaseButton-primary"] * {
   color: #ffffff !important; }
 /* Sidebar nav rows + the active (disabled) pill, same anchoring.
    Full-width rows (gap 3): the old `button[kind="secondary"]`
@@ -224,27 +230,34 @@ div[data-testid="stButton"] > button[data-testid="stBaseButton-primary"] * {
    on the <button> (the kind lives in
    `data-testid="stBaseButton-secondary"`), so the expanded nav rows
    rendered as compact pills hugging their labels. The wrapper div
-   is forced full-width too (see below). The collapsed rail's own
-   rule (rail_css, later in the page, more specific) still centres
-   the icon-only buttons. */
-section[data-testid="stSidebar"] div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"] {
+   is forced full-width too (see below). The selectors are
+   DESCENDANT (no `>`): the nav buttons carry icon= + help=, so the
+   $u help wrapper nests an intermediate plain div between the
+   wrapper and the <button> — `>` never matched, which is why the
+   testid-anchored fix in 5028aa3 still rendered as compact pills
+   live. The collapsed rail's own rule (rail_css, later in the page,
+   more specific) still centres the icon-only buttons. */
+section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"] {
   background-color: #ffffff !important; color: #030303 !important;
   border: 1px solid #e5e5e5 !important;
   width: 100% !important; justify-content: flex-start !important; }
-section[data-testid="stSidebar"] div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"] * {
+section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"] * {
   color: #030303 !important; }
-section[data-testid="stSidebar"] div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"]:disabled {
+section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"]:disabled {
   background-color: #f3f3f3 !important; color: #030303 !important;
   border: 1px solid #e5e5e5 !important; opacity: 1 !important;
   border-left: 2px solid #030303 !important; font-weight: 600 !important; }
-section[data-testid="stSidebar"] div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"]:disabled * {
+section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"]:disabled * {
   color: #030303 !important; }
 /* Danger-zone buttons (the .dcs-danger-zone marker icon_button emits
    before a destructive button): red text + border on the secondary
-   panel, testid-anchored the same way. */
-div[data-testid="stVerticalBlock"] > div:has(.dcs-danger-zone) ~ div div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"] {
+   panel, testid-anchored the same way. The tail is descendant (the
+   intermediate help-wrapper div); the `:has()` head is kept — the
+   marker div IS a direct child of the vertical block, and there is
+   no other CSS way to select "a block after the marker". */
+div[data-testid="stVerticalBlock"] > div:has(.dcs-danger-zone) ~ div div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"] {
   color: #b91c1c !important; border-color: #b91c1c !important; }
-div[data-testid="stVerticalBlock"] > div:has(.dcs-danger-zone) ~ div div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"] * {
+div[data-testid="stVerticalBlock"] > div:has(.dcs-danger-zone) ~ div div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"] * {
   color: #b91c1c !important; }
 /* ---- inputs: white, 6px radius, hairline border ---- */
 .stApp input, .stApp textarea, .stApp select {
@@ -376,10 +389,16 @@ div[data-testid="stMetricLabel"], div[data-testid="stMetricLabel"] * {
 .dcs-strip-label { font-size: 11px; font-weight: 600;
   letter-spacing: 0.08em; text-transform: uppercase; color: #696969;
   margin-bottom: 0.5rem; }
-/* ---- file-uploader dropzone + uploaded-file chips: ink on white ---- */
+/* ---- file-uploader dropzone + uploaded-file chips: ink on white ----
+   The dropzone is a <section>, not a <div> (see the dark twin) —
+   the selector below carries no element qualifier. The background
+   is pinned white explicitly so the light dropzone can never
+   inherit a dark fill. */
 div[data-testid="stFileUploader"], div[data-testid="stFileUploader"] * {
   color: #030303 !important; }
-div[data-testid="stFileUploaderDropzone"]:hover { border-color: #d0d0d0; }
+[data-testid="stFileUploaderDropzone"] {
+  background-color: #ffffff !important; border-color: #e8e8e8 !important; }
+[data-testid="stFileUploaderDropzone"]:hover { border-color: #d0d0d0 !important; }
 /* ---- native dropdown menus (baseweb portal): white menu, quiet hover ---- */
 div[data-baseweb="popover"] { background-color: #ffffff; }
 div[data-baseweb="menu"] li[role="option"] { color: #030303; }
@@ -458,7 +477,7 @@ div[data-testid="stRadio"] div[role="radiogroup"] label,
 .dcs-card, .dcs-kpi, .dcs-console-inside div,
 div[data-testid="stDownloadButton"] > button,
 div[data-testid="stExpander"],
-div[data-testid="stFileUploaderDropzone"],
+[data-testid="stFileUploaderDropzone"],
 div[data-testid="stPopoverBody"] .stButton > button,
 div[data-testid="stPopover"] button[data-testid="stPopoverButton"],
 div[data-testid="collapsedControl"],
@@ -654,8 +673,11 @@ div[data-testid="stPopoverBody"] div[data-testid="stRadio"] div[role="radiogroup
 /* ---- sidebar nav: the active row is a DISABLED secondary button
    (you are already there) — it renders as the active pill: pale
    fill, semibold ink, dark left edge, full opacity. No other
-   disabled sidebar button exists, so this rule only ever hits nav. */
-section[data-testid="stSidebar"] div[data-testid="stButton"] > button[kind="secondary"]:disabled {
+   disabled sidebar button exists, so this rule only ever hits nav.
+   Descendant selector + testid (no `>` and no `kind=` — Streamlit
+   1.66.1 renders no `kind` attribute and nests the intermediate
+   help-wrapper div, so both the old forms were dead). */
+section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"]:disabled {
   background-color: #f3f3f3; color: #030303; font-weight: 600;
   border-left: 2px solid #030303; opacity: 1; }
 /* ---- danger zone: a .dcs-danger-zone marker colours every secondary
@@ -1954,17 +1976,20 @@ def _restore_cleaned_state(source_name):
 # section radio further down is the authority, and pending_tab is
 # how every programmatic switch reaches it.
 # Rail state for this run (session state, default collapsed — the
-# dashboard's own default). The collapsed rail holds ONLY the nav
-# icons and the collapse toggle; everything else in the sidebar
-# (theme selectbox, status pill, banner, uploader, sample button,
-# saved files) renders only when the rail is expanded.
+# dashboard's own default). The hover rail needs every sidebar
+# control IN THE DOM while collapsed (the rail CSS hides them when
+# collapsed and not hovered, and reveals them on hover with no
+# rerun) — so nothing here is guarded on the rail state any more:
+# the theme selectbox, status pill, banner, uploader, sample button
+# and saved files render always, and the stylesheet decides what
+# shows. The widgets stay mounted, so their values survive
+# collapse/expand and hover.
 _rail_collapsed = ui_design.rail_collapsed()
-if not _rail_collapsed:
-    # Theme toggle (sidebar): Light/Dark switch writing
-    # st.session_state["dcs_theme"]; the stylesheet injected at the top of
-    # this file follows it on the next rerun. In the collapsed rail the
-    # theme control lives in the avatar menu (top bar).
-    ui_design.render_theme_toggle()
+# Theme toggle (sidebar): Light/Dark switch writing
+# st.session_state["dcs_theme"]; the stylesheet injected at the top of
+# this file follows it on the next rerun. In the collapsed rail the
+# theme control also lives in the avatar menu (top bar).
+ui_design.render_theme_toggle()
 # Sync client_mode from the toggle widget BEFORE the sidebar nav
 # renders: the toggle itself (feat_analyse.render_client_mode_toggle)
 # only runs later in this script, after the upload block, and it is
@@ -1997,29 +2022,25 @@ with st.sidebar:
     # The rail toggle is NOT here: it renders last in the sidebar
     # (after the slicers, below), so the rail CSS can pin it to the
     # bottom of the rail.
-    if not _rail_collapsed:
-        # Quiet status pill (feat_status): the app's own health — the
-        # mode in local mode, "All systems operational" only when the
-        # cloud health check genuinely passed.
-        feat_status.render_status_pill(st)
-if _rail_collapsed:
-    # Collapsed rail: no uploader — the file picker lives in the
-    # expanded sidebar (and the top-bar Upload pill expands the rail
-    # when clicked). Nothing to upload this run.
-    uploaded = None
-else:
-    _banner = auth.get_local_mode_banner()
-    if _banner:
-        st.sidebar.info(_banner)
+    # Quiet status pill (feat_status): the app's own health — the
+    # mode in local mode, "All systems operational" only when the
+    # cloud health check genuinely passed.
+    feat_status.render_status_pill(st)
+# The file picker renders always (hover rail: it must be in the DOM
+# while collapsed so hovering the rail reveals it). The top-bar
+# Upload pill still pin-expands the rail when clicked.
+_banner = auth.get_local_mode_banner()
+if _banner:
+    st.sidebar.info(_banner)
 
-    st.sidebar.markdown(
-        f'<div class="dcs-micro-label">{html.escape(_t("load") + " your data")}'
-        "</div>",
-        unsafe_allow_html=True)
+st.sidebar.markdown(
+    f'<div class="dcs-micro-label">{html.escape(_t("load") + " your data")}'
+    "</div>",
+    unsafe_allow_html=True)
 
-    uploaded = st.sidebar.file_uploader(
-        "Upload a file", type=["csv", "xlsx", "xls", "json", "parquet"],
-        help="CSV, Excel, JSON or Parquet. Up to 1000MB.")
+uploaded = st.sidebar.file_uploader(
+    "Upload a file", type=["csv", "xlsx", "xls", "json", "parquet"],
+    help="CSV, Excel, JSON or Parquet. Up to 1000MB.")
 if uploaded is not None and st.session_state.get("last_upload") != uploaded.name:
     try:
         storage.save_upload(_skey, uploaded.name, uploaded.getvalue())
@@ -2044,7 +2065,7 @@ if uploaded is not None and st.session_state.get("last_upload") != uploaded.name
         except Exception as e:  # noqa: BLE001 - show the error, don't crash
             st.sidebar.error(f"Could not read {uploaded.name}: {e}")
 
-if st.session_state.get("pending_excel") and not _rail_collapsed:
+if st.session_state.get("pending_excel"):
     ex_name, ex_bytes = st.session_state["pending_excel"]
     try:
         ex_sheets = feat_combine.list_excel_sheets(ex_bytes)
@@ -2071,7 +2092,7 @@ if st.session_state.get("pending_excel") and not _rail_collapsed:
                 st.sidebar.error(f"Could not load the '{ex_choice}' sheet "
                                  f"from {ex_name}: {e}")
 
-if not _rail_collapsed and st.sidebar.button(
+if st.sidebar.button(
         _t("try_sample"), key="sample_btn"):
     _sample_path = _APP_DIR / "sample_data" / "messy_sales.csv"
     ui_loading.skeleton_table(rows=5, columns=4)
@@ -2086,7 +2107,7 @@ try:
     _saved_uploads = storage.list_files(_skey, "uploads")
 except Exception:  # noqa: BLE001
     _saved_uploads = []
-if _saved_uploads and not _rail_collapsed:
+if _saved_uploads:
     with st.sidebar.expander("Your saved files"):
         _saved_pick = st.sidebar.selectbox(
             "Open a saved upload", [""] + _saved_uploads,
@@ -2123,49 +2144,50 @@ if _saved_uploads and not _rail_collapsed:
             except Exception as e:  # noqa: BLE001
                 st.sidebar.error(f"Could not delete that file: {e}")
 
-if not _rail_collapsed:
-    with st.sidebar.expander("More ways to load"):
-        sheet_url = st.text_input(
-            "Google Sheets link (public sheet)",
-            help="File -> Share -> Anyone with the link. Paste the link here.")
-        if st.button("Load sheet", key="sheet_btn"):
-            if not sheet_url.strip():
-                st.error("Paste a Google Sheets link first — "
-                         "File -> Share -> Anyone with the link, then "
-                         "paste the link here.")
-            else:
+# "More ways to load" renders always (hover rail: it must be in the
+# DOM while collapsed so hovering the rail reveals it).
+with st.sidebar.expander("More ways to load"):
+    sheet_url = st.text_input(
+        "Google Sheets link (public sheet)",
+        help="File -> Share -> Anyone with the link. Paste the link here.")
+    if st.button("Load sheet", key="sheet_btn"):
+        if not sheet_url.strip():
+            st.error("Paste a Google Sheets link first — "
+                     "File -> Share -> Anyone with the link, then "
+                     "paste the link here.")
+        else:
+            try:
+                ui_loading.skeleton_table(rows=5, columns=4)
+                with branded_spinner("Loading that sheet…"):
+                    _set_raw(engine.load_sheets_url(sheet_url.strip()), "Google Sheet",
+                             kind="sheets", url=sheet_url.strip())
+                st.session_state["last_upload"] = None
+            except Exception as e:  # noqa: BLE001
+                st.error(f"Could not load that Google Sheet — check the "
+                         "link and sharing settings: {e}")
+
+    st.write("... or a database file")
+    db_file = st.file_uploader(
+        "SQLite database (.db)", type=["db", "sqlite", "sqlite3"],
+        help="A SQLite database file — pick one of its tables to load.")
+    if db_file is not None:
+        try:
+            tables = engine.list_sqlite_tables(db_file.getvalue())
+        except Exception as e:  # noqa: BLE001
+            st.error(f"Could not read that database file ({db_file.name}): {e}")
+            tables = []
+        if tables:
+            table = st.selectbox("Table", tables, key="db_table")
+            if st.button("Load table", key="db_load"):
                 try:
                     ui_loading.skeleton_table(rows=5, columns=4)
-                    with branded_spinner("Loading that sheet…"):
-                        _set_raw(engine.load_sheets_url(sheet_url.strip()), "Google Sheet",
-                                 kind="sheets", url=sheet_url.strip())
+                    with branded_spinner("Loading that table…"):
+                        _set_raw(engine.load_sqlite(db_file.getvalue(), table),
+                                 f"{db_file.name} : {table}")
                     st.session_state["last_upload"] = None
                 except Exception as e:  # noqa: BLE001
-                    st.error(f"Could not load that Google Sheet — check the "
-                             "link and sharing settings: {e}")
-
-        st.write("... or a database file")
-        db_file = st.file_uploader(
-            "SQLite database (.db)", type=["db", "sqlite", "sqlite3"],
-            help="A SQLite database file — pick one of its tables to load.")
-        if db_file is not None:
-            try:
-                tables = engine.list_sqlite_tables(db_file.getvalue())
-            except Exception as e:  # noqa: BLE001
-                st.error(f"Could not read that database file ({db_file.name}): {e}")
-                tables = []
-            if tables:
-                table = st.selectbox("Table", tables, key="db_table")
-                if st.button("Load table", key="db_load"):
-                    try:
-                        ui_loading.skeleton_table(rows=5, columns=4)
-                        with branded_spinner("Loading that table…"):
-                            _set_raw(engine.load_sqlite(db_file.getvalue(), table),
-                                     f"{db_file.name} : {table}")
-                        st.session_state["last_upload"] = None
-                    except Exception as e:  # noqa: BLE001
-                        st.error(f"Could not load the '{table}' table from "
-                                 f"{db_file.name}: {e}")
+                    st.error(f"Could not load the '{table}' table from "
+                             f"{db_file.name}: {e}")
 
 _last_raw_bytes = uploaded.getvalue() if uploaded is not None else None
 # Recent files belongs to the Preview tab only: it used to render on
@@ -2196,9 +2218,9 @@ if _reopened is not None:
 
 feat_analyse.render_client_mode_toggle(st)
 
-if not _rail_collapsed:
-    with st.sidebar.expander("Settings (API key)"):
-        ai_settings.render_settings(st)
+# Settings expander renders always (hover rail).
+with st.sidebar.expander("Settings (API key)"):
+    ai_settings.render_settings(st)
 
 # Theme toggle: the sidebar Light/Dark switch
 # (ui_design.render_theme_toggle, wired just below the Profile / Log

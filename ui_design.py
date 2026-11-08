@@ -191,7 +191,11 @@ DARK_TOKENS = {
     "body": "#bcbdbc",
     "muted": "#989a99",
     # Navigation
-    "active_nav": "#2a2d2c",
+    # active_nav is a clear step lighter than the card (#232625) and
+    # the hover wash (#262928): the old #2a2d2c was too close to
+    # both to read as a highlight live, so the active icon looked
+    # unmarked. #343837 is visibly lighter but still a quiet grey.
+    "active_nav": "#343837",
     "hover": "#262928",
     # Destructive actions only — brightened red, readable on dark
     "danger": "#ff6369",
@@ -493,25 +497,31 @@ div[data-testid="stDownloadButton"] > button:hover {
    itself), carry !important, and out-specify the mobile stylesheet's
    blanket `.stButton > button` rule, so they win even when that sheet
    is a theme behind. The `*` rules pin the label + icon colour too —
-   a pale icon on a white pill reads as "no icon". */
-div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"],
+   a pale icon on a white pill reads as "no icon". The selectors are
+   DESCENDANT (no `>`): a button with an icon or a help tooltip has
+   an intermediate plain div between the wrapper and the <button>
+   (the $u help wrapper renders a div only when help is set —
+   verified in the 1.66.1 frontend bundle), so `>` never matches
+   those buttons and the rules would be dead — exactly the live
+   failure round 6 fixed (compact pills, no active highlight). */
+div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"],
 div[data-testid="stDownloadButton"] > button {
   background-color: #ffffff !important; color: #030303 !important;
   border: 1px solid #e5e5e5 !important; border-radius: 6px;
   font-weight: 500; }
-div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"] *,
+div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"] *,
 div[data-testid="stDownloadButton"] > button * {
   color: #030303 !important; }
-div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"]:hover,
+div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"]:hover,
 div[data-testid="stDownloadButton"] > button:hover {
   background-color: #f3f3f3 !important; color: #030303 !important;
   border-color: #d4d4d4 !important; }
-div[data-testid="stButton"] > button[data-testid="stBaseButton-primary"] {
+div[data-testid="stButton"] button[data-testid="stBaseButton-primary"] {
   background-color: #117f50 !important;
   background: linear-gradient(180deg, #118050 0%, #0e7d4e 100%) !important;
   color: #ffffff !important; border: 1px solid #117f50 !important;
   border-radius: 999px; font-weight: 500; }
-div[data-testid="stButton"] > button[data-testid="stBaseButton-primary"] * {
+div[data-testid="stButton"] button[data-testid="stBaseButton-primary"] * {
   color: #ffffff !important; }
 /* Sidebar nav rows + the active (disabled) pill, same anchoring.
    Full-width rows (gap 3): the old `button[kind="secondary"]`
@@ -519,27 +529,34 @@ div[data-testid="stButton"] > button[data-testid="stBaseButton-primary"] * {
    on the <button> (the kind lives in
    `data-testid="stBaseButton-secondary"`), so the expanded nav rows
    rendered as compact pills hugging their labels. The wrapper div
-   is forced full-width too (see below). The collapsed rail's own
-   rule (rail_css, later in the page, more specific) still centres
-   the icon-only buttons. */
-section[data-testid="stSidebar"] div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"] {
+   is forced full-width too (see below). The selectors are
+   DESCENDANT (no `>`): the nav buttons carry icon= + help=, so the
+   $u help wrapper nests an intermediate plain div between the
+   wrapper and the <button> — `>` never matched, which is why the
+   testid-anchored fix in 5028aa3 still rendered as compact pills
+   live. The collapsed rail's own rule (rail_css, later in the page,
+   more specific) still centres the icon-only buttons. */
+section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"] {
   background-color: #ffffff !important; color: #030303 !important;
   border: 1px solid #e5e5e5 !important;
   width: 100% !important; justify-content: flex-start !important; }
-section[data-testid="stSidebar"] div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"] * {
+section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"] * {
   color: #030303 !important; }
-section[data-testid="stSidebar"] div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"]:disabled {
+section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"]:disabled {
   background-color: #f3f3f3 !important; color: #030303 !important;
   border: 1px solid #e5e5e5 !important; opacity: 1 !important;
   border-left: 2px solid #030303 !important; font-weight: 600 !important; }
-section[data-testid="stSidebar"] div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"]:disabled * {
+section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"]:disabled * {
   color: #030303 !important; }
 /* Danger-zone buttons (the .dcs-danger-zone marker icon_button emits
    before a destructive button): red text + border on the secondary
-   panel, testid-anchored the same way. */
-div[data-testid="stVerticalBlock"] > div:has(.dcs-danger-zone) ~ div div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"] {
+   panel, testid-anchored the same way. The tail is descendant (the
+   intermediate help-wrapper div); the `:has()` head is kept — the
+   marker div IS a direct child of the vertical block, and there is
+   no other CSS way to select "a block after the marker". */
+div[data-testid="stVerticalBlock"] > div:has(.dcs-danger-zone) ~ div div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"] {
   color: #b91c1c !important; border-color: #b91c1c !important; }
-div[data-testid="stVerticalBlock"] > div:has(.dcs-danger-zone) ~ div div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"] * {
+div[data-testid="stVerticalBlock"] > div:has(.dcs-danger-zone) ~ div div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"] * {
   color: #b91c1c !important; }
 /* ---- inputs: white, 6px radius, hairline border ---- */
 .stApp input, .stApp textarea, .stApp select {
@@ -671,10 +688,16 @@ div[data-testid="stMetricLabel"], div[data-testid="stMetricLabel"] * {
 .dcs-strip-label { font-size: 11px; font-weight: 600;
   letter-spacing: 0.08em; text-transform: uppercase; color: #696969;
   margin-bottom: 0.5rem; }
-/* ---- file-uploader dropzone + uploaded-file chips: ink on white ---- */
+/* ---- file-uploader dropzone + uploaded-file chips: ink on white ----
+   The dropzone is a <section>, not a <div> (see the dark twin) —
+   the selector below carries no element qualifier. The background
+   is pinned white explicitly so the light dropzone can never
+   inherit a dark fill. */
 div[data-testid="stFileUploader"], div[data-testid="stFileUploader"] * {
   color: #030303 !important; }
-div[data-testid="stFileUploaderDropzone"]:hover { border-color: #d0d0d0; }
+[data-testid="stFileUploaderDropzone"] {
+  background-color: #ffffff !important; border-color: #e8e8e8 !important; }
+[data-testid="stFileUploaderDropzone"]:hover { border-color: #d0d0d0 !important; }
 /* ---- native dropdown menus (baseweb portal): white menu, quiet hover ---- */
 div[data-baseweb="popover"] { background-color: #ffffff; }
 div[data-baseweb="menu"] li[role="option"] { color: #030303; }
@@ -753,7 +776,7 @@ div[data-testid="stRadio"] div[role="radiogroup"] label,
 .dcs-card, .dcs-kpi, .dcs-console-inside div,
 div[data-testid="stDownloadButton"] > button,
 div[data-testid="stExpander"],
-div[data-testid="stFileUploaderDropzone"],
+[data-testid="stFileUploaderDropzone"],
 div[data-testid="stPopoverBody"] .stButton > button,
 div[data-testid="stPopover"] button[data-testid="stPopoverButton"],
 div[data-testid="collapsedControl"],
@@ -949,8 +972,11 @@ div[data-testid="stPopoverBody"] div[data-testid="stRadio"] div[role="radiogroup
 /* ---- sidebar nav: the active row is a DISABLED secondary button
    (you are already there) — it renders as the active pill: pale
    fill, semibold ink, dark left edge, full opacity. No other
-   disabled sidebar button exists, so this rule only ever hits nav. */
-section[data-testid="stSidebar"] div[data-testid="stButton"] > button[kind="secondary"]:disabled {
+   disabled sidebar button exists, so this rule only ever hits nav.
+   Descendant selector + testid (no `>` and no `kind=` — Streamlit
+   1.66.1 renders no `kind` attribute and nests the intermediate
+   help-wrapper div, so both the old forms were dead). */
+section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"]:disabled {
   background-color: #f3f3f3; color: #030303; font-weight: 600;
   border-left: 2px solid #030303; opacity: 1; }
 /* ---- danger zone: a .dcs-danger-zone marker colours every secondary
@@ -1109,7 +1135,7 @@ section[data-testid="stSidebar"] div[data-testid="stButton"] button {
 section[data-testid="stSidebar"] div[data-testid="stButton"] button * {
   color: #edefee !important; }
 section[data-testid="stSidebar"] div[data-testid="stButton"] button:disabled {
-  background-color: #2a2d2c !important; color: #edefee !important;
+  background-color: #343837 !important; color: #edefee !important;
   border: 1px solid #363636 !important; opacity: 1 !important;
   border-left: 2px solid #edefee !important; font-weight: 600 !important; }
 section[data-testid="stSidebar"] div[data-testid="stButton"] button:disabled * {
@@ -1129,6 +1155,18 @@ div[data-testid="stVerticalBlock"] > div:has(.dcs-danger-zone) ~ div div[data-te
 .stApp input:hover, .stApp textarea:hover, .stApp select:hover {
   border-color: #4a4d4c; }
 .stApp label { color: #edefee; }
+/* ---- disabled inputs (Profile's read-only Primary email +
+   Username): Streamlit's native disabled styling renders the text
+   in a very dark grey on the dark panel, near-unreadable live.
+   Pin the text bright and the panel one step lighter than the
+   card, so the field still reads as disabled but the value is
+   legible. Dark theme only — the light Profile passes and is
+   untouched. ---- */
+.stApp input:disabled, .stApp textarea:disabled, .stApp select:disabled {
+  color: #edefee !important; background-color: #2a2d2c !important;
+  border-color: #363636 !important; opacity: 1 !important; }
+div[data-testid="stTextInput"] input:disabled {
+  color: #edefee !important; background-color: #2a2d2c !important; }
 /* ---- checkboxes: hairline box border, bright green check ---- */
 .stApp input[type="checkbox"] { accent-color: #4acd8b; }
 div[data-testid="stCheckbox"] div[data-baseweb="checkbox"] span {
@@ -1219,12 +1257,20 @@ div[data-testid="stMetricLabel"], div[data-testid="stMetricLabel"] * {
 .dcs-strip-label { font-size: 11px; font-weight: 600;
   letter-spacing: 0.08em; text-transform: uppercase; color: #989a99;
   margin-bottom: 0.5rem; }
-/* ---- file-uploader dropzone + uploaded-file chips: bright on dark ---- */
+/* ---- file-uploader dropzone + uploaded-file chips: bright on dark ----
+   The dropzone element is a <section>, NOT a <div> (Streamlit 1.66.1
+   renders it as R = a styled `section` with data-testid
+   "stFileUploaderDropzone" — verified in the FileUploader chunk),
+   so a `div[...]` selector never matched and the dark background
+   rule was dead: the box stayed Streamlit's light secondaryBg
+   (white) with near-white text on it. The selector below carries
+   no element qualifier, and !important beats the emotion
+   backgroundColor. */
 div[data-testid="stFileUploader"], div[data-testid="stFileUploader"] * {
   color: #edefee !important; }
-div[data-testid="stFileUploaderDropzone"] {
-  background-color: #232625; border-color: #2e2e2e; }
-div[data-testid="stFileUploaderDropzone"]:hover { border-color: #4a4d4c; }
+[data-testid="stFileUploaderDropzone"] {
+  background-color: #232625 !important; border-color: #2e2e2e !important; }
+[data-testid="stFileUploaderDropzone"]:hover { border-color: #4a4d4c !important; }
 /* ---- uploader format line wraps instead of truncating: the
    instructions element ("1GB per file • CSV, XLSX, XLS, JSON,
    PARQUET") is one long line in the 260px sidebar, so it was cut
@@ -1321,7 +1367,7 @@ div[data-testid="stRadio"] div[role="radiogroup"] label,
 .dcs-card, .dcs-kpi, .dcs-console-inside div,
 div[data-testid="stDownloadButton"] button,
 div[data-testid="stExpander"],
-div[data-testid="stFileUploaderDropzone"],
+[data-testid="stFileUploaderDropzone"],
 div[data-testid="stPopoverBody"] div[data-testid="stButton"] button,
 div[data-testid="stPopover"] button[data-testid="stPopoverButton"],
 div[data-testid="collapsedControl"],
@@ -1769,15 +1815,19 @@ def topbar(title: str, breadcrumb: str = "", user=None,
     _uri = _logo_data_uri(logo_path) if logo_path else None
     _logo = (f'<img src="{_uri}" alt="" class="dcs-topbar-logo">'
              if _uri else "")
-    # The breadcrumb is the file name only — the brand already says
-    # the workspace name and the title is the current screen, so
-    # repeating the workspace name here duplicated it ("Data Cleaner
-    # Studio / Data Cleaner Studio / Preview"). The title carries
-    # its own " / " separator, the crumb follows it.
+    # The breadcrumb is the file name only when a file is loaded,
+    # and the page name only when none is loaded — never both. The
+    # brand already says the workspace name, so rendering the title
+    # AND the crumb produced three segments ("Data Cleaner Studio /
+    # Preview / messy_sales.csv (sample)") with the page name and
+    # the file name both truncated. The title span renders only
+    # when there is no breadcrumb; the crumb span only when there
+    # is one. The ellipsis/nowrap guards on the spans stay, so
+    # nothing overlaps the search box.
     _crumb = (f'<span class="dcs-topbar-crumb"> / '
               f"{html.escape(breadcrumb)}</span>" if breadcrumb else "")
     _title = (f'<span class="dcs-topbar-title"> / '
-              f"{html.escape(title)}</span>")
+              f"{html.escape(title)}</span>" if not breadcrumb else "")
     _brand = ('<span class="dcs-topbar-brand">Data Cleaner Studio</span>')
     _left = (f'<div class="dcs-topbar-left">{_logo}{_brand}{_title}'
              f"{_crumb}</div>")
@@ -1805,26 +1855,35 @@ def topbar(title: str, breadcrumb: str = "", user=None,
 # ---------------------------------------------------------------------------
 # The sidebar rail — Supabase's real nav (page-by-page study §0/§9, live
 # walk appendix). The dashboard's first nav layer is a narrow icon-only
-# rail (~60px) that expands to a labelled sidebar (~260px) after a
-# click; the rail never shows labels and never shows section headers.
-# Our old sidebar was icon + label rows under DATA / ANALYSE / OUTPUT /
+# rail (~60px); hovering it expands it AUTOMATICALLY as an overlay
+# (~260px, labels + controls appear, ~0.2s ease) floating above the
+# page, and moving the mouse away shrinks it back — no toggle click,
+# no server rerun (the user's video shows the rail alternating
+# expanded/collapsed as the mouse moves, the expanding sidebar
+# overlapping the page title). The bottom toggle is the PINNED state:
+# click it and the sidebar STAYS expanded; click again and it stays
+# collapsed (hover then works as the temporary expand). Our old
+# sidebar was icon + label rows under DATA / ANALYSE / OUTPUT /
 # WORKSPACE headers — that is not Supabase's sidebar, and a restyle of
 # Streamlit's hide/unhide chevron did not satisfy the user, so the rail
 # is rebuilt here as a real two-state nav:
 #
 #   * collapsed (default — Supabase's own default): the sidebar is
 #     forced to 60px and holds ONLY icon buttons (nav + the collapse
-#     toggle). The buttons are created with empty labels — Streamlit
-#     renders an icon-only button for an empty label with an icon
-#     set — and each carries its plain label as its ``help`` tooltip,
-#     the only place the label appears in this state. The theme
-#     selectbox, status pill, file uploader and banner are not
-#     rendered in this state (the theme lives in the avatar menu,
-#     the upload lives behind the top-bar Upload pill).
-#   * expanded: the sidebar is forced to 260px and holds the full
-#     sidebar (theme selectbox, icon + label nav rows, toggle, status
-#     pill, uploader) — the same content as before, minus the section
-#     headers, which Supabase's rail does not have.
+#     toggle) while not hovered. The labels ARE in the DOM (the nav
+#     buttons always render their label — the rail CSS hides the
+#     label span when collapsed and not hovered) and every
+#     expanded-sidebar control (theme selectbox, status pill, file
+#     uploader, sample button, expanders, checkbox, slicers) is
+#     rendered too, CSS-hidden until hover — that is what makes the
+#     hover expand able to reveal them with no rerun. Each nav icon
+#     carries its plain label as its ``help`` tooltip, and hovering
+#     a row still shows the dark "Go to <Page>" tooltip.
+#   * expanded (pinned): the sidebar is forced to 260px and holds
+#     the full sidebar (theme selectbox, icon + label nav rows,
+#     toggle, status pill, uploader) — the same content as before,
+#     minus the section headers, which Supabase's rail does not have.
+#     Hover changes nothing in this state.
 #
 # The width is forced with author !important rules: Streamlit 1.66.1
 # sets the sidebar width as an inline style (resizable wrapper, width
@@ -1857,14 +1916,52 @@ def rail_css(collapsed: bool, theme) -> str:
     follows the session-state rail state — the base stylesheets never
     change, and the app.py literal stays the verbatim light paste.
 
+    Supabase's real sidebar (the user's video): the default is an
+    icon-only rail (~60px); hovering the rail expands it
+    AUTOMATICALLY as an overlay (~260px, labels + controls appear,
+    ~0.2s ease) floating above the page content — no toggle click,
+    no server rerun — and moving the mouse away shrinks it back.
+    The bottom toggle is the PINNED state: click it and the sidebar
+    STAYS expanded; click again and it stays collapsed (hover then
+    works as the temporary expand). When pinned-expanded, hover
+    changes nothing.
+
+    The hover expand is pure client-side CSS — ``:hover`` on the
+    section with a width transition on the sidebar content — so the
+    0.2s glide is genuinely achievable here, unlike the click-toggle
+    glide (the toggle drives a full server rerun and the sidebar
+    remounts at the new width, so a CSS width transition cannot
+    interpolate across it; the transition list still carries
+    flex-basis + width for the toggle, but the live check is the
+    only proof of whether it glides). The overlay does not push the
+    page: the section stays a 60px flex item (the main area never
+    moves) and only its content (``stSidebarContent``) becomes an
+    absolutely-positioned 260px panel above the content.
+
+    For the hover to reveal anything, the labels and the
+    expanded-sidebar controls must be IN THE DOM while collapsed —
+    so the nav labels are always rendered (sidebar_nav) and the
+    collapsed-mode Python guards are gone (app.py renders the
+    uploader, pickers, expanders, checkbox and slicers always).
+    When collapsed and NOT hovered, CSS hides them: an explicit
+    testid denylist (no ``:has()`` — the 5028aa3 safety net used
+    ``:has()`` and never took effect live, while also matching the
+    nav buttons themselves), the no-help buttons (sample, load
+    sheet — their <button> is a DIRECT child of the wrapper, unlike
+    nav/toggle buttons, which have the help-wrapper div in
+    between), and the nav label spans. The widgets stay mounted,
+    so their values survive collapse/expand and hover.
+
     Both states: the sidebar is a flex column
     (``stSidebarContent`` > header + ``stSidebarUserContent`` >
-    vertical block) and the toggle — the vertical block's LAST
-    child, rendered after the slicers — is pinned to the bottom
-    (``margin-top: auto`` when the content is short, ``position:
-    sticky; bottom: 0`` when it scrolls), so the collapse control
-    is always reachable without scrolling. The width animates on a
-    200ms ease (the dashboard's ~0.2s slide), not a snap.
+    vertical block). The toggle — the vertical block's LAST child,
+    rendered after the slicers — is pinned to the visible bottom:
+    collapsed (content fits) it uses ``margin-top: auto`` +
+    ``position: sticky; bottom: 0`` (proven live); expanded and
+    hover-expanded (content scrolls) it is ``position: absolute``
+    at the scroll container's bottom, so it never sits below the
+    fold — the vertical block carries bottom padding so the last
+    content row scrolls above it.
 
     Collapsed: 60px sidebar, 6px content padding, 4px gaps, rail
     buttons as 36px borderless squares with a centred icon (12
@@ -1874,13 +1971,11 @@ def rail_css(collapsed: bool, theme) -> str:
     rounded-square highlight. The button rules repeat the base
     sheet's five selectors (button, button *, :hover, :disabled,
     :disabled *) with the rail values, so they win on equal
-    specificity by coming later in the page. A safety net hides
-    every non-nav child of the vertical block in this state — the
-    client-mode checkbox, the auto-refresh expander, the slicers
-    and any sidebar toast stay mounted (their values survive) but
-    can never render as a vertical column of single letters in
-    the 60px rail; only wrappers holding a button directly (nav
-    rows + toggle) stay visible.
+    specificity by coming later in the page — and they are
+    DESCENDANT selectors (no ``>``): the nav buttons carry icon=
+    + help=, so the $u help wrapper nests an intermediate plain
+    div between the wrapper and the <button>, and ``>`` never
+    matched (the 5028aa3 live failure).
     Expanded: 260px sidebar; the nav rows keep the base sheet's
     icon + label row styling."""
     _tokens = (DARK_TOKENS if normalize_theme(theme) == "dark"
@@ -1891,26 +1986,47 @@ def rail_css(collapsed: bool, theme) -> str:
     _hover = _tokens["hover"]
     _active = _tokens["active_nav"]
     _bg = _tokens["bg"]
+    _shadow = ("0 0 24px rgba(0, 0, 0, 0.45)"
+               if normalize_theme(theme) == "dark"
+               else "0 0 24px rgba(3, 3, 3, 0.18)")
+    _ease = "200ms cubic-bezier(0.22,1,0.36,1)"
+    # The toggle's absolute pin (expanded + hover-expanded): the
+    # wrapper is removed from flow and pinned to the scroll
+    # container's visible bottom. The vertical block's bottom
+    # padding (same states) lets the last content row scroll above
+    # it. Shared by the expanded branch and the collapsed :hover
+    # rules, so the two stay identical.
+    _toggle_pin = [
+        'section[data-testid="stSidebar"] div[data-testid="stSidebarUserContent"] > div[data-testid="stVerticalBlock"] > div:last-child {',
+        "  margin-top: 0 !important; position: absolute !important;",
+        "  bottom: 0 !important; left: 0 !important; right: 0 !important;",
+        "  z-index: 2 !important;",
+        f"  background: {_bg} !important; padding: 4px 12px 8px !important; }}",
+    ]
     _css = [
         "<style>",
         "/* ---- sidebar rail: Supabase icon rail / labelled sidebar ---- */",
         'section[data-testid="stSidebar"] {',
         f"  width: {_width} !important; min-width: {_width} !important;",
         f"  max-width: {_width} !important; flex: 0 0 {_width} !important;",
-        "  transition: transform 200ms cubic-bezier(0.22,1,0.36,1),",
-        "    min-width 200ms cubic-bezier(0.22,1,0.36,1),",
-        "    max-width 200ms cubic-bezier(0.22,1,0.36,1),",
-        "    width 200ms cubic-bezier(0.22,1,0.36,1) !important; }",
-        # Pin the toggle to the bottom of the rail (both states):
-        # the scroll container becomes a flex column, the user
-        # content + vertical block fill the height, and the toggle
-        # wrapper (last child) takes the free space above it — and
-        # sticks to the viewport bottom while the rail scrolls.
-        # The wrapper carries the sidebar surface so scrolling rows
-        # never show through it; the 4px top padding is the
-        # occlusion strip over the gap above the button.
+        f"  transition: transform {_ease},",
+        f"    min-width {_ease},",
+        f"    max-width {_ease},",
+        f"    width {_ease},",
+        # The rendered width is the flex-basis (the section is a
+        # flex item in the app's flex-row container), so the
+        # transition must cover flex-basis or a width change never
+        # animates. (The click-toggle glide still cannot be proven
+        # from CSS alone — the toggle remounts the sidebar — but
+        # the hover glide below is pure client-side and real.)
+        f"    flex-basis {_ease} !important; }}",
+        # The scroll container becomes a flex column, the user
+        # content + vertical block fill the height. Its width
+        # transition is the hover glide (collapsed): the content
+        # goes 60px -> 260px as an overlay and back, with no rerun.
         'section[data-testid="stSidebar"] div[data-testid="stSidebarContent"] {',
-        "  display: flex !important; flex-direction: column !important; }",
+        "  display: flex !important; flex-direction: column !important;",
+        f"  transition: width {_ease} !important; }}",
         'section[data-testid="stSidebar"] div[data-testid="stSidebarHeader"] {',
         "  flex: none !important; }",
         'section[data-testid="stSidebar"] div[data-testid="stSidebarUserContent"] {',
@@ -1919,42 +2035,129 @@ def rail_css(collapsed: bool, theme) -> str:
         'section[data-testid="stSidebar"] div[data-testid="stSidebarUserContent"] > div[data-testid="stVerticalBlock"] {',
         "  flex: 1 1 auto !important; min-height: 0 !important;",
         "  display: flex !important; flex-direction: column !important; }",
+        # Pin the toggle to the bottom of the rail (collapsed, not
+        # hovered — the state where the content fits): the toggle
+        # wrapper (last child) takes the free space above it
+        # (margin-top:auto) and sticks to the viewport bottom
+        # while the rail scrolls. The wrapper carries the sidebar
+        # surface so scrolling rows never show through it; the 4px
+        # top padding is the occlusion strip over the gap above
+        # the button. Expanded / hover-expanded override this
+        # with the absolute pin below (content scrolls there, so
+        # margin-top:auto has no free space and sticky did not
+        # hold live).
         'section[data-testid="stSidebar"] div[data-testid="stSidebarUserContent"] > div[data-testid="stVerticalBlock"] > div:last-child {',
         "  margin-top: auto !important; position: sticky !important;",
         "  bottom: 0 !important; z-index: 2 !important;",
         f"  background: {_bg} !important; padding-top: 4px !important; }}",
     ]
     if collapsed:
+        _deny = [
+            'section[data-testid="stSidebar"]:not(:hover) div[data-testid="stSidebarUserContent"] > div[data-testid="stVerticalBlock"] > div[data-testid="stCheckbox"],',
+            'section[data-testid="stSidebar"]:not(:hover) div[data-testid="stSidebarUserContent"] > div[data-testid="stVerticalBlock"] > div[data-testid="stMarkdown"],',
+            'section[data-testid="stSidebar"]:not(:hover) div[data-testid="stSidebarUserContent"] > div[data-testid="stVerticalBlock"] > div[data-testid="stMultiSelect"],',
+            'section[data-testid="stSidebar"]:not(:hover) div[data-testid="stSidebarUserContent"] > div[data-testid="stVerticalBlock"] > div[data-testid="stDateInput"],',
+            'section[data-testid="stSidebar"]:not(:hover) div[data-testid="stSidebarUserContent"] > div[data-testid="stVerticalBlock"] > div[data-testid="stCaption"],',
+            'section[data-testid="stSidebar"]:not(:hover) div[data-testid="stSidebarUserContent"] > div[data-testid="stVerticalBlock"] > div[data-testid="stExpander"],',
+            'section[data-testid="stSidebar"]:not(:hover) div[data-testid="stSidebarUserContent"] > div[data-testid="stVerticalBlock"] > div[data-testid="stFileUploader"],',
+            'section[data-testid="stSidebar"]:not(:hover) div[data-testid="stSidebarUserContent"] > div[data-testid="stVerticalBlock"] > div[data-testid="stSelectbox"],',
+            'section[data-testid="stSidebar"]:not(:hover) div[data-testid="stSidebarUserContent"] > div[data-testid="stVerticalBlock"] > div[data-testid="stAlert"],',
+            'section[data-testid="stSidebar"]:not(:hover) div[data-testid="stSidebarUserContent"] > div[data-testid="stVerticalBlock"] > div[data-testid="stTextInput"],',
+            'section[data-testid="stSidebar"]:not(:hover) div[data-testid="stSidebarUserContent"] > div[data-testid="stVerticalBlock"] > div[data-testid="stRadio"],',
+            'section[data-testid="stSidebar"]:not(:hover) div[data-testid="stSidebarUserContent"] > div[data-testid="stVerticalBlock"] > div[data-testid="stNumberInput"] {',
+            "  display: none !important; }",
+        ]
         _css += [
             'section[data-testid="stSidebar"] div[data-testid="stSidebarContent"] {',
             "  padding-left: 6px !important; padding-right: 6px !important; }",
             'section[data-testid="stSidebar"] div[data-testid="stVerticalBlock"] {',
             "  gap: 4px !important; }",
-            # Safety net: in the collapsed rail only nav buttons and
-            # the toggle may show. Every other direct child of the
-            # vertical block (checkbox, expander, multiselect, date
-            # input, caption, alert) is hidden — the widgets stay
-            # mounted, so their values survive the collapse.
-            'section[data-testid="stSidebar"] div[data-testid="stSidebarUserContent"] > div[data-testid="stVerticalBlock"] > div:not(:has(> div[data-testid="stButton"])) {',
+            # Hover expand (pinned-collapsed only): the section
+            # stays a 60px flex item — the main area never moves —
+            # and only its content becomes a 260px overlay floating
+            # above the page. No rerun, no remount: the width
+            # transition on the content is the real 0.2s glide.
+            # The section's z-index lifts the overlay above the
+            # main area; the shadow is the overlay's depth.
+            'section[data-testid="stSidebar"]:hover {',
+            "  z-index: 1000000 !important; }",
+            'section[data-testid="stSidebar"]:hover div[data-testid="stSidebarContent"] {',
+            "  position: absolute !important; left: 0 !important;",
+            "  top: 0 !important; bottom: 0 !important;",
+            "  width: 260px !important; max-width: 260px !important;",
+            f"  box-shadow: {_shadow} !important;",
+            f"  transition: width {_ease} !important; }}",
+            # Hover-expanded toggle pin + bottom padding (same
+            # absolute pin as the expanded state): the overlay's
+            # content scrolls, so the toggle must be pinned to the
+            # overlay's visible bottom, not left at the end of the
+            # content below the fold.
+            'section[data-testid="stSidebar"]:hover div[data-testid="stSidebarUserContent"] > div[data-testid="stVerticalBlock"] {',
+            "  padding-bottom: 56px !important; }",
+        ] + [l.replace(
+            'section[data-testid="stSidebar"] div[data-testid="stSidebarUserContent"] > div[data-testid="stVerticalBlock"] > div:last-child {',
+            'section[data-testid="stSidebar"]:hover div[data-testid="stSidebarUserContent"] > div[data-testid="stVerticalBlock"] > div:last-child {')
+            for l in _toggle_pin] + [
+            # Hiding, collapsed and NOT hovered (the denylist): every
+            # non-nav child of the vertical block is hidden — the
+            # client-mode checkbox, the slicers, the uploader, the
+            # expanders, the theme selectbox, the status pill and
+            # any sidebar alert. The widgets stay mounted (their
+            # values survive); only the nav rows + toggle stay
+            # visible. Explicit testids, NO :has(): the 5028aa3
+            # safety net used :has() and never took effect live —
+            # and, per the bundle, it would have hidden the nav
+            # buttons too (their direct child is the intermediate
+            # help-wrapper div, not another stButton div).
+        ] + _deny + [
+            # Non-nav sidebar buttons (sample, load sheet): they
+            # carry no help=, so Streamlit renders their <button>
+            # as a DIRECT child of the wrapper — unlike nav/toggle
+            # buttons, which have the help-wrapper div in between.
+            # Hide the direct-child button when collapsed and not
+            # hovered; the nav + toggle keep showing.
+            'section[data-testid="stSidebar"]:not(:hover) div[data-testid="stSidebarUserContent"] > div[data-testid="stVerticalBlock"] > div[data-testid="stButton"] > button {',
             "  display: none !important; }",
-            'section[data-testid="stSidebar"] div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"] {',
+            # Nav labels, collapsed and not hovered: the label text
+            # lives in a <span style="display: contents"> inside
+            # the button (the only span Streamlit renders with that
+            # inline style), so hiding it leaves the icon alone in
+            # the 36px square. On hover (or pinned-expanded) the
+            # label shows. Both serialisations of the inline style
+            # are covered (React may or may not put a space after
+            # the colon).
+            'section[data-testid="stSidebar"]:not(:hover) div[data-testid="stButton"] button span[style*="display: contents"],',
+            'section[data-testid="stSidebar"]:not(:hover) div[data-testid="stButton"] button span[style*="display:contents"] {',
+            "  display: none !important; }",
+            'section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"] {',
             "  width: 100% !important; height: 36px !important;",
             "  min-height: 36px !important; padding: 0 !important;",
             "  border: none !important; border-radius: 8px !important;",
             "  background: transparent !important;",
             "  background-color: transparent !important;",
             "  justify-content: center !important; }",
-            'section[data-testid="stSidebar"] div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"] * {',
+            'section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"] * {',
             f"  color: {_ink} !important; }}",
-            'section[data-testid="stSidebar"] div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"]:hover {',
+            'section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"]:hover {',
             f"  background-color: {_hover} !important;",
             "  border: none !important; }",
-            'section[data-testid="stSidebar"] div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"]:disabled {',
+            'section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"]:disabled {',
             f"  background-color: {_active} !important;",
             "  border: none !important; opacity: 1 !important; }",
-            'section[data-testid="stSidebar"] div[data-testid="stButton"] > button[data-testid="stBaseButton-secondary"]:disabled * {',
+            'section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"]:disabled * {',
             f"  color: {_ink} !important; }}",
         ]
+    else:
+        _css += [
+            # Expanded: the content scrolls, so the toggle is
+            # pinned absolutely to the scroll container's visible
+            # bottom (margin-top:auto has no free space here and
+            # sticky did not hold live), and the vertical block
+            # carries bottom padding so the last content row can
+            # scroll above it.
+            'section[data-testid="stSidebar"] div[data-testid="stSidebarUserContent"] > div[data-testid="stVerticalBlock"] {',
+            "  padding-bottom: 56px !important; }",
+        ] + _toggle_pin
     _css.append("</style>")
     return "\n".join(_css)
 
@@ -1984,9 +2187,16 @@ def sidebar_nav(items, active: str | None = None, collapsed: bool = False,
     inside ``with st.sidebar:`` — the buttons render wherever the
     caller puts them.
 
-    ``collapsed`` renders icon-only buttons (empty label — Streamlit
-    renders an icon-only button for an empty label with an icon set,
-    which is the dashboard's rail). The widget keys and tooltips are
+    The label is ALWAYS rendered, in both states: the hover rail
+    (Supabase's real behaviour — hover the icon rail and it expands
+    as an overlay showing the labels) needs the label text in the
+    DOM while collapsed, so the rail CSS can reveal it on hover.
+    When collapsed and not hovered, the rail stylesheet hides the
+    label span (``span[style*="display: contents"]`` — the only span
+    Streamlit renders with that inline style) and the button reads
+    as an icon-only square; on hover (or pinned-expanded) the label
+    shows. ``collapsed`` therefore only changes the CSS state the
+    caller is in, not the label — the widget keys and tooltips are
     identical in both states, so tests and navigation do not depend
     on which state the rail is in."""
     st_mod = st_module or st
@@ -2002,7 +2212,7 @@ def sidebar_nav(items, active: str | None = None, collapsed: bool = False,
         key, label = (_item if isinstance(_item, tuple)
                       else (_item, _item))
         if st_mod.button(
-                "" if collapsed else str(label),
+                str(label),
                 icon=icon_for(NAV_ICONS.get(key, "diamond")),
                 key=f"dcs_nav_{key}", help=f"Go to {label}",
                 type="secondary", disabled=(key == active)):
