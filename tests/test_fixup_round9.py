@@ -240,28 +240,24 @@ def test_r9_toggle_button_rules_in_main_area():
 
 
 def test_r9_nav_rows_236px():
-    """The nav rows are widened to ~233px: an explicit 8px side
+    """The nav rows are widened to ~233px: an explicit 3px side
     padding on the sidebar content — expanded and hover-expanded
     — PLUS an explicit width:100% on the user content + vertical
-    block, PLUS the scrollbar pinned to 8px wide. Measured
-    locally (Supabase mode, probe21): 223px at x=18 — up from
-    199px at x=30, but still 10px short of 233px, because this
-    Chromium's classic scrollbar takes a fixed 20px of layout
-    width (offsetWidth 259, clientWidth 239) and the
-    ::-webkit-scrollbar width is IGNORED here (0/4/8/12px all
-    leave clientWidth at 239). The live rows should read
-    ~234px: the old live measurement was 219px against 199px
-    locally — a 20px gap, consistent with a ~10px thinner live
-    scrollbar — so 260 - 16 - 10 = 234px live. The live check is
-    the final proof for the exact width. The collapsed rail
-    keeps its 6px padding."""
+    block, PLUS the scrollbar pinned to 8px wide. Round 9 used
+    8px padding and predicted ~234px live, but the live check
+    measured 224px: the scrollbar pin is IGNORED by this
+    Chromium (probe22c: it takes a fixed 20px whatever the pin
+    says), so the padding carries the width alone — 259 - 3 - 3
+    - 20 = 233px at x=3, matching the 236px toggle at x=12.
+    Measured locally (Supabase mode, probe22c): 223px at x=18
+    with 8px padding. The collapsed rail keeps its 6px padding."""
     for theme in ("light", "dark"):
         expanded = ui_design.rail_css(False, theme)
         assert ('section[data-testid="stSidebar"] '
                 'div[data-testid="stSidebarContent"] {\n'
-                '  padding-left: 8px !important; '
-                'padding-right: 8px !important; }' in expanded), \
-            f"expanded {theme} rail must pad the content 8px a side"
+                '  padding-left: 3px !important; '
+                'padding-right: 3px !important; }' in expanded), \
+            f"expanded {theme} rail must pad the content 3px a side"
         assert ('section[data-testid="stSidebar"] '
                 'div[data-testid="stSidebarContent"]'
                 '::-webkit-scrollbar {\n'
@@ -278,9 +274,9 @@ def test_r9_nav_rows_236px():
         assert ('section[data-testid="stSidebar"]:hover '
                 'div[data-testid="stSidebarContent"] {' in collapsed), \
             f"collapsed {theme} rail must keep the hover overlay rule"
-        assert ("  padding-left: 8px !important; "
-                "padding-right: 8px !important;" in collapsed), \
-            f"collapsed {theme} rail must pad the hover overlay 8px a side"
+        assert ("  padding-left: 3px !important; "
+                "padding-right: 3px !important;" in collapsed), \
+            f"collapsed {theme} rail must pad the hover overlay 3px a side"
         assert ('section[data-testid="stSidebar"]:hover '
                 'div[data-testid="stSidebarContent"]'
                 '::-webkit-scrollbar {' in collapsed), \
@@ -303,8 +299,10 @@ def test_r9_dark_profile_per_key_fill():
     ``.st-key-profile_username`` inputs pin BOTH ``color`` and
     ``-webkit-text-fill-color`` to #edefee. The rule sits after
     the global rules in the sheet, so it wins over any competing
-    rule that could be dimming them live. The light sheet is
-    untouched (no fill pin there)."""
+    rule that could be dimming them live. Round 10: the LIGHT
+    sheet carries the same per-key pin now (#030303 — the light
+    Profile measured 2.61:1 live), so the light assertion below
+    pins that instead of the old "light untouched" premise."""
     dark = ui_design.DARK_CSS
     assert (".st-key-profile_primary_email input:disabled," in dark
             and ".st-key-profile_username input:disabled {" in dark), \
@@ -313,8 +311,14 @@ def test_r9_dark_profile_per_key_fill():
     global_at = dark.find(".stApp input:disabled, .stApp textarea:disabled")
     assert 0 < global_at < key_at, \
         "the per-key fill pin must sit after the global disabled rule"
-    assert "-webkit-text-fill-color" not in ui_design.DESIGN_SYSTEM_CSS, \
-        "light sheet must not carry the fill pin (light Profile passes)"
+    light = ui_design.DESIGN_SYSTEM_CSS
+    assert (".st-key-profile_primary_email input:disabled," in light
+            and ".st-key-profile_username input:disabled {" in light), \
+        "light sheet must pin the fill on the two Profile fields by key (round 10)"
+    key_at = light.find(".st-key-profile_primary_email input:disabled,")
+    global_at = light.find(".stApp input:disabled, .stApp textarea:disabled")
+    assert 0 < global_at < key_at, \
+        "the light per-key fill pin must sit after the global disabled rule"
     print("round 9 dark Profile per-key fill OK")
 
 

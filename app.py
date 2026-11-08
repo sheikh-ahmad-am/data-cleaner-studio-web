@@ -268,6 +268,38 @@ div[data-testid="stVerticalBlock"] > div:has(.dcs-danger-zone) ~ div div[data-te
 .stApp input:hover, .stApp textarea:hover, .stApp select:hover {
   border-color: #d0d0d0; }
 .stApp label { color: #030303; }
+/* ---- disabled inputs (Profile's read-only Primary email +
+   Username): the light twin of the dark fill pin below.
+   Streamlit's native disabled styling renders the text in a
+   faint grey on the white panel (live: darkest pixel #A0A0A0,
+   2.61:1, while 'Member since' is #030303 at 20.62:1) —
+   pre-existing, not a regression. Pin the text dark and the
+   panel one step off white, so the field still reads as
+   disabled but the value is legible. The ``color`` pin alone
+   is NOT enough: Chromium paints disabled input text with
+   ``-webkit-text-fill-color``, not ``color`` — the round-7
+   probe read computed ``color`` (#030303, correct) and missed
+   that the fill sat at rgba(3,3,3,0.4), so the fields stayed
+   faint live. The fill pin below is the actual fix (round 10;
+   dark got its twin in round 8, verified live 13.67:1). ---- */
+.stApp input:disabled, .stApp textarea:disabled, .stApp select:disabled {
+  color: #030303 !important; -webkit-text-fill-color: #030303 !important;
+  background-color: #f3f3f3 !important;
+  border-color: #e0e0e0 !important; opacity: 1 !important; }
+div[data-testid="stTextInput"] input:disabled {
+  color: #030303 !important; -webkit-text-fill-color: #030303 !important;
+  background-color: #f3f3f3 !important; }
+/* ---- Profile light disabled fields, per-key pin (round 10):
+   belt-and-braces twin of the dark per-key pin — the two
+   global rules above already paint dark in the local
+   Supabase-mode probe, but the dark fields stayed dim live
+   until the per-key rule landed (round 9), so the light
+   fields get the same key-scoped rule, sitting later in the
+   sheet so it wins over any competing rule. ---- */
+.st-key-profile_primary_email input:disabled,
+.st-key-profile_username input:disabled {
+  color: #030303 !important; -webkit-text-fill-color: #030303 !important;
+  background-color: #f3f3f3 !important; opacity: 1 !important; }
 /* ---- checkboxes: hairline box border, green check ---- */
 .stApp input[type="checkbox"] { accent-color: #117f50; }
 div[data-testid="stCheckbox"] div[data-baseweb="checkbox"] span {

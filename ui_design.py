@@ -567,6 +567,38 @@ div[data-testid="stVerticalBlock"] > div:has(.dcs-danger-zone) ~ div div[data-te
 .stApp input:hover, .stApp textarea:hover, .stApp select:hover {
   border-color: #d0d0d0; }
 .stApp label { color: #030303; }
+/* ---- disabled inputs (Profile's read-only Primary email +
+   Username): the light twin of the dark fill pin below.
+   Streamlit's native disabled styling renders the text in a
+   faint grey on the white panel (live: darkest pixel #A0A0A0,
+   2.61:1, while 'Member since' is #030303 at 20.62:1) —
+   pre-existing, not a regression. Pin the text dark and the
+   panel one step off white, so the field still reads as
+   disabled but the value is legible. The ``color`` pin alone
+   is NOT enough: Chromium paints disabled input text with
+   ``-webkit-text-fill-color``, not ``color`` — the round-7
+   probe read computed ``color`` (#030303, correct) and missed
+   that the fill sat at rgba(3,3,3,0.4), so the fields stayed
+   faint live. The fill pin below is the actual fix (round 10;
+   dark got its twin in round 8, verified live 13.67:1). ---- */
+.stApp input:disabled, .stApp textarea:disabled, .stApp select:disabled {
+  color: #030303 !important; -webkit-text-fill-color: #030303 !important;
+  background-color: #f3f3f3 !important;
+  border-color: #e0e0e0 !important; opacity: 1 !important; }
+div[data-testid="stTextInput"] input:disabled {
+  color: #030303 !important; -webkit-text-fill-color: #030303 !important;
+  background-color: #f3f3f3 !important; }
+/* ---- Profile light disabled fields, per-key pin (round 10):
+   belt-and-braces twin of the dark per-key pin — the two
+   global rules above already paint dark in the local
+   Supabase-mode probe, but the dark fields stayed dim live
+   until the per-key rule landed (round 9), so the light
+   fields get the same key-scoped rule, sitting later in the
+   sheet so it wins over any competing rule. ---- */
+.st-key-profile_primary_email input:disabled,
+.st-key-profile_username input:disabled {
+  color: #030303 !important; -webkit-text-fill-color: #030303 !important;
+  background-color: #f3f3f3 !important; opacity: 1 !important; }
 /* ---- checkboxes: hairline box border, green check ---- */
 .stApp input[type="checkbox"] { accent-color: #117f50; }
 div[data-testid="stCheckbox"] div[data-baseweb="checkbox"] span {
@@ -1170,8 +1202,9 @@ div[data-testid="stVerticalBlock"] > div:has(.dcs-danger-zone) ~ div div[data-te
    in a very dark grey on the dark panel, near-unreadable live.
    Pin the text bright and the panel one step lighter than the
    card, so the field still reads as disabled but the value is
-   legible. Dark theme only — the light Profile passes and is
-   untouched. The ``color`` pin alone is NOT enough: Chromium
+   legible. (Round 10: the light sheet carries the same pin
+   now — the light Profile measured 2.61:1 live, so the old
+   "light passes" note is gone.) The ``color`` pin alone is NOT enough: Chromium
    paints disabled input text with ``-webkit-text-fill-color``,
    not ``color`` — the round-7 real-DOM probe read computed
    ``color`` (#edefee, correct) and missed that the fill sat at
@@ -2154,11 +2187,40 @@ def rail_css(collapsed: bool, theme) -> str:
             f'section[data-testid="stSidebar"]:hover ~ div {_chain} {{'
             if hover else
             f'{_chain} {{')
-        return [
+        # Round 10 (flyout toggle click): the pin's width
+        # TRANSITIONS. A click on the toggle while the flyout is
+        # open was swallowed (probe22g/h): the pointer rests on
+        # the toggle (a main-area descendant), so ``section:hover``
+        # drops the moment the press completes — and with no
+        # transition the container snapped 260px -> 60px
+        # instantly, the button shrank out from under the
+        # pointer (236px -> 36px), the mouseup landed on main,
+        # and no ``click`` ever fired on the button (no rerun,
+        # no state change). The fix is asymmetric, and it works
+        # because the transition that governs a width change is
+        # the AFTER-change style's: the base (rest) rule carries
+        # a 250ms DELAY, so on hover-loss the container holds
+        # 260px for 250ms — a press-release (~50-150ms) completes
+        # with the button still under the pointer, the click
+        # fires, and the rerun pins the rail expanded. The hover
+        # rule carries NO delay, so the flyout still opens
+        # instantly. The delay is 250ms, not 300ms: the round-5
+        # test pins "no 300ms in the rail CSS" (the old snap),
+        # and 250ms still covers a normal click plus a hesitant
+        # one (a press held past 250ms before release can still
+        # be swallowed — an edge case, noted, not chased). Side
+        # effect: moving the pointer off the rail without
+        # clicking leaves the toggle bar wide for 250ms before
+        # it glides shut — it trails the overlay's close, which
+        # reads as a glide, not a glitch. No :has() anywhere
+        # (the ban stands).
+        _delay = "250ms" if not hover else "0ms"
+        _rules = [
             _sel,
             "  margin-top: 0 !important; position: fixed !important;",
             "  bottom: 0 !important; left: 0 !important;",
             f"  width: {width} !important;",
+            f"  transition: width {_glide} {_delay} !important;",
             # z-index 1000001 (round 9 fix): the toggle lives in the
             # MAIN area now, and the sidebar section carries a rest
             # z-index of 1000 (1000000 when hovered, the overlay) —
@@ -2173,6 +2235,35 @@ def rail_css(collapsed: bool, theme) -> str:
             "  z-index: 1000001 !important;",
             f"  background: {_bg} !important; padding: 4px 12px 8px !important; }}",
         ]
+        if hover:
+            # Round 10 (flyout toggle click, second half): the
+            # container ALSO holds 260px while the POINTER IS ON
+            # IT — a :hover on the container itself, no :has().
+            # The delayed shrink alone only covers the case where
+            # section:hover holds until mouseup (probe22g/h);
+            # probe23 showed section:hover can ALSO drop the
+            # moment the pointer arrives on the toggle (the toggle
+            # is a main-area descendant, so the section hover is
+            # unstable there) — and then the flyout is already
+            # closed and the button already 36px when the click
+            # lands. The container :hover holds the width at
+            # 260px regardless of section:hover, so the button
+            # stays under the pointer through the whole
+            # press-release and the click fires. It also makes
+            # hovering the collapsed 36px toggle reveal its
+            # "Expand sidebar" label (consistent with the
+            # flyout). It cannot re-expand the SIDEBAR: the
+            # section stays 60px — only the toggle bar widens,
+            # and the collapse still sticks. Instant expand
+            # (0ms delay); the shrink back is the base rule's
+            # 250ms delay.
+            _rules.append(f"{_chain}:hover {{")
+            _rules.append("  margin-top: 0 !important; position: fixed !important;")
+            _rules.append("  bottom: 0 !important; left: 0 !important;")
+            _rules.append(f"  width: {RAIL_WIDTH_EXPANDED} !important;")
+            _rules.append(
+                f"  transition: width {_glide} 0ms !important; }}")
+        return _rules
     _css = [
         "<style>",
         "/* ---- sidebar rail: Supabase icon rail / labelled sidebar ---- */",
@@ -2328,14 +2419,15 @@ def rail_css(collapsed: bool, theme) -> str:
             "  position: absolute !important; left: 0 !important;",
             "  top: 0 !important; bottom: 0 !important;",
             "  width: 260px !important; max-width: 260px !important;",
-            # Round 9 (nav-row width): the hover overlay's content
-            # carries the same 8px side padding as the pinned-
-            # expanded rail, and the same 8px scrollbar pin, so
-            # the hover nav rows are 235px wide at x=8 — within
-            # 2px of the ~233px the rows should be. (The overlay
-            # content scrolls too, so its scrollbar takes the
-            # same 20px unless pinned.)
-            "  padding-left: 8px !important; padding-right: 8px !important;",
+            # Round 10 (nav-row width): the hover overlay's
+            # content carries the same 3px side padding as the
+            # pinned-expanded rail (round 9's 8px predicted
+            # 235px; the live check measured 224px — the
+            # scrollbar pin is ignored by this Chromium, so
+            # the padding carries the width: 259 - 3 - 3 - 20
+            # = 233px). The overlay content scrolls too, so
+            # its scrollbar takes the same 20px.
+            "  padding-left: 3px !important; padding-right: 3px !important;",
             f"  box-shadow: {_shadow} !important;",
             f"  transition: width {_glide} !important; }}",
             f'{_hover} div[data-testid="stSidebarContent"]::-webkit-scrollbar {{',
@@ -2450,26 +2542,21 @@ def rail_css(collapsed: bool, theme) -> str:
             # above at the state's width, 260px) is the only
             # width the toggle container ever gets, and the
             # sidebar container rules cannot touch it.
-            # Round 9 (nav-row width): the content carries an
-            # explicit 8px side padding, and the sidebar's
-            # vertical scrollbar is pinned to 8px wide, so the
-            # nav rows are 235px wide (259 - 8 - 8 - 8) at x=8 —
-            # within 2px of the ~233px the rows should be. The
-            # live check measured 219px, the local probe 199px.
-            # Why 8px + 8px, not 12px: the content scrolls
-            # (scrollHeight 1329 > clientHeight 998), and its
-            # classic scrollbar takes 20px of layout width
-            # (offsetWidth 259, clientWidth 239 — probe23), so a
-            # 12px padding alone only widened the rows to 215px
-            # (the user content does not stretch to the padding
-            # box on its own either — probe21/23). Pinning the
-            # scrollbar to 8px recovers 12px of it, and the 8px
-            # padding spends the rest; the thin scrollbar is
-            # still visible, so the scroll affordance survives.
-            # The section's 1px right border leaves the content
-            # 259px, not 260px.
+            # Round 10 (nav-row width): the content carries an
+            # explicit 3px side padding. Round 9's 8px padding +
+            # 8px scrollbar pin predicted 235px, but the live
+            # check measured 224px — the prediction was wrong
+            # because the scrollbar pin is IGNORED by this
+            # Chromium (probe22c: ::-webkit-scrollbar 8px leaves
+            # clientWidth at 239; the classic scrollbar takes a
+            # fixed 20px). The padding carries the width alone:
+            # 259 (content, after the section's 1px right border)
+            # - 3 - 3 - 20 (scrollbar) = 233px at x=3, matching
+            # the 236px toggle at x=12. The scrollbar pin stays
+            # (harmless where honoured, and the thin scrollbar
+            # still shows where it is).
             'section[data-testid="stSidebar"] div[data-testid="stSidebarContent"] {',
-            "  padding-left: 8px !important; padding-right: 8px !important; }",
+            "  padding-left: 3px !important; padding-right: 3px !important; }",
             'section[data-testid="stSidebar"] div[data-testid="stSidebarContent"]::-webkit-scrollbar {',
             "  width: 8px !important; }",
             'section[data-testid="stSidebar"] div[data-testid="stSidebarContent"] {',

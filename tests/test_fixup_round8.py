@@ -115,13 +115,16 @@ def test_r8_dark_disabled_inputs_paint_bright():
     ``-webkit-text-fill-color`` to #edefee: Chromium paints
     disabled input text with the fill, not the color, so the
     color pin alone left Profile's Primary email + Username dim
-    live (fill rgba(3,3,3,0.4)). Both rules carry the fill pin;
-    the light sheet is untouched (no fill pin there)."""
+    live (fill rgba(3,3,3,0.4)). Both rules carry the fill pin.
+    Round 10: the LIGHT sheet carries its own fill pin now
+    (#030303 — the light Profile measured 2.61:1 live), so the
+    light assertion below pins that instead of its absence."""
     assert ui_design.DARK_CSS.count(
         "-webkit-text-fill-color: #edefee !important") >= 2, \
         "dark sheet must pin the fill colour on both disabled-input rules"
-    assert "-webkit-text-fill-color" not in ui_design.DESIGN_SYSTEM_CSS, \
-        "light sheet must not carry the fill pin (light Profile passes)"
+    assert ui_design.DESIGN_SYSTEM_CSS.count(
+        "-webkit-text-fill-color: #030303 !important") >= 2, \
+        "light sheet must pin the fill colour on its disabled-input rules (round 10)"
     print("round 8 dark disabled inputs paint bright OK")
 
 

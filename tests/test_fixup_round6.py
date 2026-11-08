@@ -410,8 +410,10 @@ def test_r6_dark_dropzone_is_dark():
 def test_r6_dark_disabled_inputs_readable():
     """Dark mode: disabled inputs (Profile's Primary email +
     Username) render bright text on a dark panel, not very dark
-    grey on dark. The rule is dark-only — the light Profile passes
-    live and is untouched."""
+    grey on dark. Round 10: the LIGHT sheet carries the same
+    pin now (the light Profile measured 2.61:1 live — the old
+    "light passes, untouched" premise was wrong), so the light
+    assertion below pins the light fill instead of its absence."""
     dark = ui_design.DARK_CSS
     assert ".stApp input:disabled" in dark, \
         "dark sheet must carry a disabled-input rule"
@@ -422,9 +424,14 @@ def test_r6_dark_disabled_inputs_readable():
     assert "background-color: #2a2d2c !important" in m.group(1), \
         f"dark disabled inputs must sit on #2a2d2c, got {m.group(1)!r}"
     light = ui_design.DESIGN_SYSTEM_CSS
-    assert ".stApp input:disabled" not in light, \
-        "the light sheet must not carry a disabled-input rule " \
-        "(light Profile passes live, untouched)"
+    assert ".stApp input:disabled" in light, \
+        "light sheet must carry a disabled-input rule (round 10)"
+    m = re.search(r"\.stApp input:disabled[^{]*\{([^}]*)\}", light)
+    assert m, "light disabled-input rule must have a body"
+    assert "-webkit-text-fill-color: #030303 !important" in m.group(1), \
+        f"light disabled inputs must pin the fill dark, got {m.group(1)!r}"
+    assert "background-color: #f3f3f3 !important" in m.group(1), \
+        f"light disabled inputs must sit on #f3f3f3, got {m.group(1)!r}"
     print("round 6 dark disabled inputs OK")
 
 

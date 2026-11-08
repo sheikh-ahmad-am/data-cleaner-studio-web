@@ -381,6 +381,23 @@ def render_profile_view(st, user, storage_key, on_logout=None):
                             ui_design.PROFILE_THEME_RADIO_KEY,
                             _current_theme))
                     st.session_state["dcs_theme"] = _new
+                    # Round 10: rerun at once, like the login
+                    # toggle. Without it the new theme only
+                    # applies on the NEXT run (the stylesheet is
+                    # injected at the top of the run, before this
+                    # callback fires), so the Profile page sat
+                    # light for a full run after picking Dark —
+                    # the window the live check read as "reverts
+                    # to Light". The sibling keys cannot be
+                    # written here (the avatar radio + sidebar
+                    # selectbox were already created this run),
+                    # but the rerun re-syncs them from dcs_theme
+                    # at the top of the next run, so all three
+                    # controls agree. The probes could not
+                    # reproduce a real revert (dark persisted on
+                    # both the empty-state and data-loaded paths);
+                    # this removes the lag window itself.
+                    st.rerun()
 
                 st.radio("Theme", options=list(ui_design.THEMES),
                          format_func=lambda t: ("Dark" if t == "dark"
