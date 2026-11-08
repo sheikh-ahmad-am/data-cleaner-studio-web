@@ -71,8 +71,8 @@ APP = str(PROJECT_ROOT / "app.py")
 
 MAIN_PIN_CHAIN = ('main[data-testid="stMain"] '
                   'div[data-testid="stVerticalBlock"] '
-                  'div[data-testid="stElementContainer"]'
-                  '.st-key-dcs_rail_toggle')
+                  'div[data-testid="stLayoutWrapper"]'
+                  '.st-key-dcs_rail_behavior')
 HOVER_PIN_SEL = ('section[data-testid="stSidebar"]:hover ~ div '
                  + MAIN_PIN_CHAIN)
 
@@ -102,7 +102,7 @@ def test_r9_no_has_in_rail_css():
 
 def test_r9_hover_trigger_is_ungated():
     """The collapsed hover-expand trigger is the plain section
-    hover — UNGATED. The gate is unnecessary now: the toggle is
+    hover — UNGATED. The gate is unnecessary now: the control is
     not a descendant of the section (it renders in the main
     area), so hovering it can never fire ``section:hover``. Every
     hover-expand rule carries the plain trigger, and no gated
@@ -158,85 +158,107 @@ def test_r9_toggle_pin_targets_main_area():
     descendant combinators); the hover variant is a SIBLING
     selector from the hovered section to main[stMain] (both are
     children of stAppViewContainer — verified in the real DOM),
-    so the toggle widens to 260px when the rail overlay is open.
+    so the control widens to 260px when the rail overlay is open.
     Widths stay 60px collapsed / 260px expanded. The sidebar
-    container rules still exclude the toggle explicitly."""
+    container rules still exclude the control explicitly.
+    (Clone Round 1: the control is the 3-way menu, key
+    dcs_rail_behavior — the old toggle's key was
+    dcs_rail_toggle.)"""
     for collapsed in (True, False):
         for theme in ("light", "dark"):
             css = ui_design.rail_css(collapsed, theme)
             assert MAIN_PIN_CHAIN in css, \
                 f"rail CSS ({collapsed=}, {theme}) must pin the " \
-                "toggle in the main area"
+                "control in the main area"
             assert ('div[data-testid="stElementContainer"]'
-                    ':not(.st-key-dcs_rail_toggle)' in css), \
+                    ':not(.st-key-dcs_rail_behavior)' in css), \
                 f"rail CSS ({collapsed=}, {theme}) must exclude " \
-                "the toggle from the sidebar full-width container rules"
+                "the control from the sidebar full-width container rules"
     assert "width: 60px" in ui_design.rail_css(True, "light"), \
-        "collapsed rail toggle pin must be 60px wide"
+        "collapsed rail control pin must be 60px wide"
     assert "width: 260px" in ui_design.rail_css(False, "light"), \
-        "expanded rail toggle pin must be 260px wide"
-    # The hover pin: section hovered -> toggle 260px, via the
+        "expanded rail control pin must be 260px wide"
+    # The hover pin: section hovered -> control 260px, via the
     # sibling selector (no :has() gate).
     assert HOVER_PIN_SEL in _collapsed("light"), \
-        "collapsed rail must widen the toggle to 260px on section hover"
+        "collapsed rail must widen the control to 260px on section hover"
     assert HOVER_PIN_SEL in _collapsed("dark"), \
-        "collapsed dark rail must widen the toggle to 260px on section hover"
-    print("round 9 toggle pin targets the main area OK")
+        "collapsed dark rail must widen the control to 260px on section hover"
+    print("round 9 control pin targets the main area OK")
 
 
-def test_r9_toggle_renders_once_in_main_area():
-    """app.py renders the rail toggle exactly ONCE, at the top
-    level (main area) — not inside a ``with st.sidebar:`` block.
-    The old two sidebar renders (empty state + data-loaded) are
-    gone: a single main-area render covers both states, and it
-    must sit before any st.stop() so the toggle exists on every
+def test_r9_behavior_menu_renders_once_in_main_area():
+    """app.py renders the rail behavior menu exactly ONCE, at the
+    top level (main area) — not inside a ``with st.sidebar:``
+    block. The old two sidebar renders (empty state + data-loaded)
+    are gone: a single main-area render covers both states, and it
+    must sit before any st.stop() so the menu exists on every
     logged-in page. The render call must be a top-level
-    ``ui_design.render_rail_toggle()`` (not indented inside a
-    ``with`` block)."""
+    ``ui_design.render_rail_behavior_menu()`` (not indented inside
+    a ``with`` block, and NOT an ``if`` — the menu radio's
+    on_change does the work). (Clone Round 1: the direct toggle
+    is gone; this replaces test_r9_toggle_renders_once_in_main_area.)"""
     src = Path(APP).read_text()
     calls = [i for i, line in enumerate(src.splitlines(), 1)
-             if "render_rail_toggle()" in line
+             if "render_rail_behavior_menu()" in line
              and not line.strip().startswith("#")
              and "def " not in line]
     assert len(calls) == 1, \
-        f"app.py must call render_rail_toggle() exactly once, found {calls}"
+        f"app.py must call render_rail_behavior_menu() exactly once, found {calls}"
+    assert "render_rail_toggle()" not in src, \
+        "app.py must not call the old render_rail_toggle() any more"
     line_no = calls[0]
     lines = src.splitlines()
     call_line = lines[line_no - 1]
-    assert call_line.startswith("if ui_design.render_rail_toggle():"), \
-        "the toggle render must be a top-level statement (main area)"
+    assert call_line.startswith("ui_design.render_rail_behavior_menu()"), \
+        "the menu render must be a top-level statement (main area)"
     # It must come before the first st.stop() AFTER it in the
     # logged-in flow (the Profile empty-state branch) so it exists
     # on every page. (Earlier st.stop() calls are in the login /
-    # share flows, before the toggle's logged-in position.)
+    # share flows, before the menu's logged-in position.)
     stops_after = [i for i, line in enumerate(lines, 1)
                    if "st.stop()" in line and i > line_no]
-    assert stops_after, "there must be a st.stop() after the toggle render"
+    assert stops_after, "there must be a st.stop() after the menu render"
     assert line_no < stops_after[0], \
-        "the toggle render must precede the first st.stop() after it"
-    print("round 9 toggle renders once in the main area OK")
+        "the menu render must precede the first st.stop() after it"
+    print("round 9 behavior menu renders once in the main area OK")
 
 
-def test_r9_toggle_button_rules_in_main_area():
-    """The toggle button needs its own key-scoped rules now that
-    it lives in the main area (the sidebar-scoped button rules do
+def test_r9_behavior_menu_button_rules_in_main_area():
+    """The menu button needs its own key-scoped rules now that it
+    lives in the main area (the sidebar-scoped button rules do
     not reach it): 36px tall, borderless, transparent, icon-only
     centred when collapsed, left-aligned with its label when
-    expanded — the same geometry the pin gave it in the sidebar
-    (36px square collapsed, 236px row expanded)."""
+    expanded — the same geometry the pin gave the old toggle in
+    the sidebar (36px square collapsed, 236px row expanded).
+    The trigger is a popover button (stPopoverButton, not
+    stBaseButton-secondary), and Streamlit's expand_more chevron
+    on it is hidden (it would crowd the 36px square). The rules
+    carry the FULL main-area chain (probe27d): Streamlit's own
+    popover-button rule (44px !important, (0,2,2)) beats the bare
+    key-class rule (0,2,1) — the full chain is (0,5,4) and wins.
+    The container is a layout wrapper (probe27b)."""
+    btn = MAIN_PIN_CHAIN + ' button[data-testid="stPopoverButton"]'
     collapsed = _collapsed("light")
     for frag in (
-            '.st-key-dcs_rail_toggle button[data-testid="stBaseButton-secondary"] {',
-            "  width: 100% !important; height: 36px !important;",
+            btn + ' {',
+            "  width: 36px !important; height: 36px !important;",
+            "  min-width: 36px !important;",
             "  justify-content: center !important; }",
-            '.st-key-dcs_rail_toggle button[data-testid="stBaseButton-secondary"]:hover {'):
+            btn + ':hover {',
+            btn + ' > div > div[aria-hidden="true"] {\n  display: none !important; }'):
         assert frag in collapsed, \
-            f"collapsed rail must carry the main-area toggle button rule {frag!r}"
+            f"collapsed rail must carry the main-area menu button rule {frag!r}"
+    assert '.st-key-dcs_rail_toggle' not in collapsed, \
+        "the collapsed rail must not carry the old toggle key class"
     expanded = ui_design.rail_css(False, "light")
-    assert ('.st-key-dcs_rail_toggle button[data-testid="stBaseButton-secondary"] {'
-            '\n  justify-content: flex-start !important; }' in expanded), \
-        "expanded rail must left-align the toggle button (icon + label)"
-    print("round 9 toggle button rules in the main area OK")
+    assert (btn + ' {'
+            '\n  width: 236px !important;'
+            '\n  height: 36px !important; min-height: 36px !important;'
+            '\n  justify-content: flex-start !important;'
+            '\n  min-width: 236px !important; }' in expanded), \
+        "expanded rail must left-align the menu button (icon + label)"
+    print("round 9 behavior menu button rules in the main area OK")
 
 
 def test_r9_nav_rows_236px():
@@ -358,22 +380,27 @@ def _tmp_env(tmp_path):
 
 def test_r9_collapse_survives_a_rerun(_tmp_env):
     """The collapse is session state, not a paint effect: expand
-    the rail, click the toggle (now in the main area — the
-    AppTest button lookup is by key, so the move does not change
-    it), and the rail must read collapsed — and STILL read
-    collapsed after a further rerun with no interaction. (The
-    live failure was the overlay re-expanding, which the
-    structural move now prevents: the toggle is outside the
-    section, so hovering it cannot fire section:hover.)"""
+    the rail, pick "Collapsed" in the behavior menu (now in the
+    main area — the menu radio is drivable by key, so the move
+    does not change it), and the rail must read collapsed — and
+    STILL read collapsed after a further rerun with no
+    interaction. (The live failure was the overlay re-expanding,
+    which the structural move now prevents: the control is
+    outside the section, so hovering it cannot fire
+    section:hover.) (Clone Round 1: the direct toggle is gone;
+    the menu's radio is the control.)"""
     at = AppTest.from_file(APP)
     at.run()
     _r6.signup(at, "alice5")
     assert at.session_state.get("dcs_rail_collapsed") is True
     _r6.expand_rail(at)
     assert at.session_state.get("dcs_rail_collapsed") is False
-    _r6.find_button_by_key(at, "dcs_rail_toggle").click().run()
+    at.radio(key="dcs_rail_mode_radio").set_value("collapsed").run()
     assert at.session_state.get("dcs_rail_collapsed") is True
+    assert ui_design.rail_mode(at) == "collapsed"
     at.run()
     assert at.session_state.get("dcs_rail_collapsed") is True, \
         "the collapse must survive a further rerun with no interaction"
+    assert ui_design.rail_mode(at) == "collapsed", \
+        "the mode must survive a further rerun with no interaction"
     print("round 9 collapse survives a rerun OK")

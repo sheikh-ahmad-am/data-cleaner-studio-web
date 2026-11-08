@@ -75,6 +75,14 @@ round-8 tests that asserted the gate / the :is() hidden condition /
 the sidebar pin chain were removed here and replaced there; the
 tests that still hold (dark fill, no-selector-value, hover wash,
 collapse survives a rerun) stay.
+
+Clone Round 1 (2026-11-08) supersedes the toggle itself: the
+direct toggle is gone, replaced by Supabase's 3-way bottom
+control — a popover menu with the radio options Expanded /
+Collapsed / Expand on hover. The mode is session state
+``dcs_rail_mode``; ``dcs_rail_collapsed`` stays as the derived
+bool. The collapse-survives-a-rerun test now picks "Collapsed"
+in the menu radio instead of clicking the toggle.
 """
 
 import sys
@@ -216,20 +224,27 @@ def _tmp_env(tmp_path):
 
 def test_r8_collapse_survives_a_rerun(_tmp_env):
     """The collapse is session state, not a paint effect: expand
-    the rail, click the toggle, and the rail must read collapsed
-    — and STILL read collapsed after a further rerun with no
-    interaction (the live failure was the overlay re-expanding,
-    which the CSS gate now prevents; the state itself must not
-    flip back on its own)."""
+    the rail, pick "Collapsed" in the behavior menu, and the rail
+    must read collapsed — and STILL read collapsed after a further
+    rerun with no interaction (the live failure was the overlay
+    re-expanding, which the round-8 CSS gate was meant to prevent
+    and round 9's structural move + clone Round 1's explicit mode
+    choice now prevent by construction: the mode is state, and
+    in strict "collapsed" mode no hover rule exists to re-expand
+    it). (Clone Round 1: the direct toggle is gone; the menu's
+    radio is the control.)"""
     at = AppTest.from_file(APP)
     at.run()
     _r6.signup(at, "alice5")
     assert at.session_state.get("dcs_rail_collapsed") is True
     _r6.expand_rail(at)
     assert at.session_state.get("dcs_rail_collapsed") is False
-    _r6.find_button_by_key(at, "dcs_rail_toggle").click().run()
+    at.radio(key="dcs_rail_mode_radio").set_value("collapsed").run()
     assert at.session_state.get("dcs_rail_collapsed") is True
+    assert ui_design.rail_mode(at) == "collapsed"
     at.run()
     assert at.session_state.get("dcs_rail_collapsed") is True, \
         "the collapse must survive a further rerun with no interaction"
+    assert ui_design.rail_mode(at) == "collapsed", \
+        "the mode must survive a further rerun with no interaction"
     print("round 8 collapse survives a rerun OK")

@@ -7,15 +7,17 @@ wash + tooltip per icon — and for the whole interface to match the
 page-by-page study. This file pins what AppTest can pin:
 
   1. rail_css: the 60px / 260px widths, the 6px content padding, the
-     36px icon squares (12 icons + toggle fit a 573px viewport), the
-     hover wash and active highlight, in both themes, with no
-     cross-theme hex leaking in.
+     36px icon squares (12 icons + behavior control fit a 573px
+     viewport), the hover wash and active highlight, in both themes,
+     with no cross-theme hex leaking in.
   2. sidebar_nav: collapsed = icon-only buttons (empty label, icon
      set, help = "Go to <label>", active disabled), expanded = icon +
      label rows; grouped input still flattens but emits NO section
      headers; clicking a row reports its key.
-  3. render_rail_toggle: chevron_right / "Expand sidebar" collapsed,
-     "Collapse sidebar" / chevron_left expanded.
+  3. render_rail_behavior_menu (clone Round 1 — the direct toggle
+     is gone): the popover renders with a radio of the three modes
+     (Expanded / Collapsed / Expand on hover); picking a mode sets
+     dcs_rail_mode and the derived dcs_rail_collapsed bool.
   4. Theme sync (the screenshot bug: dark page, dropdown reading
      "Light"): the login-screen toggle flip writes both widget keys;
      the full-app paths — login-toggle flip then signup, selectbox
@@ -24,11 +26,11 @@ page-by-page study. This file pins what AppTest can pin:
      (The avatar-radio flip and the direct write are also pinned in
      isolation by test_supabase_rebuild.py::test_theme_sync_both_directions.)
   5. The full app: the rail starts collapsed after signup (icon-only
-     nav + toggle, no selectbox / uploader / sample button / section
-     headers, sample still reachable via the empty-state CTA); the
-     toggle expands and collapses it; the state persists across
-     reruns; an icon-only nav click navigates; the top-bar Upload
-     pill expands the rail; the Profile caption renders.
+     nav + behavior menu, no selectbox / uploader / sample button /
+     section headers, sample still reachable via the empty-state
+     CTA); the menu expands and collapses it; the state persists
+     across reruns; an icon-only nav click navigates; the top-bar
+     Upload pill expands the rail; the Profile caption renders.
 
 Run ONLY this file:  .test-venv-rebuild/bin/python -m pytest
 tests/test_supabase_rail.py -q   (from project root)
@@ -133,20 +135,39 @@ def signup(at, username, password="password123"):
 
 
 def expand_rail(at):
-    """Open the rail by its real toggle (the chevron), the way a user
-    would — collapsed (icon-only) to expanded (icon + label). A no-op
-    when the rail is already open: the state is session state and
-    survives logout like the theme, so a re-login can land expanded."""
-    toggle = find_button_by_key(at, "dcs_rail_toggle")
-    if toggle.label == "Collapse sidebar":
+    """Open the rail by the behavior menu (pick "Expanded"), the way
+    a user would — collapsed (icon-only) to expanded (icon + label).
+    A no-op when the rail is already open: the state is session state
+    and survives logout like the theme, so a re-login can land
+    expanded. (Clone Round 1: the direct chevron toggle is gone —
+    it flipped the pinned bool, so a click in the hover flyout
+    flipped it to pinned-expanded; the menu's explicit mode choice
+    is the control now.)"""
+    if ui_design.rail_mode(at) == "expanded":
         assert at.session_state.get("dcs_rail_collapsed") is False, \
-            "an expanded toggle must mean an expanded rail"
+            "an expanded mode must mean an expanded rail"
         return
-    assert toggle.label == "", "collapsed toggle must be icon-only"
-    toggle.click().run()
+    assert list(at.radio), "the behavior menu radio must render"
+    at.radio(key="dcs_rail_mode_radio").set_value("expanded").run()
     assert not at.exception, f"exception expanding rail: {at.exception}"
     assert at.session_state.get("dcs_rail_collapsed") is False, \
-        "clicking the collapsed toggle must expand the rail"
+        "picking Expanded in the menu must expand the rail"
+    assert ui_design.rail_mode(at) == "expanded", \
+        "picking Expanded must set the rail mode"
+
+
+def collapse_rail(at):
+    """Collapse the rail by the behavior menu (pick "Collapsed").
+    The mode choice is explicit, so unlike the old toggle it
+    collapses and STAYS collapsed — including from the hover
+    flyout, where the toggle's click flipped back to
+    pinned-expanded (rounds 8/9/10 live failure)."""
+    at.radio(key="dcs_rail_mode_radio").set_value("collapsed").run()
+    assert not at.exception, f"exception collapsing rail: {at.exception}"
+    assert at.session_state.get("dcs_rail_collapsed") is True, \
+        "picking Collapsed in the menu must collapse the rail"
+    assert ui_design.rail_mode(at) == "collapsed", \
+        "picking Collapsed must set the rail mode"
 
 
 def nav_buttons(at):
@@ -331,33 +352,61 @@ def test_sidebar_nav_grouped_input_flattens_no_headers():
     print("sidebar nav grouped input flattens OK")
 
 
-def test_render_rail_toggle_both_states():
+def test_render_rail_behavior_menu():
+    """Clone Round 1: the rail's bottom control is Supabase's 3-way
+    menu (Expanded / Collapsed / Expand on hover), not the direct
+    toggle. The popover renders with a radio of the three modes;
+    picking one sets dcs_rail_mode and the derived
+    dcs_rail_collapsed bool, and the choice survives a rerun.
+    The old toggle is gone: no render_rail_toggle, no
+    dcs_rail_toggle button."""
+    assert not hasattr(ui_design, "render_rail_toggle"), \
+        "the direct toggle must be gone in clone Round 1"
     script = (
         "import streamlit as st\n"
         "import ui_design\n"
-        "clicked = ui_design.render_rail_toggle()\n"
-        "st.write(f'clicked={clicked} "
-        "collapsed={ui_design.rail_collapsed()}')\n")
+        "ui_design.render_rail_behavior_menu()\n"
+        "st.write(f\"mode={ui_design.rail_mode()} \"\n"
+        "         f\"collapsed={ui_design.rail_collapsed()}\")\n")
     at = AppTest.from_string(script)
     at.run()
-    assert not at.exception, f"rail toggle exception: {at.exception}"
-    toggle = find_button_by_key(at, "dcs_rail_toggle")
-    assert toggle.label == "", "collapsed toggle must be icon-only"
-    assert toggle.proto.icon == ":material/chevron_right:", \
-        "collapsed toggle must be the right chevron (click to expand)"
-    assert toggle.help == "Expand sidebar"
-    toggle.click().run()
-    assert any("clicked=True" in v for v in vals(at.markdown)), \
-        "clicking the toggle must report the click"
-    # Expanded state: the toggle becomes a labelled row.
-    at.session_state["dcs_rail_collapsed"] = False
+    assert not at.exception, f"rail menu exception: {at.exception}"
+    # The popover container renders (AppTest does not expose the
+    # popover trigger button itself — the real-DOM probe verifies
+    # the tune icon + label; the radio inside is fully drivable).
+    at.get_by_key("dcs_rail_behavior")
+    assert not any((b.key or "") == "dcs_rail_toggle" for b in at.button), \
+        "no dcs_rail_toggle button may render any more"
+    menu = at.radio(key="dcs_rail_mode_radio")
+    assert list(menu.options) == ["Expanded", "Collapsed",
+                                  "Expand on hover"], \
+        f"menu radio must offer the three modes, got {list(menu.options)!r}"
+    assert menu.value == "hover", \
+        f"default mode must be Expand on hover, got {menu.value!r}"
+    assert ui_design.rail_mode(at) == "hover"
+    assert ui_design.rail_collapsed(at) is True, \
+        "hover mode must derive collapsed=True (the bool key itself " \
+        "is written by set_rail_mode / the app's seeding, not by " \
+        "this bare render)"
+    # Pick Expanded: mode + bool flip together.
+    menu.set_value("expanded").run()
+    assert not at.exception, f"rail menu exception: {at.exception}"
+    assert ui_design.rail_mode(at) == "expanded"
+    assert at.session_state.get("dcs_rail_collapsed") is False, \
+        "picking Expanded must clear the collapsed bool"
+    assert any("mode=expanded" in v for v in vals(at.markdown)), \
+        "the mode must read expanded after the pick"
+    # Pick Collapsed from expanded: collapses and STAYS collapsed
+    # (the old toggle's flyout failure — the click flipped back to
+    # pinned-expanded; the menu's explicit choice cannot flip).
+    at.radio(key="dcs_rail_mode_radio").set_value("collapsed").run()
+    assert ui_design.rail_mode(at) == "collapsed"
+    assert at.session_state.get("dcs_rail_collapsed") is True
     at.run()
-    assert not at.exception, f"rail toggle exception: {at.exception}"
-    toggle = find_button(at, "Collapse sidebar", key="dcs_rail_toggle")
-    assert toggle.proto.icon == ":material/chevron_left:", \
-        "expanded toggle must be the left chevron (click to collapse)"
-    assert toggle.help == "Collapse sidebar"
-    print("rail toggle both states OK")
+    assert ui_design.rail_mode(at) == "collapsed", \
+        "Collapsed must survive a rerun"
+    assert at.session_state.get("dcs_rail_collapsed") is True
+    print("rail behavior menu OK")
 
 
 # ---------------------------------------------------------------------------
@@ -505,9 +554,12 @@ def test_rail_default_collapsed_after_signup(_tmp_env):
             f"collapsed nav row {b.key} tooltip must be its label"
     preview = find_button_by_key(at, "dcs_nav_preview")
     assert preview.disabled, "Preview (active) must be the disabled row"
-    toggle = find_button_by_key(at, "dcs_rail_toggle")
-    assert toggle.label == "" and toggle.help == "Expand sidebar", \
-        "collapsed rail must show the expand toggle"
+    # Clone Round 1: the bottom control is the behavior menu, not
+    # the direct toggle — the popover renders and its radio reads
+    # the current mode (hover, the default).
+    at.get_by_key("dcs_rail_behavior")
+    assert at.radio(key="dcs_rail_mode_radio").value == "hover", \
+        "collapsed rail's menu radio must read Expand on hover"
     # Round 7 reversal: the controls are NOT in the DOM when
     # collapsed (do-not-render — what is not in the DOM cannot
     # render as vertical one-letter text). The round-5 hover-rail
@@ -533,10 +585,10 @@ def test_rail_default_collapsed_after_signup(_tmp_env):
     print("rail default collapsed full app OK")
 
 
-def test_rail_toggle_expands_and_collapses(_tmp_env):
-    """The toggle flips the rail both ways, and the expanded sidebar
-    is the full sidebar: labelled nav rows, theme selectbox, status
-    pill, uploader, sample button."""
+def test_rail_menu_expands_and_collapses(_tmp_env):
+    """The behavior menu flips the rail both ways, and the expanded
+    sidebar is the full sidebar: labelled nav rows, theme selectbox,
+    status pill, uploader, sample button."""
     at = AppTest.from_file(APP)
     at.run()
     signup(at, "alice1")
@@ -553,25 +605,26 @@ def test_rail_toggle_expands_and_collapses(_tmp_env):
         "expanded rail must render the sidebar sample button"
     assert any("Local mode" in v for v in vals(at.sidebar.markdown)), \
         "expanded rail must render the status pill"
-    toggle = find_button(at, "Collapse sidebar", key="dcs_rail_toggle")
-    assert toggle.proto.icon == ":material/chevron_left:"
+    assert at.radio(key="dcs_rail_mode_radio").value == "expanded", \
+        "expanded rail's menu radio must read Expanded"
     page = "\n".join(vals(at.markdown))
     assert "width: 260px !important" in page, \
         "the expanded rail stylesheet must be injected"
-    # And back: the toggle collapses again.
-    toggle.click().run()
-    assert not at.exception, f"exception collapsing rail: {at.exception}"
-    assert at.session_state.get("dcs_rail_collapsed") is True, \
-        "clicking the expanded toggle must collapse the rail"
+    # And back: picking Collapsed collapses again — and stays
+    # collapsed (the old toggle's flyout failure).
+    collapse_rail(at)
+    at.run()
+    assert ui_design.rail_mode(at) == "collapsed", \
+        "Collapsed must survive the rerun after the pick"
     # Round 7 reversal: collapsing removes the non-nav controls
-    # from the DOM (do-not-render); only the nav labels + toggle
-    # stay. They come back when the rail re-opens.
+    # from the DOM (do-not-render); only the nav labels + behavior
+    # menu stay. They come back when the rail re-opens.
     assert [b.label for b in nav_buttons(at)] == \
         [NAV_LABELS[k] for k in NAV_ORDER], \
         "collapsed rail must keep its labels in the DOM"
     assert not list(at.sidebar.selectbox), \
         "collapsed rail must not render the theme selectbox"
-    print("rail toggle expands and collapses OK")
+    print("rail menu expands and collapses OK")
 
 
 def test_rail_persists_across_reruns(_tmp_env):
@@ -584,13 +637,17 @@ def test_rail_persists_across_reruns(_tmp_env):
     at.run()
     assert at.session_state.get("dcs_rail_collapsed") is False, \
         "expanded rail must stay expanded across a rerun"
+    assert ui_design.rail_mode(at) == "expanded", \
+        "expanded mode must stay expanded across a rerun"
     assert any(b.label == "Preview" for b in nav_buttons(at)), \
         "expanded rail must keep its labels across a rerun"
-    find_button(at, "Collapse sidebar", key="dcs_rail_toggle").click().run()
+    collapse_rail(at)
     assert at.session_state.get("dcs_rail_collapsed") is True
     at.run()
     assert at.session_state.get("dcs_rail_collapsed") is True, \
         "collapsed rail must stay collapsed across a rerun"
+    assert ui_design.rail_mode(at) == "collapsed", \
+        "collapsed mode must stay collapsed across a rerun"
     assert [b.label for b in nav_buttons(at)] == \
         [NAV_LABELS[k] for k in NAV_ORDER], \
         "collapsed rail must keep its labels in the DOM across a rerun"
@@ -655,6 +712,6 @@ if __name__ == "__main__":
     test_sidebar_nav_collapsed_icon_only()
     test_sidebar_nav_expanded_labelled()
     test_sidebar_nav_grouped_input_flattens_no_headers()
-    test_render_rail_toggle_both_states()
+    test_render_rail_behavior_menu()
     test_theme_sync_login_toggle_writes_both_widget_keys()
     print("ALL SUPABASE RAIL TESTS PASSED (full-app tests need pytest)")

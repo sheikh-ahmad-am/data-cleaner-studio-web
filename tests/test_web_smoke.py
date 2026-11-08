@@ -110,6 +110,7 @@ def main():
     # so the full sidebar (sample button, uploader) is visible below.
     # (After the "Account created" check: that note is transient and
     # an extra rerun clears it.)
+    at.session_state["dcs_rail_mode"] = "expanded"
     at.session_state["dcs_rail_collapsed"] = False
     at.run()
     assert not at.exception, f"exception expanding rail: {at.exception}"
@@ -227,6 +228,7 @@ def main():
     assert not bob.exception, f"exception on bob login: {bob.exception}"
     # The rail starts collapsed (the dashboard's default) — open it
     # so the full sidebar is visible below.
+    bob.session_state["dcs_rail_mode"] = "expanded"
     bob.session_state["dcs_rail_collapsed"] = False
     bob.run()
     assert not bob.exception, f"exception expanding rail: {bob.exception}"

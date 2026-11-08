@@ -99,6 +99,7 @@ def find_text_input(at, label):
 
 def expand_rail(at):
     """Open the sidebar rail (it starts collapsed)."""
+    at.session_state["dcs_rail_mode"] = "expanded"
     at.session_state["dcs_rail_collapsed"] = False
     at.run()
     assert not at.exception, f"exception expanding rail: {at.exception}"
@@ -152,26 +153,25 @@ def test_gap1_collapsed_hides_non_nav_sidebar_content():
     child of the vertical block is hidden by an explicit testid
     list — the client-mode checkbox, the status pill, the banner,
     the uploader, the expanders, the slicers and any sidebar
-    toast. Only the nav-button and toggle wrappers stay visible.
-    Round 5 removed the old :has() safety net (it matched the nav
-    buttons too and never took effect live); round 8 reintroduces
-    :has() for ONE purpose only — the toggle gate
-    (``:not(:has(.st-key-dcs_rail_toggle:hover))``) that stops
-    the hover overlay re-expanding the rail while the pointer
-    rests on the toggle after a collapse click. Every :has() in
-    the collapsed sheet must be that gate; the denylist itself
-    still hides by explicit testids, never by :has(). The rule
-    is collapsed-only: the expanded rail shows every control."""
+    toast. Only the nav-button and behavior-menu wrappers stay
+    visible. :has() is banned outright (round 6 banned it, round
+    8 reintroduced it for the toggle gate, round 9 DELETED the
+    gate — it never took effect live — and the ban is
+    reinstated): the collapsed sheet must contain NO :has() at
+    all, and the denylist hides by explicit testids, never by
+    :has(). The rule is collapsed-only: the expanded rail shows
+    every control."""
     denylisted = ("stCheckbox", "stMarkdown", "stMultiSelect",
                   "stDateInput", "stCaption", "stExpander",
                   "stFileUploader", "stSelectbox", "stAlert",
                   "stTextInput", "stRadio", "stNumberInput")
     for theme in ("light", "dark"):
         css = ui_design.rail_css(collapsed=True, theme=theme)
-        assert css.count(":has(") == css.count(
-            ":has(.st-key-dcs_rail_toggle:hover)"), \
-            f"collapsed {theme} rail CSS must use :has() ONLY in " \
-            "the toggle gate, never as a widget-hiding rule"
+        assert ":has(" not in css, \
+            f"collapsed {theme} rail CSS must contain no :has() at all " \
+            "(round 9 deleted the toggle gate; the ban is reinstated)"
+        assert ":is(" not in css, \
+            f"collapsed {theme} rail CSS must contain no :is() either"
         for testid in denylisted:
             assert (f'div[data-testid="{testid}"]' in css), \
                 f"collapsed {theme} rail CSS must hide {testid}"
@@ -193,13 +193,18 @@ def test_gap1_collapsed_hides_non_nav_sidebar_content():
         css = ui_design.rail_css(collapsed=False, theme=theme)
         # The expanded sheet may hide ONLY Streamlit's native
         # collapse control (round 7 item 8 — it hides the sidebar
-        # to 0px); every app control must show.
+        # to 0px) and the menu button's expand_more chevron
+        # (clone Round 1 — Streamlit's own chevron inside the
+        # behavior-menu trigger, hidden so it does not crowd the
+        # 36px square); every app control must show.
         for rule in css.split("}"):
             if "display: none !important" in rule:
                 selector = rule.split("{")[0]
-                assert "stSidebarCollapseButton" in selector, \
+                assert ("stSidebarCollapseButton" in selector
+                        or ("st-key-dcs_rail_behavior" in selector
+                            and "aria-hidden" in selector)), \
                     f"expanded {theme} rail must hide only the " \
-                    f"native collapse control, got {selector.strip()!r}"
+                    f"native collapse control or the menu chevron, got {selector.strip()!r}"
     print("gap 1 collapsed denylist OK")
 
 
@@ -219,6 +224,7 @@ def test_gap1_client_mode_survives_collapse(_tmp_env):
     assert not at.exception, f"exception enabling client mode: {at.exception}"
     assert at.session_state.get("client_mode") is True, \
         "enabling the checkbox must set client_mode"
+    at.session_state["dcs_rail_mode"] = "collapsed"
     at.session_state["dcs_rail_collapsed"] = True
     at.run()
     assert not at.exception, f"exception collapsing rail: {at.exception}"
@@ -227,6 +233,7 @@ def test_gap1_client_mode_survives_collapse(_tmp_env):
         "collapsed rail must not render the client-mode checkbox"
     assert at.session_state.get("client_mode") is True, \
         "collapsing the rail must not reset client_mode"
+    at.session_state["dcs_rail_mode"] = "expanded"
     at.session_state["dcs_rail_collapsed"] = False
     at.run()
     cb3 = next(c for c in at.sidebar.checkbox
@@ -260,6 +267,7 @@ def test_gap1_slicer_survives_collapse(_tmp_env):
                   if m.label == "Category")
     slicer.set_value(["Electronics"]).run()
     assert not at.exception, f"exception picking a slice: {at.exception}"
+    at.session_state["dcs_rail_mode"] = "collapsed"
     at.session_state["dcs_rail_collapsed"] = True
     at.run()
     assert not at.exception, f"exception collapsing rail: {at.exception}"
@@ -272,6 +280,7 @@ def test_gap1_slicer_survives_collapse(_tmp_env):
     assert list(at.session_state.get("slice_persist_Category", [])) == \
         ["Electronics"], \
         "collapsing the rail must not reset the slicer value"
+    at.session_state["dcs_rail_mode"] = "expanded"
     at.session_state["dcs_rail_collapsed"] = False
     at.run()
     slicer3 = next(m for m in at.sidebar.multiselect
@@ -282,77 +291,89 @@ def test_gap1_slicer_survives_collapse(_tmp_env):
 
 
 # ---------------------------------------------------------------------------
-# Gap 2 — toggle pinned to the rail's bottom + scroll carryover
+# Gap 2 — behavior control pinned to the rail's bottom + scroll carryover
 # ---------------------------------------------------------------------------
 
-def test_gap2_toggle_pinned_to_rail_bottom():
-    """The toggle pin is FIXED in every state (round 7): absolute
-    scrolled away with the content (toggle at 1409px in a 998px
-    viewport live) and sticky stopped 56px short; fixed held at
-    the viewport bottom at every scroll offset in the real-DOM
-    probe. The pin targets the toggle's element container by its
-    Streamlit key class (a broad ``div:last-child`` selector
-    fixed EVERY sidebar widget to the bottom and emptied the
-    sidebar — caught by the round-7 real-DOM probe). The
-    vertical block carries bottom padding so the last rows are
-    not covered by the pinned toggle. The toggle wrapper carries
-    the sidebar surface so scrolling rows never show through it."""
+def test_gap2_behavior_control_pinned_to_rail_bottom():
+    """The behavior control's pin is FIXED in every state (round 7):
+    absolute scrolled away with the content (the old toggle at
+    1409px in a 998px viewport live) and sticky stopped 56px
+    short; fixed held at the viewport bottom at every scroll
+    offset in the real-DOM probe. The pin targets the control's
+    element container by its Streamlit key class (a broad
+    ``div:last-child`` selector fixed EVERY sidebar widget to the
+    bottom and emptied the sidebar — caught by the round-7
+    real-DOM probe). The vertical block carries bottom padding so
+    the last rows are not covered by the pinned control. The
+    control wrapper carries the sidebar surface so scrolling rows
+    never show through it. (Clone Round 1: the control is the
+    3-way menu, key dcs_rail_behavior — the old toggle's key was
+    dcs_rail_toggle.)"""
     for theme in ("light", "dark"):
         collapsed_css = ui_design.rail_css(True, theme)
         assert "position: fixed !important" in collapsed_css, \
-            f"collapsed {theme} rail must pin the toggle fixed"
+            f"collapsed {theme} rail must pin the control fixed"
         assert "bottom: 0 !important" in collapsed_css, \
-            f"collapsed {theme} rail must pin the toggle to the bottom"
-        assert 'div[data-testid="stElementContainer"].st-key-dcs_rail_toggle' \
+            f"collapsed {theme} rail must pin the control to the bottom"
+        assert 'div[data-testid="stLayoutWrapper"].st-key-dcs_rail_behavior' \
             in collapsed_css, \
-            f"collapsed {theme} rail must pin the toggle by its key class"
-        # Every rule that pins the toggle CONTAINER must be fixed,
+            f"collapsed {theme} rail must pin the control by its key class"
+        # Every rule that pins the control CONTAINER must be fixed,
         # never absolute (the hover OVERLAY's absolute is on the
-        # content, not the toggle — that one stays). Round 8 gates
-        # the overlay on the toggle, so the overlay rule's
-        # selector MENTIONS the toggle key inside :has() without
-        # being a pin rule — only rules whose selector targets
-        # the toggle's element container count here.
+        # content, not the control — that one stays). Only rules
+        # whose selector ENDS at the control's element container
+        # count here: the menu-button label-hiding rule's selector
+        # also mentions the key class, but it continues past it
+        # (``...st-key-dcs_rail_behavior button span...``) — it
+        # hides the label, it does not pin anything.
         for rule in collapsed_css.split("}"):
-            if 'stElementContainer"].st-key-dcs_rail_toggle' in rule:
+            selector = rule.split("{")[0]
+            if any(sel.strip().endswith(
+                    (".st-key-dcs_rail_behavior",
+                     ".st-key-dcs_rail_behavior:hover"))
+                   for sel in selector.split(",")):
                 assert "position: fixed !important" in rule, \
-                    f"collapsed {theme} toggle pin must be fixed, got {rule!r}"
+                    f"collapsed {theme} control pin must be fixed, got {rule!r}"
                 assert "position: absolute !important" not in rule, \
-                    f"collapsed {theme} toggle pin must not be absolute"
+                    f"collapsed {theme} control pin must not be absolute"
                 assert "margin-top: auto" not in rule, \
-                    f"collapsed {theme} toggle pin must not use margin-top:auto"
+                    f"collapsed {theme} control pin must not use margin-top:auto"
         assert "padding-bottom: 56px !important" in collapsed_css, \
             f"collapsed {theme} rail must pad the vertical block for " \
-            "the pinned toggle"
+            "the pinned control"
         expanded_css = ui_design.rail_css(False, theme)
         assert "position: fixed !important" in expanded_css, \
-            f"expanded {theme} rail must pin the toggle fixed"
+            f"expanded {theme} rail must pin the control fixed"
         assert "bottom: 0 !important" in expanded_css, \
-            f"expanded {theme} rail must pin the toggle to the bottom"
+            f"expanded {theme} rail must pin the control to the bottom"
         for rule in expanded_css.split("}"):
-            if 'stElementContainer"].st-key-dcs_rail_toggle' in rule:
+            selector = rule.split("{")[0]
+            if any(sel.strip().endswith(
+                    (".st-key-dcs_rail_behavior",
+                     ".st-key-dcs_rail_behavior:hover"))
+                   for sel in selector.split(",")):
                 assert "position: fixed !important" in rule, \
-                    f"expanded {theme} toggle pin must be fixed, got {rule!r}"
+                    f"expanded {theme} control pin must be fixed, got {rule!r}"
                 assert "position: absolute !important" not in rule, \
-                    f"expanded {theme} toggle pin must not be absolute"
+                    f"expanded {theme} control pin must not be absolute"
         assert "padding-bottom: 56px !important" in expanded_css, \
             f"expanded {theme} rail must pad the vertical block for " \
-            "the pinned toggle"
-    # The toggle wrapper carries the sidebar surface (light #fdfdfd,
+            "the pinned control"
+    # The control wrapper carries the sidebar surface (light #fdfdfd,
     # dark #1b1d1c) so scrolling rows never show through it.
     assert "background: #fdfdfd !important" in ui_design.rail_css(
         True, "light")
     assert "background: #1b1d1c !important" in ui_design.rail_css(
         True, "dark")
-    print("gap 2 toggle pinned OK")
+    print("gap 2 behavior control pinned OK")
 
 
 def test_gap2_collapsed_fits_short_viewport():
-    """12 icons + toggle at 36px with 4px gaps and 6px content
-    padding fit a 573px viewport (13 x 36 + 12 x 4 + 12 = 528px),
-    so collapsing from a scrolled-down expanded sidebar clamps the
-    scroll offset to ~0 instead of reopening on the client-mode
-    text."""
+    """12 icons + behavior control at 36px with 4px gaps and 6px
+    content padding fit a 573px viewport (13 x 36 + 12 x 4 + 12 =
+    528px), so collapsing from a scrolled-down expanded sidebar
+    clamps the scroll offset to ~0 instead of reopening on the
+    client-mode text."""
     css = ui_design.rail_css(collapsed=True, theme="light")
     assert "height: 36px !important" in css, \
         "collapsed rail buttons must be 36px"
@@ -363,45 +384,50 @@ def test_gap2_collapsed_fits_short_viewport():
     print("gap 2 collapsed fits short viewport OK")
 
 
-def test_gap2_toggle_is_last_sidebar_button(_tmp_env):
-    """Round 9 SUPERSEDED this test's premise: the toggle is no
-    longer a sidebar button at all — it renders once in the MAIN
-    area (the :has()-free collapse mechanism: the toggle is not
-    a descendant of the sidebar section, so hovering it can never
-    trigger the hover-expand). So the toggle must NOT be among the
-    sidebar buttons in either state, must render exactly once
-    among all buttons, and the last sidebar button is now the
-    last nav item (Status)."""
+def test_gap2_behavior_control_is_not_a_sidebar_button(_tmp_env):
+    """Round 9 SUPERSEDED this test's premise, clone Round 1
+    supersedes it again: the bottom control is not a sidebar
+    button at all — it is a popover menu rendered once in the
+    MAIN area (the :has()-free collapse mechanism: the control
+    is not a descendant of the sidebar section, so hovering it
+    can never trigger the hover-expand). So the control must NOT
+    be among the sidebar buttons in either state, its popover
+    block must render exactly once in the main area, and the
+    last sidebar button is now the last nav item (Status).
+    (AppTest does not expose the popover trigger button itself —
+    the real-DOM probe verifies the tune icon + label.)"""
     at = AppTest.from_file(APP)
     at.run()
     signup(at, "alice1")
-    # Collapse (signup's helper expands the rail): nav + toggle only.
+    # Collapse (signup's helper expands the rail): nav + menu only.
+    at.session_state["dcs_rail_mode"] = "collapsed"
     at.session_state["dcs_rail_collapsed"] = True
     at.run()
     assert not at.exception, f"exception collapsing rail: {at.exception}"
     assert at.session_state.get("dcs_rail_collapsed") is True
     collapsed_buttons = list(at.sidebar.button)
     assert collapsed_buttons, "collapsed rail must have sidebar buttons"
-    assert all(b.key != "dcs_rail_toggle" for b in collapsed_buttons), \
-        "the toggle must NOT be a sidebar button (collapsed, round 9)"
+    assert all(b.key != "dcs_rail_behavior" for b in collapsed_buttons), \
+        "the behavior control must NOT be a sidebar button (collapsed)"
     assert collapsed_buttons[-1].key == "dcs_nav_status", \
         "the last sidebar button must now be the last nav item (collapsed)"
-    toggles = [b for b in at.button if b.key == "dcs_rail_toggle"]
-    assert len(toggles) == 1, \
-        f"the toggle must render exactly once (main area), found {len(toggles)}"
+    # The popover block renders once in the main area.
+    at.get_by_key("dcs_rail_behavior")
+    assert not any((b.key or "") == "dcs_rail_toggle" for b in at.button), \
+        "no dcs_rail_toggle button may render any more"
     # Expanded: uploader, sample button and the rest render before it.
     # (The expanded sidebar's last button is the AI-key test
     # control, not a nav item — the non-nav widgets only render
-    # expanded — so only the toggle's absence is asserted here.)
+    # expanded — so only the control's absence is asserted here.)
     expand_rail(at)
     expanded_buttons = list(at.sidebar.button)
     assert expanded_buttons, "expanded rail must have sidebar buttons"
-    assert all(b.key != "dcs_rail_toggle" for b in expanded_buttons), \
-        "the toggle must NOT be a sidebar button (expanded, round 9)"
-    toggles = [b for b in at.button if b.key == "dcs_rail_toggle"]
-    assert len(toggles) == 1, \
-        f"the toggle must render exactly once (main area), found {len(toggles)}"
-    print("gap 2 toggle is in the main area, not the sidebar OK")
+    assert all(b.key != "dcs_rail_behavior" for b in expanded_buttons), \
+        "the behavior control must NOT be a sidebar button (expanded)"
+    at.get_by_key("dcs_rail_behavior")
+    assert not any((b.key or "") == "dcs_rail_toggle" for b in at.button), \
+        "no dcs_rail_toggle button may render any more (expanded)"
+    print("gap 2 behavior control is in the main area, not the sidebar OK")
 
 
 # ---------------------------------------------------------------------------

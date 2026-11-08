@@ -141,12 +141,15 @@ def nav_buttons(at):
 
 
 def expand_rail(at):
-    """Pin the rail open (click the toggle): the non-nav sidebar
-    controls only render when pinned open (round 7), so tests that
-    need the sample button / uploader / slicers must expand first."""
-    find_button_by_key(at, "dcs_rail_toggle").click().run()
+    """Pin the rail open (pick "Expanded" in the behavior menu):
+    the non-nav sidebar controls only render when pinned open
+    (round 7), so tests that need the sample button / uploader /
+    slicers must expand first. (Clone Round 1: the direct toggle
+    is gone; the menu's explicit mode choice is the control.)"""
+    at.radio(key="dcs_rail_mode_radio").set_value("expanded").run()
     assert at.session_state.get("dcs_rail_collapsed") is False, \
-        "the rail must be pinned open after clicking the toggle"
+        "the rail must be pinned open after picking Expanded"
+    assert ui_design.rail_mode(at) == "expanded"
 
 
 def topbar_left(at):
@@ -251,9 +254,12 @@ def test_r6_labels_and_controls_in_dom_when_collapsed(_tmp_env):
     assert not any(c.label == "Client mode (simple view)"
                    for c in at.sidebar.checkbox), \
         "collapsed rail must NOT render the client-mode checkbox"
-    toggle = find_button_by_key(at, "dcs_rail_toggle")
-    assert toggle.label == "" and toggle.help == "Expand sidebar", \
-        "collapsed rail must show the expand toggle"
+    # Clone Round 1: the direct toggle is gone. The bottom control
+    # is the behavior menu, not a button: its popover renders and
+    # its radio reads the current mode.
+    at.get_by_key("dcs_rail_behavior")
+    assert at.radio(key="dcs_rail_mode_radio").value == "hover", \
+        "collapsed rail's menu radio must read Expand on hover"
     # Pin it open: the controls come back.
     expand_rail(at)
     assert list(at.sidebar.selectbox), \
@@ -270,14 +276,11 @@ def test_r6_labels_and_controls_in_dom_when_collapsed(_tmp_env):
 
 def test_r6_denylist_hides_controls_not_nav():
     """Collapsed rail CSS hides every non-button sidebar child with
-    an explicit testid denylist. Round 6 banned :has() outright —
-    the old safety net matched the nav buttons too and never took
-    effect live. Round 8 reintroduces :has() for ONE purpose only:
-    the toggle gate (``:not(:has(.st-key-dcs_rail_toggle:hover))``)
-    that stops the hover overlay re-expanding the rail while the
-    pointer rests on the toggle after a collapse click, and the
-    matching :is() hidden condition. Every :has() in the collapsed
-    sheet must be that gate — the denylist itself still hides by
+    an explicit testid denylist. :has() is banned outright — round
+    6 banned it, round 8 reintroduced it for ONE purpose (the
+    toggle gate), round 9 DELETED the gate (it never took effect
+    live) and the ban is reinstated: the collapsed sheet must
+    contain NO :has() at all. The denylist itself still hides by
     explicit testids, never by :has(). The expanded rail shows
     every control."""
     denylisted = ("stCheckbox", "stMarkdown", "stMultiSelect",
@@ -286,10 +289,11 @@ def test_r6_denylist_hides_controls_not_nav():
                   "stTextInput", "stRadio", "stNumberInput")
     for theme in ("light", "dark"):
         css = ui_design.rail_css(collapsed=True, theme=theme)
-        assert css.count(":has(") == css.count(
-            ":has(.st-key-dcs_rail_toggle:hover)"), \
-            f"collapsed {theme} rail CSS must use :has() ONLY in " \
-            "the toggle gate, never as a widget-hiding rule"
+        assert ":has(" not in css, \
+            f"collapsed {theme} rail CSS must contain no :has() at all " \
+            "(round 9 deleted the toggle gate; the ban is reinstated)"
+        assert ":is(" not in css, \
+            f"collapsed {theme} rail CSS must contain no :is() either"
         for testid in denylisted:
             assert f'div[data-testid="{testid}"]' in css, \
                 f"collapsed {theme} rail CSS must hide {testid}"
@@ -319,17 +323,21 @@ def test_r6_denylist_hides_controls_not_nav():
         # The expanded rail hides none of the denylisted controls —
         # but it DOES hide Streamlit's native top "«" collapse
         # control (round 7: the rail collapses to the 60px icon
-        # rail, never to 0px). So the only display:none allowed in
-        # the expanded sheet is that one control.
+        # rail, never to 0px) and the menu button's expand_more
+        # chevron (clone Round 1 — Streamlit's own chevron inside
+        # the behavior-menu trigger). So the only display:none
+        # allowed in the expanded sheet is those two.
         for rule in css.split("}"):
             if "display: none !important" in rule:
                 selector = rule.split("{")[0]
                 for testid in denylisted:
                     assert f'div[data-testid="{testid}"]' not in selector, \
                         f"expanded {theme} rail must not hide {testid}"
-                assert "stSidebarCollapseButton" in selector, \
+                assert ("stSidebarCollapseButton" in selector
+                        or ("st-key-dcs_rail_behavior" in selector
+                            and "aria-hidden" in selector)), \
                     f"expanded {theme} rail must only hide the native " \
-                    f"collapse control: {selector!r}"
+                    f"collapse control or the menu chevron: {selector!r}"
     print("round 6 denylist OK")
 
 

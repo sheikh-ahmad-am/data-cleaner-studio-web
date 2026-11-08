@@ -70,6 +70,7 @@ def expand_rail(at):
     tests in test_supabase_rail.py cover the collapsed state itself;
     the older helpers below need the expanded sidebar to do their
     jobs."""
+    at.session_state["dcs_rail_mode"] = "expanded"
     at.session_state["dcs_rail_collapsed"] = False
     at.run()
     assert not at.exception, f"exception expanding rail: {at.exception}"

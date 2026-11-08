@@ -271,6 +271,7 @@ MATERIAL_ICONS = {
     "more": ":material/more_vert:",
     "chevron_right": ":material/chevron_right:",
     "chevron_left": ":material/chevron_left:",
+    "tune": ":material/tune:",
     "open": ":material/open_in_new:",
     "undo": ":material/undo:",
     "bolt": ":material/electric_bolt:",
@@ -1690,12 +1691,57 @@ THEME_SELECT_KEY = "dcs_theme_select"
 THEME_RADIO_KEY = "avatar_theme_radio"
 PROFILE_THEME_RADIO_KEY = "profile_theme_radio"
 
+#: The account menu's theme preference (clone Round 1): System /
+#: Dark / Light, Supabase's account-menu Theme section. ``dcs_theme``
+#: stays the resolved light/dark key the stylesheet follows;
+#: ``dcs_theme_pref`` is what the user picked. "System" falls back
+#: to Light — the app cannot genuinely follow the OS preference
+#: without a JS bridge, so a System row that claimed to would be a
+#: button that does nothing (the same reason the Profile Appearance
+#: card has no System row).
+THEME_PREF_KEY = "dcs_theme_pref"
+THEME_PREFS = ("system", "dark", "light")
+THEME_PREF_LABELS = {"system": "System", "dark": "Dark", "light": "Light"}
+
+
+def normalize_theme_pref(value) -> str:
+    """Return a valid theme preference; anything unknown falls back
+    to the resolved theme in effect (light when nothing is set)."""
+    if value in THEME_PREFS:
+        return value
+    return normalize_theme(value)
+
+
+def resolve_theme_pref(pref) -> str:
+    """A theme preference -> the light/dark theme in effect.
+    "System" resolves to Light (no OS bridge)."""
+    return "light" if normalize_theme_pref(pref) == "system" else \
+        normalize_theme(pref)
+
+
+def set_theme(st_module, theme) -> str:
+    """Set the theme AND the preference together, so the resolved
+    theme and the account menu's radio row agree on the same run.
+    ``theme`` is light/dark (the controls that only offer those two);
+    the preference follows it. Returns the resolved theme."""
+    st_mod = st_module or st
+    _theme = normalize_theme(theme)
+    st_mod.session_state["dcs_theme"] = _theme
+    st_mod.session_state[THEME_PREF_KEY] = _theme
+    return _theme
+
 
 def sync_theme_widgets(st_module=None) -> None:
     """Sync the theme widgets to the theme in effect — call once per
     run, BEFORE any theme widget is created (the app calls it right
     after the ``dcs_theme`` setdefault, before the top bar).
 
+    The account menu's preference is resolved here first: a stored
+    "System" preference resolves to Light, and the resolved theme is
+    written back to ``dcs_theme`` (the key the stylesheet follows).
+    The avatar radio owns the PREFERENCE ("system" / "dark" /
+    "light"); the sidebar selectbox and the Profile radio own the
+    RESOLVED theme ("light" / "dark") — they only offer those two.
     Writing a widget's session key is only allowed before that widget
     is instantiated in the run, which is exactly where this runs — so
     a theme flipped from anywhere (login link, avatar menu, sidebar
@@ -1705,10 +1751,17 @@ def sync_theme_widgets(st_module=None) -> None:
     callbacks write back the other way (widget -> ``dcs_theme``), so
     the two directions agree."""
     st_mod = st_module or st
-    current = normalize_theme(
-        st_mod.session_state.get("dcs_theme", THEME_DEFAULT))
+    if THEME_PREF_KEY in st_mod.session_state:
+        _pref = normalize_theme_pref(
+            st_mod.session_state.get(THEME_PREF_KEY))
+    else:
+        _pref = normalize_theme(
+            st_mod.session_state.get("dcs_theme", THEME_DEFAULT))
+        st_mod.session_state[THEME_PREF_KEY] = _pref
+    current = resolve_theme_pref(_pref)
+    st_mod.session_state["dcs_theme"] = current
     st_mod.session_state[THEME_SELECT_KEY] = current
-    st_mod.session_state[THEME_RADIO_KEY] = current
+    st_mod.session_state[THEME_RADIO_KEY] = _pref
     st_mod.session_state[PROFILE_THEME_RADIO_KEY] = current
 
 
@@ -1727,8 +1780,7 @@ def render_theme_toggle(st_module=None) -> str:
         st_mod.session_state.get("dcs_theme", THEME_DEFAULT))
 
     def _on_change():
-        st_mod.session_state["dcs_theme"] = normalize_theme(
-            st_mod.session_state.get(THEME_SELECT_KEY, current))
+        set_theme(st_mod, st_mod.session_state.get(THEME_SELECT_KEY, current))
         # The avatar menu's radio is created earlier in the run (top
         # bar), so its key cannot be written here — it is re-synced
         # by sync_theme_widgets at the top of the next run, and by
@@ -1770,7 +1822,7 @@ def render_login_theme_toggle(st_module=None) -> None:
              else "Switch to dark theme")
     if st_mod.button(label, key="dcs_theme_login_toggle", type="tertiary"):
         _new = "light" if current == "dark" else "dark"
-        st_mod.session_state["dcs_theme"] = _new
+        set_theme(st_mod, _new)
         # Both theme widgets are re-synced from dcs_theme by
         # sync_theme_widgets at the top of the next run; write them
         # here too so no run can ever show a stale control (neither
@@ -1968,20 +2020,110 @@ RAIL_COLLAPSED_KEY = "dcs_rail_collapsed"
 RAIL_WIDTH_COLLAPSED = "60px"
 RAIL_WIDTH_EXPANDED = "260px"
 
+#: The sidebar behavior — Supabase's 3-way Sidebar control
+#: (Expanded / Collapsed / Expand on hover), the bottom control of
+#: the cloned shell (Round 1). The old control was a single chevron
+#: toggle flipping ``dcs_rail_collapsed``; that toggle was inherently
+#: ambiguous in the hover flyout — the button renders from the pinned
+#: state (collapsed), so a click in the flyout flipped it to pinned-
+#: expanded, which the live check (rightly) read as "the collapse
+#: doesn't stick" (rounds 8/9/10 all fought it). The menu replaces
+#: the toggle: the mode is explicit server state, so picking
+#: "Collapsed" in the flyout collapses and STAYS collapsed — there
+#: is no state for the hover to flip back. ``dcs_rail_collapsed``
+#: stays as the derived bool (mode != "expanded") so every existing
+#: guard keeps working.
+RAIL_MODE_KEY = "dcs_rail_mode"
+RAIL_MODES = ("expanded", "collapsed", "hover")
+RAIL_MODE_DEFAULT = "hover"
+RAIL_MODE_LABELS = {"expanded": "Expanded", "collapsed": "Collapsed",
+                    "hover": "Expand on hover"}
+#: Widget keys for the two sidebar-behavior radios (bottom control
+#: menu + Profile Appearance card). Deliberately NOT ``dcs_rail_mode``
+#: — a widget that owns the key keeps its own stored value and
+#: ignores a direct write (the theme-controls lesson).
+RAIL_MODE_RADIO_KEY = "dcs_rail_mode_radio"
+RAIL_MODE_PROFILE_RADIO_KEY = "profile_sidebar_behavior_radio"
+#: The bottom control's popover key. Its element container carries
+#: the ``st-key-<key>`` class, so the rail CSS pins it FIXED to the
+#: viewport's bottom-left (the round-9 structural mechanism).
+RAIL_BEHAVIOR_KEY = "dcs_rail_behavior"
+RAIL_BEHAVIOR_KEY_CLASS = "st-key-dcs_rail_behavior"
+
+#: The behavior control's element container in the real DOM
+#: (probe27b): a ``st.popover``'s key class lands on the LAYOUT
+#: WRAPPER (``div[data-testid="stLayoutWrapper"]``), NOT on an
+#: element container the way ``st.button``'s does — round 9's pin
+#: used stElementContainer, correct for the old toggle button,
+#: wrong for the popover. Every rail rule that addresses the
+#: control's container must use this selector, or it matches
+#: nothing live (probe27: the pin never applied, the control sat
+#: in flow at y=2631, 44px, label visible). The full main-area
+#: chain is also the specificity answer for the button rules:
+#: Streamlit's own popover-button rule
+#: (``div[data-testid="stPopover"]
+#: button[data-testid="stPopoverButton"]``, (0,2,2), height/width
+#: 44px !important) beats the bare key-class rule (0,2,1) — the
+#: full chain is (0,5,4) and wins (probe27d).
+RAIL_BEHAVIOR_CHAIN = ('main[data-testid="stMain"] '
+                       'div[data-testid="stVerticalBlock"] '
+                       'div[data-testid="stLayoutWrapper"]'
+                       '.st-key-dcs_rail_behavior')
+
+
+def normalize_rail_mode(value) -> str:
+    """Return a valid rail mode; anything unknown falls back to
+    ``"hover"`` (Supabase's account default, and this app's)."""
+    return value if value in RAIL_MODES else RAIL_MODE_DEFAULT
+
+
+def rail_mode(st_module=None) -> str:
+    """The sidebar behavior mode in effect. When no mode is stored
+    yet (pre-clone sessions), it derives from the old bool:
+    pinned-expanded stays expanded, anything else is the default
+    "hover" — so a deploy never collapses a user's pinned rail."""
+    st_mod = st_module or st
+    if RAIL_MODE_KEY in st_mod.session_state:
+        return normalize_rail_mode(st_mod.session_state.get(RAIL_MODE_KEY))
+    return ("expanded"
+            if st_mod.session_state.get(RAIL_COLLAPSED_KEY) is False
+            else RAIL_MODE_DEFAULT)
+
+
+def set_rail_mode(st_module, mode) -> str:
+    """Set the rail mode AND sync the derived ``dcs_rail_collapsed``
+    bool, so the mode and every guard on the bool agree on the same
+    run. Returns the normalized mode."""
+    st_mod = st_module or st
+    _mode = normalize_rail_mode(mode)
+    st_mod.session_state[RAIL_MODE_KEY] = _mode
+    st_mod.session_state[RAIL_COLLAPSED_KEY] = (_mode != "expanded")
+    return _mode
+
 
 def rail_collapsed(st_module=None) -> bool:
     """True when the sidebar rail is in its collapsed (icon-only)
-    state. Defaults to True — Supabase's own default, and the state
-    the user asked for. Anything stored that is not a bool reads as
-    collapsed when truthy, expanded when falsy."""
+    state. Derived from the mode (anything but "expanded"), falling
+    back to the stored bool when no mode is stored yet (pre-clone
+    sessions and tests that set the bool directly). Defaults to
+    True — Supabase's own default, and the state the user asked
+    for. Anything stored that is not a bool reads as collapsed
+    when truthy, expanded when falsy."""
     st_mod = st_module or st
+    if RAIL_MODE_KEY in st_mod.session_state:
+        return normalize_rail_mode(
+            st_mod.session_state.get(RAIL_MODE_KEY)) != "expanded"
     return bool(st_mod.session_state.get(RAIL_COLLAPSED_KEY, True))
 
 
-def rail_css(collapsed: bool, theme) -> str:
+def rail_css(collapsed: bool, theme, hover: bool = True) -> str:
     """The rail stylesheet for one state + theme, as a ``<style>``
-    block. Injected per run (after the design system) so the width
-    follows the session-state rail state — the base stylesheets never
+    block. ``hover`` is the hover-expand switch (the "Expand on
+    hover" mode): True renders the hover overlay rules, False
+    renders a strict collapsed rail whose labels stay hidden and
+    whose width never changes on hover — the "Collapsed" mode.
+    Injected per run (after the design system) so the width follows
+    the session-state rail state — the base stylesheets never
     change, and the app.py literal stays the verbatim light paste.
 
     Supabase's real sidebar (the user's video): the default is an
@@ -2083,16 +2225,39 @@ def rail_css(collapsed: bool, theme) -> str:
 
     Both states: the sidebar is a flex column
     (``stSidebarContent`` > header + ``stSidebarUserContent`` >
-    vertical block). The toggle — rendered once in the MAIN area
-    (round 9), not in the sidebar — is pinned FIXED to the
-    viewport's bottom-left at the rail's width in every state, so
-    it never sits below the fold however tall the content is
-    (absolute scrolled away with the content live; sticky stopped
-    56px short; fixed held at the viewport bottom at every scroll
-    offset in the real-DOM probe). The vertical block carries
-    bottom padding so the last content row scrolls above it.
-    Streamlit's native top "«" collapse control is hidden: the
-    rail collapses to the 60px icon rail, never to 0px.
+    vertical block). The behavior control — rendered once in the
+    MAIN area (round 9 moved the old toggle out; clone Round 1
+    replaced it with the menu), not in the sidebar — is pinned
+    FIXED to the viewport's bottom-left at the rail's width in
+    every state, so it never sits below the fold however tall the
+    content is (absolute scrolled away with the content live;
+    sticky stopped 56px short; fixed held at the viewport bottom
+    at every scroll offset in the real-DOM probe). The vertical
+    block carries bottom padding so the last content row scrolls
+    above it. Streamlit's native top "«" collapse control is
+    hidden: the rail collapses to the 60px icon rail, never to
+    0px.
+
+    Clone Round 1 (2026-11-08) — the direct toggle is GONE,
+    replaced by Supabase's 3-way bottom control: a popover menu
+    with the radio options Expanded / Collapsed / Expand on
+    hover, the same setting as Preferences → Appearance →
+    Sidebar behavior. The mode is session state
+    ``dcs_rail_mode``; ``dcs_rail_collapsed`` stays as the
+    derived bool so every existing guard keeps working. The
+    toggle's flaw, diagnosed from probe23 and the round-10 live
+    check: it flipped the pinned bool, so a click in the hover
+    flyout — where the rail looks expanded — flipped it to
+    pinned-expanded, which the live check read as "the collapse
+    doesn't stick" (the click fired, the sidebar re-opened as
+    pinned within 5–8s, 4/4 attempts, both themes). The menu
+    removes the ambiguity by construction: the mode is an
+    explicit choice, so picking "Collapsed" in the flyout
+    collapses and STAYS collapsed. ``rail_css`` takes a ``hover``
+    parameter (True only in "hover" mode): in strict "collapsed"
+    mode the hiding rules are unconditional and no hover-overlay
+    rule is emitted, so a pointer resting on the rail cannot
+    re-expand anything.
 
     Collapsed: 60px sidebar, 6px content padding, 4px gaps, rail
     buttons as 36px borderless squares with a centred icon (12
@@ -2126,19 +2291,19 @@ def rail_css(collapsed: bool, theme) -> str:
     # -> 260px across 40ms samples). The 200ms ease read as a snap
     # live (the check saw no glide, snap or <=150ms).
     _glide = "250ms cubic-bezier(0.4,0,0.2,1)"
-    # The toggle's FIXED pin (all states): the wrapper is removed
+    # The behavior control's FIXED pin (all states): the wrapper is removed
     # from flow and pinned to the viewport's bottom-left, so it
     # never sits below the fold however tall the sidebar content
     # is. The vertical block's bottom padding (same states) lets
     # the last content row scroll above it. FIXED, not absolute:
     # absolute scrolls away with the content (the 5028aa3 live
-    # failure — the toggle sat at content-bottom, 1409px down a
+    # failure — the old toggle sat at content-bottom, 1409px down a
     # 998px viewport), and sticky stopped 56px short. Fixed held
     # at the viewport bottom (998px) at every scroll offset in the
-    # real-DOM probe. The selector targets the toggle's element
-    # container ONLY, by its Streamlit key class
-    # (``st-key-dcs_rail_toggle`` — the class Streamlit puts on
-    # the element container of a widget with that key). A plain
+    # real-DOM probe. The selector targets the control's container
+    # ONLY, by its Streamlit key class
+    # (``st-key-dcs_rail_behavior`` — the class Streamlit puts on
+    # the layout wrapper of a popover with that key, probe27b). A plain
     # ``div:last-child`` descendant selector is WRONG here: it
     # matches every div that is a last child of its parent
     # anywhere in the vertical block, so it fixed EVERY sidebar
@@ -2151,8 +2316,8 @@ def rail_css(collapsed: bool, theme) -> str:
     # of the main vertical block), pinned FIXED to the viewport's
     # bottom-left. That is the :has()-FREE collapse mechanism:
     # the hover-expand trigger is ``section:hover`` on the
-    # sidebar, and the toggle is not a descendant of the section,
-    # so hovering the toggle can NEVER trigger the expand — no
+    # sidebar, and the control is not a descendant of the section,
+    # so hovering the control can NEVER trigger the expand — no
     # gate selector is needed at all. The round-8 gate
     # (``:not(:has(.st-key-dcs_rail_toggle:hover))``) worked in
     # the local probe (Chromium supports :has()) but did NOT take
@@ -2160,10 +2325,14 @@ def rail_css(collapsed: bool, theme) -> str:
     # effect live; the round-8 live check saw the collapse not
     # stick — the sidebar sat at ~260px for 10s with the pointer
     # on the toggle). So the gate is gone, and the pin chain
-    # below targets the MAIN area, not the sidebar: the toggle's
+    # below targets the MAIN area, not the sidebar: the control's
     # element container is
     # ``main[data-testid="stMain"] div[data-testid="stVerticalBlock"]
-    # div[data-testid="stElementContainer"].st-key-dcs_rail_toggle``.
+    # div[data-testid="stLayoutWrapper"].st-key-dcs_rail_behavior``.
+    # (Clone Round 1 renamed the key: the old toggle's key was
+    # ``dcs_rail_toggle``; the menu control's is
+    # ``dcs_rail_behavior`` — and a popover's key class lands on
+    # the layout wrapper, not an element container, probe27b.)
     # The main area has no transform/filter ancestor (verified in
     # the real DOM, debug21c), so position:fixed stays
     # viewport-relative exactly as it was from the sidebar.
@@ -2178,42 +2347,45 @@ def rail_css(collapsed: bool, theme) -> str:
     # pin left in the expanded stylesheet would put a 60px
     # rule in the expanded CSS even though the later 260px
     # rule wins the cascade.
-    def _toggle_pin_rules(width, hover=False):
+    def _pin_rules(width, key_class, hover=False):
+        # Clone Round 1 fix (probe27b): the container is a LAYOUT
+        # WRAPPER, not an element container — a st.popover's key
+        # class lands on div[data-testid="stLayoutWrapper"].
+        # The old stElementContainer chain matched nothing live.
         _chain = ('main[data-testid="stMain"] '
                   'div[data-testid="stVerticalBlock"] '
-                  'div[data-testid="stElementContainer"]'
-                  '.st-key-dcs_rail_toggle')
+                  'div[data-testid="stLayoutWrapper"]'
+                  f'.{key_class}')
         _sel = (
             f'section[data-testid="stSidebar"]:hover ~ div {_chain} {{'
             if hover else
             f'{_chain} {{')
-        # Round 10 (flyout toggle click): the pin's width
-        # TRANSITIONS. A click on the toggle while the flyout is
-        # open was swallowed (probe22g/h): the pointer rests on
-        # the toggle (a main-area descendant), so ``section:hover``
-        # drops the moment the press completes — and with no
-        # transition the container snapped 260px -> 60px
-        # instantly, the button shrank out from under the
-        # pointer (236px -> 36px), the mouseup landed on main,
-        # and no ``click`` ever fired on the button (no rerun,
-        # no state change). The fix is asymmetric, and it works
-        # because the transition that governs a width change is
-        # the AFTER-change style's: the base (rest) rule carries
-        # a 250ms DELAY, so on hover-loss the container holds
-        # 260px for 250ms — a press-release (~50-150ms) completes
-        # with the button still under the pointer, the click
-        # fires, and the rerun pins the rail expanded. The hover
-        # rule carries NO delay, so the flyout still opens
-        # instantly. The delay is 250ms, not 300ms: the round-5
-        # test pins "no 300ms in the rail CSS" (the old snap),
-        # and 250ms still covers a normal click plus a hesitant
-        # one (a press held past 250ms before release can still
-        # be swallowed — an edge case, noted, not chased). Side
-        # effect: moving the pointer off the rail without
-        # clicking leaves the toggle bar wide for 250ms before
-        # it glides shut — it trails the overlay's close, which
-        # reads as a glide, not a glitch. No :has() anywhere
-        # (the ban stands).
+        # Round 10 (flyout control click): the pin's width
+        # TRANSITIONS. A click on the bottom control while the
+        # flyout is open was swallowed (probe22g/h): the pointer
+        # rests on the control (a main-area descendant), so
+        # ``section:hover`` drops the moment the press completes
+        # — and with no transition the container snapped 260px
+        # -> 60px instantly, the button shrank out from under
+        # the pointer (236px -> 36px), the mouseup landed on
+        # main, and no ``click`` ever fired on the button (no
+        # rerun, no state change). The fix is asymmetric, and it
+        # works because the transition that governs a width change
+        # is the AFTER-change style's: the base (rest) rule
+        # carries a 250ms DELAY, so on hover-loss the container
+        # holds 260px for 250ms — a press-release (~50-150ms)
+        # completes with the button still under the pointer, the
+        # click fires, and the menu opens. The hover rule carries
+        # NO delay, so the flyout still opens instantly. The delay
+        # is 250ms, not 300ms: the round-5 test pins "no 300ms in
+        # the rail CSS" (the old snap), and 250ms still covers a
+        # normal click plus a hesitant one (a press held past
+        # 250ms before release can still be swallowed — an edge
+        # case, noted, not chased). Side effect: moving the
+        # pointer off the rail without clicking leaves the control
+        # bar wide for 250ms before it glides shut — it trails
+        # the overlay's close, which reads as a glide, not a
+        # glitch. No :has() anywhere (the ban stands).
         _delay = "250ms" if not hover else "0ms"
         _rules = [
             _sel,
@@ -2221,42 +2393,42 @@ def rail_css(collapsed: bool, theme) -> str:
             "  bottom: 0 !important; left: 0 !important;",
             f"  width: {width} !important;",
             f"  transition: width {_glide} {_delay} !important;",
-            # z-index 1000001 (round 9 fix): the toggle lives in the
-            # MAIN area now, and the sidebar section carries a rest
-            # z-index of 1000 (1000000 when hovered, the overlay) —
-            # with the old z-index 2 the section painted ABOVE the
-            # toggle, so clicks at the toggle's position hit the
-            # section instead and the rail could never pin-expand
-            # (probe21: section stayed 60px, toggle showed the
-            # 260px hover pin, and the theme selectbox never
-            # rendered because the rail was only hover-expanded).
-            # 1000001 puts the toggle above the overlay too, so
-            # it stays clickable while the overlay is open.
+            # z-index 1000001 (round 9 fix): the control lives in
+            # the MAIN area now, and the sidebar section carries a
+            # rest z-index of 1000 (1000000 when hovered, the
+            # overlay) — with the old z-index 2 the section painted
+            # ABOVE the control, so clicks at the control's
+            # position hit the section instead and the rail could
+            # never pin-expand (probe21: section stayed 60px, the
+            # control showed the 260px hover pin, and the theme
+            # selectbox never rendered because the rail was only
+            # hover-expanded). 1000001 puts the control above the
+            # overlay too, so it stays clickable while the overlay
+            # is open.
             "  z-index: 1000001 !important;",
             f"  background: {_bg} !important; padding: 4px 12px 8px !important; }}",
         ]
         if hover:
-            # Round 10 (flyout toggle click, second half): the
+            # Round 10 (flyout control click, second half): the
             # container ALSO holds 260px while the POINTER IS ON
             # IT — a :hover on the container itself, no :has().
             # The delayed shrink alone only covers the case where
             # section:hover holds until mouseup (probe22g/h);
             # probe23 showed section:hover can ALSO drop the
-            # moment the pointer arrives on the toggle (the toggle
-            # is a main-area descendant, so the section hover is
-            # unstable there) — and then the flyout is already
-            # closed and the button already 36px when the click
-            # lands. The container :hover holds the width at
+            # moment the pointer arrives on the control (the
+            # control is a main-area descendant, so the section
+            # hover is unstable there) — and then the flyout is
+            # already closed and the button already 36px when the
+            # click lands. The container :hover holds the width at
             # 260px regardless of section:hover, so the button
             # stays under the pointer through the whole
             # press-release and the click fires. It also makes
-            # hovering the collapsed 36px toggle reveal its
-            # "Expand sidebar" label (consistent with the
+            # hovering the collapsed 36px control reveal its
+            # "Sidebar behavior" label (consistent with the
             # flyout). It cannot re-expand the SIDEBAR: the
-            # section stays 60px — only the toggle bar widens,
-            # and the collapse still sticks. Instant expand
-            # (0ms delay); the shrink back is the base rule's
-            # 250ms delay.
+            # section stays 60px — only the control bar widens.
+            # Instant expand (0ms delay); the shrink back is the
+            # base rule's 250ms delay.
             _rules.append(f"{_chain}:hover {{")
             _rules.append("  margin-top: 0 !important; position: fixed !important;")
             _rules.append("  bottom: 0 !important; left: 0 !important;")
@@ -2321,42 +2493,42 @@ def rail_css(collapsed: bool, theme) -> str:
         'section[data-testid="stSidebar"] div[data-testid="stVerticalBlock"] {',
         "  flex: 1 1 auto !important; min-height: 0 !important;",
         "  display: flex !important; flex-direction: column !important; }",
-        # Pin the toggle to the bottom of the rail (collapsed, not
-        # hovered): FIXED to the viewport's bottom-left at the
-        # rail's width, so it holds however tall the sidebar
-        # content is. (The 8b4dd04 sticky rule never matched live
-        # — its ``stSidebarUserContent > stVerticalBlock`` chain
-        # is broken by the intermediate plain div — and the
-        # collapsed pin only "passed" because the content happened
-        # to fit. Fixed is the uniform mechanism, proven in the
-        # real-DOM probe at every scroll offset.) The pin width is
-        # the CURRENT state's width (``_width``): a collapsed-width
-        # pin left in the expanded stylesheet would put a 60px
-        # rule in the expanded CSS even though the later 260px
-        # rule wins the cascade.
-    ] + _toggle_pin_rules(_width)
+        # Pin the behavior control to the bottom of the rail
+        # (collapsed, not hovered): FIXED to the viewport's
+        # bottom-left at the rail's width, so it holds however tall
+        # the sidebar content is. (The 8b4dd04 sticky rule never
+        # matched live — its ``stSidebarUserContent >
+        # stVerticalBlock`` chain is broken by the intermediate
+        # plain div — and the collapsed pin only "passed" because
+        # the content happened to fit. Fixed is the uniform
+        # mechanism, proven in the real-DOM probe at every scroll
+        # offset.) The pin width is the CURRENT state's width
+        # (``_width``): a collapsed-width pin left in the expanded
+        # stylesheet would put a 60px rule in the expanded CSS
+        # even though the later 260px rule wins the cascade.
+    ] + _pin_rules(_width, RAIL_BEHAVIOR_KEY_CLASS)
     if collapsed:
         # Two shared selector prefixes for the collapsed branch.
         # _hover — the hover-EXPAND trigger, UNGATED: the overlay
         # expands when the section is hovered. No gate is needed
-        # any more, because the toggle is NOT a descendant of the
+        # any more, because the control is NOT a descendant of the
         # section (round 9: it renders in the main area), so
-        # hovering the toggle can never fire ``section:hover``.
+        # hovering the control can never fire ``section:hover``.
         # The round-8 gate (``:not(:has(...))``) is DELETED: it
         # worked locally but never took effect live, and the
-        # collapse did not stick live because of it. The toggle
+        # collapse did not stick live because of it. The control
         # strip (~52px at the bottom) is still the one part of
         # the rail that does not trigger the expand — it is a
         # control, not rail content, and expanding from it would
         # undo the click that just landed on it — but now that is
-        # a STRUCTURAL fact (the toggle is outside the section),
+        # a STRUCTURAL fact (the control is outside the section),
         # not a selector.
         # _hidden — the "rail looks collapsed" condition for the
-        # hiding rules: the pointer is away from the rail. (The
-        # round-8 :is() condition also covered "pointer on the
-        # toggle"; that case no longer exists — the toggle is
-        # outside the section, so the overlay is never expanded
-        # while the pointer is on it.)
+        # hiding rules. In hover mode ("Expand on hover") that is
+        # the pointer being away from the rail; in strict mode
+        # ("Collapsed", hover=False) the rail ALWAYS looks
+        # collapsed, so the hiding rules are unconditional — the
+        # labels never show, whatever the pointer does.
         # NOTE: this REDEFINES _hover — above this point _hover
         # was the hover-WASH token (_tokens["hover"]); below it
         # _hover is the hover selector. Any value below
@@ -2364,7 +2536,8 @@ def rail_css(collapsed: bool, theme) -> str:
         # directly (a round-8 regression shipped the selector
         # as the wash background until the rail tests caught it).
         _hover = 'section[data-testid="stSidebar"]:hover'
-        _hidden = 'section[data-testid="stSidebar"]:not(:hover)'
+        _hidden = ('section[data-testid="stSidebar"]:not(:hover)'
+                   if hover else 'section[data-testid="stSidebar"]')
         _deny = [
             # DESCENDANT selectors throughout: the 8b4dd04 denylist
             # used ``stSidebarUserContent > stVerticalBlock >
@@ -2402,6 +2575,8 @@ def rail_css(collapsed: bool, theme) -> str:
             f"  width: {RAIL_WIDTH_COLLAPSED} !important; }}",
             'section[data-testid="stSidebar"] div[data-testid="stVerticalBlock"] {',
             "  gap: 4px !important; padding-bottom: 56px !important; }",
+        ]
+        if hover:
             # Hover expand (pinned-collapsed only): the section
             # stays a 60px flex item — the main area never moves —
             # and only its content becomes a 260px overlay floating
@@ -2409,67 +2584,74 @@ def rail_css(collapsed: bool, theme) -> str:
             # transition on the content is the real 0.2s glide.
             # The section's z-index lifts the overlay above the
             # main area; the shadow is the overlay's depth. The
-            # expand needs no gate any more (round 9): the toggle
+            # expand needs no gate any more (round 9): the control
             # is not a descendant of the section, so hovering it
             # can never fire ``section:hover`` and re-expand the
             # overlay the instant the rerun renders collapsed.
-            'section[data-testid="stSidebar"]:hover {',
-            "  z-index: 1000000 !important; }",
-            f'{_hover} div[data-testid="stSidebarContent"] {{',
-            "  position: absolute !important; left: 0 !important;",
-            "  top: 0 !important; bottom: 0 !important;",
-            "  width: 260px !important; max-width: 260px !important;",
-            # Round 10 (nav-row width): the hover overlay's
-            # content carries the same 3px side padding as the
-            # pinned-expanded rail (round 9's 8px predicted
-            # 235px; the live check measured 224px — the
-            # scrollbar pin is ignored by this Chromium, so
-            # the padding carries the width: 259 - 3 - 3 - 20
-            # = 233px). The overlay content scrolls too, so
-            # its scrollbar takes the same 20px.
-            "  padding-left: 3px !important; padding-right: 3px !important;",
-            f"  box-shadow: {_shadow} !important;",
-            f"  transition: width {_glide} !important; }}",
-            f'{_hover} div[data-testid="stSidebarContent"]::-webkit-scrollbar {{',
-            "  width: 8px !important; }",
-            f'{_hover} div[data-testid="stSidebarUserContent"],',
-            f'{_hover} div[data-testid="stSidebarUserContent"] div[data-testid="stVerticalBlock"] {{',
-            "  width: 100% !important; }",
-            # Hover-expanded: the element containers go full-width
-            # (the expanded-pill fix — the nav buttons' width:100%
-            # resolves against the 260px overlay, not a
-            # content-sized ~100px box), and the toggle pins FIXED
-            # at the overlay's 260px width (it lives in the main
-            # area now, so the sibling selector in
-            # _toggle_pin_rules widens it on section hover). The
-            # vertical block carries bottom padding so the last
-            # content row can scroll above the fixed toggle.
-            f'{_hover} div[data-testid="stVerticalBlock"] {{',
-            "  padding-bottom: 56px !important; }",
-            f'{_hover} div[data-testid="stVerticalBlock"] div[data-testid="stElementContainer"]:not(.st-key-dcs_rail_toggle),',
-            f'{_hover} div[data-testid="stVerticalBlock"] div[data-testid="stLayoutWrapper"] {{',
-            "  width: 100% !important; align-self: stretch !important; }",
-            # Hover-expanded rows read left-aligned like the
-            # pinned-expanded ones: the collapsed branch's button
-            # rule centres them (icon-only rail), and it would win
-            # over the base sheet's flex-start here.
-            f'{_hover} div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"] {{',
-            "  justify-content: flex-start !important; }",
-        ] + _toggle_pin_rules(RAIL_WIDTH_EXPANDED, hover=True) + [
+            # (Strict "Collapsed" mode skips this whole block: the
+            # rail never expands on hover there.)
+            _css += [
+                'section[data-testid="stSidebar"]:hover {',
+                "  z-index: 1000000 !important; }",
+                f'{_hover} div[data-testid="stSidebarContent"] {{',
+                "  position: absolute !important; left: 0 !important;",
+                "  top: 0 !important; bottom: 0 !important;",
+                "  width: 260px !important; max-width: 260px !important;",
+                # Round 10 (nav-row width): the hover overlay's
+                # content carries the same 3px side padding as the
+                # pinned-expanded rail (round 9's 8px predicted
+                # 235px; the live check measured 224px — the
+                # scrollbar pin is ignored by this Chromium, so
+                # the padding carries the width: 259 - 3 - 3 - 20
+                # = 233px). The overlay content scrolls too, so
+                # its scrollbar takes the same 20px.
+                "  padding-left: 3px !important; padding-right: 3px !important;",
+                f"  box-shadow: {_shadow} !important;",
+                f"  transition: width {_glide} !important; }}",
+                f'{_hover} div[data-testid="stSidebarContent"]::-webkit-scrollbar {{',
+                "  width: 8px !important; }",
+                f'{_hover} div[data-testid="stSidebarUserContent"],',
+                f'{_hover} div[data-testid="stSidebarUserContent"] div[data-testid="stVerticalBlock"] {{',
+                "  width: 100% !important; }",
+                # Hover-expanded: the element containers go full-width
+                # (the expanded-pill fix — the nav buttons' width:100%
+                # resolves against the 260px overlay, not a
+                # content-sized ~100px box), and the control pins FIXED
+                # at the overlay's 260px width (it lives in the main
+                # area now, so the sibling selector in _pin_rules
+                # widens it on section hover). The vertical block
+                # carries bottom padding so the last content row can
+                # scroll above the fixed control.
+                f'{_hover} div[data-testid="stVerticalBlock"] {{',
+                "  padding-bottom: 56px !important; }",
+                f'{_hover} div[data-testid="stVerticalBlock"] div[data-testid="stElementContainer"]:not(.{RAIL_BEHAVIOR_KEY_CLASS}),',
+                f'{_hover} div[data-testid="stVerticalBlock"] div[data-testid="stLayoutWrapper"] {{',
+                "  width: 100% !important; align-self: stretch !important; }",
+                # Hover-expanded rows read left-aligned like the
+                # pinned-expanded ones: the collapsed branch's button
+                # rule centres them (icon-only rail), and it would win
+                # over the base sheet's flex-start here.
+                f'{_hover} div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"] {{',
+                "  justify-content: flex-start !important; }",
+            ] + _pin_rules(RAIL_WIDTH_EXPANDED, RAIL_BEHAVIOR_KEY_CLASS,
+                           hover=True)
+        _css += [
             # Hiding, collapsed and visually collapsed (the
             # denylist): every non-nav child of the vertical block
             # is hidden — the client-mode checkbox, the slicers,
             # the uploader, the expanders, the theme selectbox,
             # the status pill and any sidebar alert. The widgets
             # stay mounted (their values survive); only the nav
-            # rows stay visible (the toggle is not in the sidebar
+            # rows stay visible (the control is not in the sidebar
             # any more — round 9 moved it to the main area, so
-            # there is no toggle to hide here). Explicit testids,
+            # there is no control to hide here). Explicit testids,
             # all DESCENDANT selectors (no ``>`` — see the 8b4dd04
             # note above). The hiding condition is _hidden: the
             # pointer is away from the rail (overlay not expanded,
             # so a shown widget would squeeze into the 60px rail
-            # as vertical one-letter text).
+            # as vertical one-letter text) — or, in strict mode,
+            # always (the rail never expands, so a shown widget
+            # would ALWAYS squeeze).
         ] + _deny + [
             # Non-nav sidebar buttons (sample, load sheet): they
             # carry no help=, so Streamlit renders their <button>
@@ -2490,6 +2672,18 @@ def rail_css(collapsed: bool, theme) -> str:
             f'{_hidden} div[data-testid="stButton"] button span[style*="display: contents"],',
             f'{_hidden} div[data-testid="stButton"] button span[style*="display:contents"] {{',
             "  display: none !important; }",
+            # The behavior control's label, visually collapsed:
+            # the popover button's label lives in the same
+            # display:contents span as the nav labels (probe27a),
+            # but the control is in the MAIN area, so the rule
+            # reaches it through the sibling selector from the
+            # section (no :has()). In strict mode _hidden is the
+            # bare section selector, so the hiding is
+            # unconditional there. The container is a layout
+            # wrapper (probe27b), not an element container.
+            f'{_hidden} ~ div main[data-testid="stMain"] div[data-testid="stVerticalBlock"] div[data-testid="stLayoutWrapper"].{RAIL_BEHAVIOR_KEY_CLASS} button span[style*="display: contents"],',
+            f'{_hidden} ~ div main[data-testid="stMain"] div[data-testid="stVerticalBlock"] div[data-testid="stLayoutWrapper"].{RAIL_BEHAVIOR_KEY_CLASS} button span[style*="display:contents"] {{',
+            "  display: none !important; }",
             'section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"] {',
             "  width: 100% !important; height: 36px !important;",
             "  min-height: 36px !important; padding: 0 !important;",
@@ -2507,41 +2701,65 @@ def rail_css(collapsed: bool, theme) -> str:
             "  border: none !important; opacity: 1 !important; }",
             'section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"]:disabled * {',
             f"  color: {_ink} !important; }}",
-            # The toggle button itself (round 9): it renders in
-            # the MAIN area now, so the sidebar-scoped button
-            # rules above do not reach it — it gets its own
-            # key-scoped rules. The pin (see _toggle_pin_rules)
-            # sets the container width (60px collapsed, 260px
-            # expanded / hovered) with 12px side padding, so the
-            # button at width:100% reads as the 36px icon square
-            # collapsed and the 236px "Collapse sidebar" row
-            # expanded — the same geometry the pin gave it in the
-            # sidebar. Collapsed: icon-only, centred.
-            '.st-key-dcs_rail_toggle button[data-testid="stBaseButton-secondary"] {',
-            "  width: 100% !important; height: 36px !important;",
+            # The behavior control button itself (clone Round 1):
+            # it renders in the MAIN area now, so the
+            # sidebar-scoped button rules above do not reach it —
+            # it gets its own key-scoped rules. The pin (see
+            # _pin_rules) sets the container width (60px
+            # collapsed, 260px expanded / hovered) with 12px side
+            # padding, so the button at width:100% reads as the
+            # 36px icon square collapsed and the 236px "Sidebar
+            # behavior" row expanded — the same geometry the pin
+            # gave the old toggle in the sidebar. Collapsed:
+            # icon-only, centred. The popover trigger also carries
+            # Streamlit's expand_more chevron (a second child div,
+            # aria-hidden); it is hidden — the tune icon alone
+            # reads as the control, and the chevron would crowd
+            # the 36px square. The rules carry the FULL main-area
+            # chain (probe27d): Streamlit's own popover-button
+            # rule (div[data-testid="stPopover"]
+            # button[data-testid="stPopoverButton"], (0,2,2),
+            # 44px !important) beats the bare key-class rule
+            # (0,2,1) — the full chain is (0,5,4) and wins.
+            f'{RAIL_BEHAVIOR_CHAIN} button[data-testid="stPopoverButton"] {{',
+            # Explicit 36px (not width:100%): the button's width
+            # resolves against the popover's flex item, whose
+            # width is content-driven — width:100% resolved to
+            # 44px there (probe27), not the container's 36px
+            # content box. The container is 60px with 12px side
+            # padding, so 36px is exact.
+            "  width: 36px !important; height: 36px !important;",
+            # min-width is REQUIRED, not belt-and-braces:
+            # Streamlit's own popover-button rule sets
+            # min-width: 44px !important (probe27e), which clamps
+            # the used width to 44px even when width:36px wins
+            # the cascade. Pin it to the same 36px.
+            "  min-width: 36px !important;",
             "  min-height: 36px !important; padding: 0 !important;",
             "  border: none !important; border-radius: 8px !important;",
             "  background: transparent !important;",
             "  background-color: transparent !important;",
             "  justify-content: center !important; }",
-            '.st-key-dcs_rail_toggle button[data-testid="stBaseButton-secondary"] * {',
+            f'{RAIL_BEHAVIOR_CHAIN} button[data-testid="stPopoverButton"] * {{',
             f"  color: {_ink} !important; }}",
-            '.st-key-dcs_rail_toggle button[data-testid="stBaseButton-secondary"]:hover {',
+            f'{RAIL_BEHAVIOR_CHAIN} button[data-testid="stPopoverButton"]:hover {{',
             f"  background-color: {_tokens['hover']} !important;",
             "  border: none !important; }",
+            f'{RAIL_BEHAVIOR_CHAIN} button[data-testid="stPopoverButton"] > div > div[aria-hidden="true"] {{',
+            "  display: none !important; }",
         ]
     else:
         _css += [
             # Expanded: the content scrolls, and the vertical
             # block carries bottom padding so the last content
-            # row can scroll above the fixed toggle. The element
+            # row can scroll above the fixed control. The element
             # containers go full-width (the expanded-pill fix).
-            # The toggle is not in the sidebar any more (round 9:
-            # main area), so there is no toggle container to
-            # exclude here — the pin (_toggle_pin_rules, emitted
-            # above at the state's width, 260px) is the only
-            # width the toggle container ever gets, and the
-            # sidebar container rules cannot touch it.
+            # The control is not in the sidebar any more (round 9:
+            # main area), so there is no control container to
+            # exclude here — the pin (_pin_rules, emitted above at
+            # the state's width, 260px) is the only width the
+            # control container ever gets, and the sidebar
+            # container rules cannot touch it.
             # Round 10 (nav-row width): the content carries an
             # explicit 3px side padding. Round 9's 8px padding +
             # 8px scrollbar pin predicted 235px, but the live
@@ -2552,7 +2770,7 @@ def rail_css(collapsed: bool, theme) -> str:
             # fixed 20px). The padding carries the width alone:
             # 259 (content, after the section's 1px right border)
             # - 3 - 3 - 20 (scrollbar) = 233px at x=3, matching
-            # the 236px toggle at x=12. The scrollbar pin stays
+            # the 236px control at x=12. The scrollbar pin stays
             # (harmless where honoured, and the thin scrollbar
             # still shows where it is).
             'section[data-testid="stSidebar"] div[data-testid="stSidebarContent"] {',
@@ -2566,18 +2784,37 @@ def rail_css(collapsed: bool, theme) -> str:
             "  width: 100% !important; }",
             'section[data-testid="stSidebar"] div[data-testid="stVerticalBlock"] {',
             "  padding-bottom: 56px !important; }",
-            'section[data-testid="stSidebar"] div[data-testid="stVerticalBlock"] div[data-testid="stElementContainer"]:not(.st-key-dcs_rail_toggle),',
+            f'section[data-testid="stSidebar"] div[data-testid="stVerticalBlock"] div[data-testid="stElementContainer"]:not(.{RAIL_BEHAVIOR_KEY_CLASS}),',
             'section[data-testid="stSidebar"] div[data-testid="stVerticalBlock"] div[data-testid="stLayoutWrapper"] {',
             "  width: 100% !important; align-self: stretch !important; }",
-            # The toggle button, expanded: icon + "Collapse
-            # sidebar" label, left-aligned like the nav rows
-            # (the collapsed branch centres it as an icon-only
+            # The behavior control button, expanded: icon +
+            # "Sidebar behavior" label, left-aligned like the nav
+            # rows (the collapsed branch centres it as an icon-only
             # square; the main-area button needs its own rule
             # because the sidebar button rules do not reach it).
-            '.st-key-dcs_rail_toggle button[data-testid="stBaseButton-secondary"] {',
-            "  justify-content: flex-start !important; }",
+            # The expand_more chevron stays hidden here too (same
+            # rule as the collapsed branch — the expanded sheet is
+            # a separate stylesheet, so the rule must repeat).
+            # Both rules carry the full main-area chain (probe27d)
+            # for the same specificity reason as the collapsed
+            # branch: Streamlit's 44px popover-button rule beats
+            # the bare key-class rule.
+            f'{RAIL_BEHAVIOR_CHAIN} button[data-testid="stPopoverButton"] {{',
+            # Explicit 236px (not width:100%): same flex-sizing
+            # reason as the collapsed 36px — the container is
+            # 260px with 12px side padding, so 236px is exact.
+            # min-width likewise pinned (Streamlit's popover rule
+            # sets min-width: 44px !important — probe27e).
+            # height 36px (not Streamlit's 44px) so the control
+            # row matches the 36px nav rows.
+            "  width: 236px !important;",
+            "  height: 36px !important; min-height: 36px !important;",
+            "  justify-content: flex-start !important;",
+            "  min-width: 236px !important; }",
+            f'{RAIL_BEHAVIOR_CHAIN} button[data-testid="stPopoverButton"] > div > div[aria-hidden="true"] {{',
+            "  display: none !important; }",
         ]
-        # (The toggle pin is already emitted above at the state's
+        # (The control pin is already emitted above at the state's
         # width — 260px here — so no second pin is needed.)
     _css.append("</style>")
     return "\n".join(_css)
@@ -2641,31 +2878,64 @@ def sidebar_nav(items, active: str | None = None, collapsed: bool = False,
     return clicked
 
 
-def render_rail_toggle(st_module=None) -> bool:
-    """Render the rail's collapse / expand toggle as an icon button
-    and return True when it was clicked (the caller flips
-    ``dcs_rail_collapsed`` and reruns). Collapsed: a right chevron,
-    icon-only, "Expand sidebar". Expanded: a left chevron with the
-    label "Collapse sidebar". Call at the TOP LEVEL (main area),
-    NOT inside ``with st.sidebar:`` — round 9 moved it out of the
-    sidebar on purpose: the hover-expand trigger is
-    ``section:hover`` on the sidebar, and the toggle must not be
-    a descendant of the section, or hovering it re-expands the
-    overlay and the collapse never sticks (the round-8 :has()
-    gate did not take effect live). The rail CSS pins it FIXED
-    to the viewport's bottom-left at the rail's width, so it
-    reads as the rail's foot wherever it is rendered. Streamlit's
-    own sidebar collapse chevron (top of the bar) is untouched
-    and keeps working alongside this one."""
+def render_rail_behavior_menu(st_module=None) -> None:
+    """Render the rail's sidebar-behavior control as Supabase's
+    bottom control: a popover menu with the three radio options
+    Expanded / Collapsed / Expand on hover (the mode the account
+    uses — Supabase's own control, same setting as Preferences →
+    Appearance → Sidebar behavior). Selecting an option sets
+    ``dcs_rail_mode`` (and the derived ``dcs_rail_collapsed`` bool)
+    and reruns, so the rail restyles at once.
+
+    Call at the TOP LEVEL (main area), NOT inside ``with
+    st.sidebar:`` — the round-9 structural reason the old toggle
+    lived there too: the hover-expand trigger is ``section:hover``
+    on the sidebar, and the control must not be a descendant of
+    the section, or hovering it re-expands the overlay. The rail
+    CSS pins it FIXED to the viewport's bottom-left at the rail's
+    width, so it reads as the rail's foot wherever it is rendered.
+    The button shows the tune icon + "Sidebar behavior" label;
+    the label span is CSS-hidden while the rail is collapsed and
+    not hovered (rail_css), so it reads as a 36px icon square in
+    the 60px rail and as a labelled row when expanded / hovered.
+    Streamlit's expand_more chevron on the popover trigger is
+    hidden by the rail CSS (it would crowd the 36px square).
+
+    The old direct toggle is GONE (clone Round 1): it flipped the
+    pinned bool, so a click in the hover flyout — where the rail
+    looks expanded — flipped it to pinned-expanded, which the live
+    check read as "the collapse doesn't stick" (rounds 8/9/10).
+    The menu removes the ambiguity by construction: the mode is an
+    explicit choice, so picking "Collapsed" in the flyout collapses
+    and STAYS collapsed. Returns None (the radio's on_change does
+    the work)."""
     st_mod = st_module or st
-    if rail_collapsed(st_mod):
-        return bool(st_mod.button(
-            "", icon=icon_for("chevron_right"), key="dcs_rail_toggle",
-            help="Expand sidebar", type="secondary"))
-    return bool(st_mod.button(
-        "Collapse sidebar", icon=icon_for("chevron_left"),
-        key="dcs_rail_toggle", help="Collapse sidebar",
-        type="secondary"))
+    _current = rail_mode(st_mod)
+
+    def _on_mode():
+        _new = normalize_rail_mode(
+            st_mod.session_state.get(RAIL_MODE_RADIO_KEY, _current))
+        set_rail_mode(st_mod, _new)
+        # The rail CSS is injected at the top of the run, before
+        # this callback fires — rerun at once (the Profile theme
+        # radio's round-10 pattern), so the new width applies on
+        # this very run instead of one run behind.
+        st_mod.rerun()
+
+    with st_mod.popover("Sidebar behavior", icon=icon_for("tune"),
+                        key=RAIL_BEHAVIOR_KEY):
+        st_mod.markdown('<div class="dcs-menu-label">Sidebar behavior</div>',
+                        unsafe_allow_html=True)
+        # Re-sync immediately before creating the radio, for the
+        # same reason as the theme radios: the mode may have flipped
+        # earlier in this run (Profile Appearance card), and the
+        # top-of-run state predates that flip.
+        st_mod.session_state[RAIL_MODE_RADIO_KEY] = _current
+        st_mod.radio(
+            "Sidebar behavior", options=list(RAIL_MODES),
+            format_func=lambda m: RAIL_MODE_LABELS.get(m, m),
+            key=RAIL_MODE_RADIO_KEY, on_change=_on_mode,
+            label_visibility="collapsed")
 
 
 def avatar_initial(user) -> str:
@@ -2719,9 +2989,10 @@ def render_avatar_menu(st_module=None, user=None, container=None):
     The menu is the dashboard's real one, page-by-page study §8 and
     the live-walk appendix: the email in bold at the top (plain text,
     never a link), then icon rows — Account, Feature previews,
-    Changelog — a hairline, a "Theme" section with a Dark/Light radio
-    (the selected row carries the filled dot, the way Supabase's
-    System/Dark/Light rows do), a hairline, a Timezone row
+    Changelog — a hairline, a "Theme" section with a System/Dark/Light
+    radio (the selected row carries the filled dot, the way Supabase's
+    System/Dark/Light rows do; "System" resolves to Light — the app
+    has no OS-preference bridge), a hairline, a Timezone row
     ("Auto (Asia/Calcutta)" — display-only; the app runs on IST),
     a hairline, a small "Language" row (English / हिन्दी / اردو —
     the standalone Language section on the Preview tab was removed
@@ -2783,10 +3054,20 @@ def render_avatar_menu(st_module=None, user=None, container=None):
         st_mod.markdown('<div class="dcs-menu-label">Theme</div>',
                         unsafe_allow_html=True)
 
+        # The radio owns the preference (System / Dark / Light),
+        # not the resolved theme — read it before the callback is
+        # defined, so the callback's default is the pref in effect.
+        _pref_current = normalize_theme_pref(
+            st_mod.session_state.get(THEME_PREF_KEY, current))
+
         def _on_theme():
-            _new = normalize_theme(
-                st_mod.session_state.get(THEME_RADIO_KEY, current))
-            st_mod.session_state["dcs_theme"] = _new
+            # The radio owns the PREFERENCE (system / dark / light);
+            # resolve it to the light/dark theme the stylesheet
+            # follows ("System" resolves to Light — no OS bridge).
+            _pref = normalize_theme_pref(
+                st_mod.session_state.get(THEME_RADIO_KEY, _pref_current))
+            st_mod.session_state[THEME_PREF_KEY] = _pref
+            st_mod.session_state["dcs_theme"] = resolve_theme_pref(_pref)
             # The sidebar selectbox is created later in the run (it
             # lives below the top bar), so its key can be written
             # here — it then shows the new theme on this very run
@@ -2799,10 +3080,10 @@ def render_avatar_menu(st_module=None, user=None, container=None):
         # same reason as the selectbox re-sync in
         # render_theme_toggle: the theme may have flipped earlier in
         # this run, and the top-of-run sync predates that flip.
-        st_mod.session_state[THEME_RADIO_KEY] = current
+        st_mod.session_state[THEME_RADIO_KEY] = _pref_current
         st_mod.radio(
-            "Theme", options=list(THEMES),
-            format_func=lambda t: "Dark" if t == "dark" else "Light",
+            "Theme", options=list(THEME_PREFS),
+            format_func=lambda t: THEME_PREF_LABELS.get(t, t),
             key=THEME_RADIO_KEY, on_change=_on_theme,
             label_visibility="collapsed")
         st_mod.markdown('<div class="dcs-menu-divider"></div>',

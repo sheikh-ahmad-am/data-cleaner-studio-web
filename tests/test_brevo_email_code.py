@@ -769,6 +769,7 @@ def test_apptest_login_shows_code_step_then_logs_in():
             "the correct code must create a session"
         # The rail starts collapsed (the dashboard's default) — open
         # it so the full sidebar's sample button is visible below.
+        at.session_state["dcs_rail_mode"] = "expanded"
         at.session_state["dcs_rail_collapsed"] = False
         at.run()
         assert not at.exception, f"exception expanding rail: {at.exception}"

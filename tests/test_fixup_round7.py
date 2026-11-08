@@ -37,7 +37,7 @@ collapsed" choice: the non-nav sidebar widgets do NOT render while
 collapsed (app.py guards them on the rail state) — what is not in
 the DOM cannot render vertically — with the corrected descendant
 denylist as a backstop. Hovering a collapsed rail shows the nav
-labels + toggle; the uploader, theme, status and slicers appear
+labels + behavior control; the uploader, theme, status and slicers appear
 when the rail is pinned open. (The round-6 test file was updated
 for the reversal.)
 
@@ -162,49 +162,52 @@ def test_r7_expanded_rows_are_full_width():
     print("round 7 full-width rows OK")
 
 
-def test_r7_toggle_pin_is_fixed():
-    """The toggle pin is FIXED in every state (never absolute or
-    sticky): absolute scrolled away with the content (toggle at
-    1409px in a 998px viewport live) and sticky stopped 56px
-    short; fixed held at the viewport bottom (998px) at every
-    scroll offset in the real-DOM probe. Width matches the state
-    (60px collapsed, 260px expanded / hover)."""
+def test_r7_behavior_control_pin_is_fixed():
+    """The behavior control's pin is FIXED in every state (never
+    absolute or sticky): absolute scrolled away with the content
+    (the old toggle at 1409px in a 998px viewport live) and sticky
+    stopped 56px short; fixed held at the viewport bottom (998px)
+    at every scroll offset in the real-DOM probe. Width matches
+    the state (60px collapsed, 260px expanded / hover). (Clone
+    Round 1: the control is the 3-way menu.)"""
     for collapsed in (True, False):
         for theme in ("light", "dark"):
             css = ui_design.rail_css(collapsed, theme)
             assert "position: fixed !important" in css, \
                 f"rail CSS ({collapsed=}, {theme}) must pin the " \
-                "toggle with position: fixed"
+                "control with position: fixed"
             assert "position: absolute !important;\n  bottom: 0" not in css, \
                 f"rail CSS ({collapsed=}, {theme}) must not use the " \
                 "absolute pin that scrolled away live"
     assert "width: 60px" in ui_design.rail_css(True, "light"), \
-        "collapsed rail toggle pin must be 60px wide"
+        "collapsed rail control pin must be 60px wide"
     assert "width: 260px" in ui_design.rail_css(False, "light"), \
-        "expanded rail toggle pin must be 260px wide"
-    print("round 7 toggle pin is fixed OK")
+        "expanded rail control pin must be 260px wide"
+    print("round 7 behavior control pin is fixed OK")
 
 
-def test_r7_toggle_pin_targets_only_the_toggle():
-    """The toggle pin selector must target the toggle's element
-    container ONLY (its Streamlit key class
-    ``st-key-dcs_rail_toggle``). A plain ``div:last-child``
+def test_r7_behavior_control_pin_targets_only_the_control():
+    """The behavior control's pin selector must target the control's
+    element container ONLY (its Streamlit key class
+    ``st-key-dcs_rail_behavior``). A plain ``div:last-child``
     descendant selector is a live bug: it matches every div that
     is a last child of its parent anywhere in the vertical block,
     so it fixed EVERY sidebar widget to the viewport bottom and
     the whole sidebar collapsed into one overlapping stack —
-    the expanded sidebar rendered empty except for the toggle
-    (caught by the round-7 real-DOM probe)."""
+    the expanded sidebar rendered empty except for the control
+    (caught by the round-7 real-DOM probe). (Clone Round 1: the
+    control is the 3-way menu; the old toggle's key was
+    dcs_rail_toggle.)"""
     for collapsed in (True, False):
         for theme in ("light", "dark"):
             css = ui_design.rail_css(collapsed, theme)
-            assert 'div[data-testid="stElementContainer"].st-key-dcs_rail_toggle' in css, \
+            assert 'div[data-testid="stLayoutWrapper"].st-key-dcs_rail_behavior' in css, \
                 f"rail CSS ({collapsed=}, {theme}) must pin the " \
-                "toggle by its key class"
+                "control by its key class"
             assert 'div[data-testid="stVerticalBlock"] div:last-child' not in css, \
                 f"rail CSS ({collapsed=}, {theme}) must not use the " \
                 "broad div:last-child pin selector"
-    print("round 7 toggle pin targets only the toggle OK")
+    print("round 7 behavior control pin targets only the control OK")
 
 
 def test_r7_hover_glide_is_visibly_gradual():
@@ -216,7 +219,7 @@ def test_r7_hover_glide_is_visibly_gradual():
     samples — visibly gradual, not a snap). Round 9 DELETED the
     round-8 ``:not(:has(...))`` gate — :has() never takes effect
     live (round 6 proved it), and the collapse now works
-    structurally: the toggle lives in the main area, outside the
+    structurally: the control lives in the main area, outside the
     sidebar section, so hovering it can never trigger the
     expand — so the overlay rule is the UNGATED form and no
     :has() may remain anywhere in the rail CSS."""
@@ -243,8 +246,8 @@ def test_r7_native_collapse_control_is_hidden():
     """Streamlit's native top "«" collapse control is suppressed in
     both states and both themes: it hides the sidebar entirely to
     0px ("»" to restore) instead of returning to the 60px rail, and
-    it fought the bottom toggle live (the label flipped while the
-    sidebar stayed 260px). Only the bottom toggle + hover govern
+    it fought the bottom control live (the label flipped while the
+    sidebar stayed 260px). Only the bottom control + hover govern
     the rail now."""
     for collapsed in (True, False):
         for theme in ("light", "dark"):
@@ -425,15 +428,15 @@ def test_r7_language_switch_still_works(_tmp_env):
 
 
 # ---------------------------------------------------------------------------
-# 6. Collapsed rail shows only nav + toggle (do-not-render, AppTest)
+# 6. Collapsed rail shows only nav + behavior menu (do-not-render, AppTest)
 # ---------------------------------------------------------------------------
 
 def test_r7_collapsed_rail_has_no_vertical_text_widgets(_tmp_env):
     """Collapsed, the sidebar carries ONLY the 12 nav icons + the
-    toggle — no theme selectbox, status pill, banner, uploader,
-    sample button, client-mode checkbox, expanders or slicers in
-    the DOM at all. (The CSS denylist is the backstop; the guard
-    is the fix.) Pinned open, they all come back."""
+    behavior menu — no theme selectbox, status pill, banner,
+    uploader, sample button, client-mode checkbox, expanders or
+    slicers in the DOM at all. (The CSS denylist is the backstop;
+    the guard is the fix.) Pinned open, they all come back."""
     at = AppTest.from_file(APP)
     at.run()
     _r6.signup(at, "alice3")
@@ -473,8 +476,10 @@ def test_r7_slicers_still_filter_when_collapsed(_tmp_env):
     # The slicer label renders once data is loaded (expanded).
     assert any("Filters (slicers)" in v for v in _r6.vals(at.sidebar.markdown)), \
         "the slicer label must render when the rail is pinned open"
-    # Collapse: the label (and any slicer widgets) must be gone.
-    _r6.find_button_by_key(at, "dcs_rail_toggle").click().run()
+    # Collapse via the behavior menu (clone Round 1 — the direct
+    # toggle is gone): the label (and any slicer widgets) must
+    # be gone.
+    at.radio(key="dcs_rail_mode_radio").set_value("collapsed").run()
     assert at.session_state.get("dcs_rail_collapsed") is True
     assert not any("Filters (slicers)" in v
                    for v in _r6.vals(at.sidebar.markdown)), \

@@ -784,15 +784,21 @@ ui_design.sync_theme_widgets()
 DESIGN_SYSTEM_CSS = ui_design.theme_css(
     st.session_state.get("dcs_theme") or "light")
 st.markdown(DESIGN_SYSTEM_CSS, unsafe_allow_html=True)
-# Sidebar rail state + stylesheet (ui_design.rail_css): the collapsed
-# icon rail is Supabase's default, so the rail starts collapsed and
-# remembers its state across reruns in session state, like dcs_theme.
-# Injected right after the design system so its rules win on equal
+# Sidebar rail state + stylesheet (ui_design.rail_css): the mode is
+# Supabase's 3-way Sidebar behavior (Expanded / Collapsed / Expand
+# on hover), default Expand on hover — the collapsed icon rail is
+# Supabase's default, so the rail starts collapsed and remembers its
+# state across reruns in session state, like dcs_theme. Injected
+# right after the design system so its rules win on equal
 # specificity.
 st.session_state.setdefault("dcs_rail_collapsed", True)
+_rail_mode = ui_design.rail_mode()
+st.session_state[ui_design.RAIL_MODE_KEY] = _rail_mode
+st.session_state["dcs_rail_collapsed"] = _rail_mode != "expanded"
 st.markdown(ui_design.rail_css(
-    ui_design.rail_collapsed(),
-    st.session_state.get("dcs_theme") or "light"),
+    _rail_mode != "expanded",
+    st.session_state.get("dcs_theme") or "light",
+    hover=(_rail_mode == "hover")),
     unsafe_allow_html=True)
 # Rhythm (ui_loading): 1280px container cap + section-gap helpers,
 # injected once per run right after the design system.
@@ -1843,7 +1849,7 @@ if _top_actions["upload"]:
     # file uploader (which lives in the expanded sidebar) is visible
     # instead of landing on Preview with a collapsed rail and no
     # visible way to pick a file.
-    st.session_state["dcs_rail_collapsed"] = False
+    ui_design.set_rail_mode(st, "expanded")
     st.rerun()
 if _top_actions["help"]:
     st.session_state["pending_tab"] = "tutorial"
@@ -2483,21 +2489,26 @@ def _render_dashboard_strips(st, clean, raw, storage_key):
             st.rerun()
 
 
-# Rail toggle (round 9): ONE render, in the MAIN area (top level),
-# before the empty-state branches below — it must exist on every
-# logged-in run, empty or data-loaded, and before any st.stop().
-# It is deliberately NOT in the sidebar: the hover-expand trigger
-# is ``section:hover`` on the sidebar, and the toggle must not be
-# a descendant of the section, or hovering it re-expands the
-# overlay and the collapse never sticks (the round-8 :has() gate
-# did not take effect live, so the gate is gone and the toggle
+# Rail behavior control (clone Round 1 — Supabase's bottom
+# control): the 3-way menu (Expanded / Collapsed / Expand on
+# hover). ONE render, in the MAIN area (top level), before the
+# empty-state branches below — it must exist on every logged-in run,
+# empty or data-loaded, and before any st.stop(). It is deliberately
+# NOT in the sidebar: the hover-expand trigger is ``section:hover``
+# on the sidebar, and the control must not be a descendant of the
+# section, or hovering it re-expands the overlay (the round-8 :has()
+# gate did not take effect live, so the gate is gone and the control
 # moved out instead). The rail CSS pins it FIXED to the viewport's
 # bottom-left at the rail's width, so it reads as the rail's foot.
-# The old two sidebar renders (empty state + data-loaded) are
-# deleted: a single main-area render covers both states.
-if ui_design.render_rail_toggle():
-    st.session_state["dcs_rail_collapsed"] = not _rail_collapsed
-    st.rerun()
+# The old direct toggle is gone: it flipped the pinned bool, so a
+# click in the hover flyout — where the rail looks expanded —
+# flipped it to pinned-expanded, which the live check read as "the
+# collapse doesn't stick" (rounds 8/9/10). The menu's radio
+# on_change sets the mode and reruns itself; there is nothing for
+# the caller to flip here. The old two sidebar renders (empty state
+# + data-loaded) are deleted: a single main-area render covers both
+# states.
+ui_design.render_rail_behavior_menu()
 
 if raw is None:
     # The Profile view needs no data: when the user asked for it

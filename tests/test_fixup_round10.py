@@ -81,8 +81,8 @@ APP = str(PROJECT_ROOT / "app.py")
 
 MAIN_PIN_CHAIN = ('main[data-testid="stMain"] '
                   'div[data-testid="stVerticalBlock"] '
-                  'div[data-testid="stElementContainer"]'
-                  '.st-key-dcs_rail_toggle')
+                  'div[data-testid="stLayoutWrapper"]'
+                  '.st-key-dcs_rail_behavior')
 HOVER_PIN_SEL = ('section[data-testid="stSidebar"]:hover ~ div '
                  + MAIN_PIN_CHAIN)
 GLIDE = "250ms cubic-bezier(0.4,0,0.2,1)"
@@ -172,56 +172,58 @@ def test_r10_nav_rows_233px():
 
 
 # ---------------------------------------------------------------------------
-# 3. Flyout toggle click — delayed-shrink pin transition
+# 3. Flyout control click — delayed-shrink pin transition
 # ---------------------------------------------------------------------------
 
-def test_r10_toggle_pin_delayed_shrink():
-    """The toggle pin's width TRANSITIONS, asymmetrically: the
-    base (rest) rule carries a 250ms delay, so on hover-loss the
-    container holds 260px through a press-release and the click
-    fires; the hover rule carries no delay, so the flyout still
-    opens instantly. The transition governs the change via the
-    AFTER-change style, so the delay applies to the shrink only.
-    Both themes, collapsed state (the hover pin only exists
-    there)."""
+def test_r10_behavior_control_pin_delayed_shrink():
+    """The behavior control's pin width TRANSITIONS, asymmetrically:
+    the base (rest) rule carries a 250ms delay, so on hover-loss
+    the container holds 260px through a press-release and the
+    click fires; the hover rule carries no delay, so the flyout
+    still opens instantly. The transition governs the change via
+    the AFTER-change style, so the delay applies to the shrink
+    only. Both themes, collapsed state (the hover pin only exists
+    there). (Clone Round 1: the control is the 3-way menu; the
+    old toggle's key was dcs_rail_toggle. The delay keeps the
+    menu-opening click landing in the flyout.)"""
     for theme in ("light", "dark"):
         collapsed = _collapsed(theme)
         base_at = collapsed.find(MAIN_PIN_CHAIN + " {")
         assert base_at > 0, \
-            f"collapsed {theme} rail must carry the base toggle pin"
+            f"collapsed {theme} rail must carry the base control pin"
         base_rule = collapsed[base_at:base_at + 600]
         assert (f"transition: width {GLIDE} 250ms !important;"
                 in base_rule), \
-            f"base toggle pin ({theme}) must delay the shrink 250ms, " \
+            f"base control pin ({theme}) must delay the shrink 250ms, " \
             f"got {base_rule!r}"
         hover_at = collapsed.find(HOVER_PIN_SEL + " {")
         assert hover_at > 0, \
-            f"collapsed {theme} rail must carry the hover toggle pin"
+            f"collapsed {theme} rail must carry the hover control pin"
         hover_rule = collapsed[hover_at:hover_at + 600]
         assert (f"transition: width {GLIDE} 0ms !important;"
                 in hover_rule), \
-            f"hover toggle pin ({theme}) must expand with no delay, " \
+            f"hover control pin ({theme}) must expand with no delay, " \
             f"got {hover_rule!r}"
         # Second half (probe23): the container ALSO holds 260px
         # while the pointer is on IT — a :hover on the container
         # itself, no :has(). section:hover can drop the moment
-        # the pointer arrives on the toggle (the toggle is a
+        # the pointer arrives on the control (the control is a
         # main-area descendant), closing the flyout before the
         # click lands; the container :hover holds the width
         # regardless, so the button stays under the pointer.
         self_at = collapsed.find(MAIN_PIN_CHAIN + ":hover {")
         assert self_at > 0, \
-            f"collapsed {theme} rail must carry the toggle self-hover rule"
+            f"collapsed {theme} rail must carry the control self-hover rule"
         self_rule = collapsed[self_at:self_at + 500]
         assert "position: fixed !important;" in self_rule, \
-            f"toggle self-hover ({theme}) must restate the fixed pin, " \
+            f"control self-hover ({theme}) must restate the fixed pin, " \
             f"got {self_rule!r}"
         assert "width: 260px !important;" in self_rule, \
-            f"toggle self-hover ({theme}) must hold 260px, got {self_rule!r}"
+            f"control self-hover ({theme}) must hold 260px, got {self_rule!r}"
         assert (f"transition: width {GLIDE} 0ms !important;"
                 in self_rule), \
-            f"toggle self-hover ({theme}) must expand with no delay"
-    print("round 10 toggle pin delayed shrink OK")
+            f"control self-hover ({theme}) must expand with no delay"
+    print("round 10 control pin delayed shrink OK")
 
 
 def test_r10_no_has_in_rail_css():
@@ -240,19 +242,23 @@ def test_r10_no_has_in_rail_css():
 
 def test_r10_collapse_survives_a_rerun(_tmp_env):
     """The collapse still survives a rerun after the pin-transition
-    change (round-9 behaviour, re-pinned: the toggle click flips
-    the session state once and it holds)."""
+    change (round-9 behaviour, re-pinned: the menu pick sets the
+    mode once and it holds). (Clone Round 1: the direct toggle
+    is gone; the menu's radio is the control.)"""
     at = AppTest.from_file(APP)
     at.run()
     _r6.signup(at, "alice10")
     assert at.session_state.get("dcs_rail_collapsed") is True
     _r6.expand_rail(at)
     assert at.session_state.get("dcs_rail_collapsed") is False
-    _r6.find_button_by_key(at, "dcs_rail_toggle").click().run()
+    at.radio(key="dcs_rail_mode_radio").set_value("collapsed").run()
     assert at.session_state.get("dcs_rail_collapsed") is True
+    assert ui_design.rail_mode(at) == "collapsed"
     at.run()
     assert at.session_state.get("dcs_rail_collapsed") is True, \
         "the collapse must survive a further rerun with no interaction"
+    assert ui_design.rail_mode(at) == "collapsed", \
+        "the mode must survive a further rerun with no interaction"
     print("round 10 collapse survives a rerun OK")
 
 
@@ -261,19 +267,22 @@ def test_r10_collapse_survives_a_rerun(_tmp_env):
 # ---------------------------------------------------------------------------
 
 def test_r10_profile_radio_reruns():
-    """The Profile theme callback writes dcs_theme AND reruns at
+    """The Profile theme callback writes the theme AND reruns at
     once (the login toggle's pattern), so the new theme applies
     on the same interaction instead of lagging one run behind.
-    The sibling keys are deliberately NOT written here — the
-    avatar radio + selectbox were already created this run, so
-    writing them would raise; the rerun re-syncs them from
-    dcs_theme at the top of the next run."""
+    The write goes through ui_design.set_theme (clone Round 1),
+    which writes dcs_theme AND the preference together, so the
+    account menu's System/Dark/Light radio agrees. The sibling
+    keys are deliberately NOT written here — the avatar radio +
+    selectbox were already created this run, so writing them
+    would raise; the rerun re-syncs them from dcs_theme at the
+    top of the next run."""
     src = (PROJECT_ROOT / "feat_profile.py").read_text()
     start = src.find("def _on_profile_theme():")
     assert start > 0, "feat_profile must define _on_profile_theme"
     body = src[start:src.find("st.radio(\"Theme\"", start)]
-    assert 'st.session_state["dcs_theme"] = _new' in body, \
-        "the Profile theme callback must write dcs_theme"
+    assert "ui_design.set_theme(st, _new)" in body, \
+        "the Profile theme callback must write the theme via set_theme"
     assert "st.rerun()" in body, \
         "the Profile theme callback must rerun so the theme applies at once"
     print("round 10 Profile radio reruns OK")

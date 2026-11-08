@@ -380,7 +380,10 @@ def render_profile_view(st, user, storage_key, on_logout=None):
                         st.session_state.get(
                             ui_design.PROFILE_THEME_RADIO_KEY,
                             _current_theme))
-                    st.session_state["dcs_theme"] = _new
+                    # set_theme also writes the preference, so the
+                    # account menu's System/Dark/Light radio agrees
+                    # with the resolved theme on the next run.
+                    ui_design.set_theme(st, _new)
                     # Round 10: rerun at once, like the login
                     # toggle. Without it the new theme only
                     # applies on the NEXT run (the stylesheet is
@@ -404,6 +407,47 @@ def render_profile_view(st, user, storage_key, on_logout=None):
                                                 else "Light"),
                          key=ui_design.PROFILE_THEME_RADIO_KEY,
                          on_change=_on_profile_theme,
+                         label_visibility="collapsed")
+
+            # Sidebar behavior — the same 3-way setting as the
+            # rail's bottom control (clone Round 1): Expanded /
+            # Collapsed / Expand on hover. One setting, two
+            # controls, so a pick here and a pick in the rail menu
+            # are the same action.
+            _r = _profile_row(st, "Sidebar behavior",
+                              "How the sidebar opens — expanded, "
+                              "collapsed, or expanding on hover.")
+            with _r:
+                _current_mode = ui_design.rail_mode(st)
+                # Re-sync immediately before creating the radio,
+                # for the same reason as the theme radio above:
+                # the mode may have flipped earlier in this run
+                # (rail menu), and the top-of-run state predates
+                # that flip.
+                st.session_state[ui_design.RAIL_MODE_PROFILE_RADIO_KEY] = (
+                    _current_mode)
+
+                def _on_profile_sidebar_behavior():
+                    _new = ui_design.normalize_rail_mode(
+                        st.session_state.get(
+                            ui_design.RAIL_MODE_PROFILE_RADIO_KEY,
+                            _current_mode))
+                    ui_design.set_rail_mode(st, _new)
+                    # The rail menu's radio is created earlier in
+                    # the run, so its key cannot be written here —
+                    # the rerun re-syncs it from the mode at the
+                    # top of the next run, like the theme radio
+                    # above. The stylesheet is injected at the top
+                    # of the run, so rerun at once for the new
+                    # width to apply on this very run.
+                    st.rerun()
+
+                st.radio("Sidebar behavior",
+                         options=list(ui_design.RAIL_MODES),
+                         format_func=lambda m: (
+                             ui_design.RAIL_MODE_LABELS.get(m, m)),
+                         key=ui_design.RAIL_MODE_PROFILE_RADIO_KEY,
+                         on_change=_on_profile_sidebar_behavior,
                          label_visibility="collapsed")
 
         # (4) Storage usage ----------------------------------------------
