@@ -149,9 +149,14 @@ def test_gap1_collapsed_hides_non_nav_sidebar_content():
     list — the client-mode checkbox, the status pill, the banner,
     the uploader, the expanders, the slicers and any sidebar
     toast. Only the nav-button and toggle wrappers stay visible.
-    The old :has() safety net is gone: it matched the nav buttons
-    too (their direct child is the intermediate help-wrapper div,
-    not another stButton div) and never took effect live. The rule
+    Round 5 removed the old :has() safety net (it matched the nav
+    buttons too and never took effect live); round 8 reintroduces
+    :has() for ONE purpose only — the toggle gate
+    (``:not(:has(.st-key-dcs_rail_toggle:hover))``) that stops
+    the hover overlay re-expanding the rail while the pointer
+    rests on the toggle after a collapse click. Every :has() in
+    the collapsed sheet must be that gate; the denylist itself
+    still hides by explicit testids, never by :has(). The rule
     is collapsed-only: the expanded rail shows every control."""
     denylisted = ("stCheckbox", "stMarkdown", "stMultiSelect",
                   "stDateInput", "stCaption", "stExpander",
@@ -159,8 +164,10 @@ def test_gap1_collapsed_hides_non_nav_sidebar_content():
                   "stTextInput", "stRadio", "stNumberInput")
     for theme in ("light", "dark"):
         css = ui_design.rail_css(collapsed=True, theme=theme)
-        assert ":has(" not in css, \
-            f"collapsed {theme} rail CSS must not use :has() at all"
+        assert css.count(":has(") == css.count(
+            ":has(.st-key-dcs_rail_toggle:hover)"), \
+            f"collapsed {theme} rail CSS must use :has() ONLY in " \
+            "the toggle gate, never as a widget-hiding rule"
         for testid in denylisted:
             assert (f'div[data-testid="{testid}"]' in css), \
                 f"collapsed {theme} rail CSS must hide {testid}"
@@ -295,11 +302,15 @@ def test_gap2_toggle_pinned_to_rail_bottom():
         assert 'div[data-testid="stElementContainer"].st-key-dcs_rail_toggle' \
             in collapsed_css, \
             f"collapsed {theme} rail must pin the toggle by its key class"
-        # Every rule that pins the toggle must be fixed, never
-        # absolute (the hover OVERLAY's absolute is on the content,
-        # not the toggle — that one stays).
+        # Every rule that pins the toggle CONTAINER must be fixed,
+        # never absolute (the hover OVERLAY's absolute is on the
+        # content, not the toggle — that one stays). Round 8 gates
+        # the overlay on the toggle, so the overlay rule's
+        # selector MENTIONS the toggle key inside :has() without
+        # being a pin rule — only rules whose selector targets
+        # the toggle's element container count here.
         for rule in collapsed_css.split("}"):
-            if "st-key-dcs_rail_toggle" in rule:
+            if 'stElementContainer"].st-key-dcs_rail_toggle' in rule:
                 assert "position: fixed !important" in rule, \
                     f"collapsed {theme} toggle pin must be fixed, got {rule!r}"
                 assert "position: absolute !important" not in rule, \
@@ -315,7 +326,7 @@ def test_gap2_toggle_pinned_to_rail_bottom():
         assert "bottom: 0 !important" in expanded_css, \
             f"expanded {theme} rail must pin the toggle to the bottom"
         for rule in expanded_css.split("}"):
-            if "st-key-dcs_rail_toggle" in rule:
+            if 'stElementContainer"].st-key-dcs_rail_toggle' in rule:
                 assert "position: fixed !important" in rule, \
                     f"expanded {theme} toggle pin must be fixed, got {rule!r}"
                 assert "position: absolute !important" not in rule, \

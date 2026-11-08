@@ -540,6 +540,8 @@ section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid=
   background-color: #ffffff !important; color: #030303 !important;
   border: 1px solid #e5e5e5 !important;
   width: 100% !important; justify-content: flex-start !important; }
+section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"]:hover {
+  background-color: #f8f8f8 !important; }
 section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"] * {
   color: #030303 !important; }
 section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"]:disabled {
@@ -1138,6 +1140,8 @@ section[data-testid="stSidebar"] div[data-testid="stButton"] button {
   width: 100%; justify-content: flex-start;
   background-color: #232625 !important; color: #edefee !important;
   border: 1px solid #363636 !important; }
+section[data-testid="stSidebar"] div[data-testid="stButton"] button:hover {
+  background-color: #262928 !important; }
 section[data-testid="stSidebar"] div[data-testid="stButton"] button * {
   color: #edefee !important; }
 section[data-testid="stSidebar"] div[data-testid="stButton"] button:disabled {
@@ -1167,12 +1171,19 @@ div[data-testid="stVerticalBlock"] > div:has(.dcs-danger-zone) ~ div div[data-te
    Pin the text bright and the panel one step lighter than the
    card, so the field still reads as disabled but the value is
    legible. Dark theme only — the light Profile passes and is
-   untouched. ---- */
+   untouched. The ``color`` pin alone is NOT enough: Chromium
+   paints disabled input text with ``-webkit-text-fill-color``,
+   not ``color`` — the round-7 real-DOM probe read computed
+   ``color`` (#edefee, correct) and missed that the fill sat at
+   rgba(3,3,3,0.4), so the fields stayed dim live. The fill
+   pin below is the actual fix (round-8 probe). ---- */
 .stApp input:disabled, .stApp textarea:disabled, .stApp select:disabled {
-  color: #edefee !important; background-color: #2a2d2c !important;
+  color: #edefee !important; -webkit-text-fill-color: #edefee !important;
+  background-color: #2a2d2c !important;
   border-color: #363636 !important; opacity: 1 !important; }
 div[data-testid="stTextInput"] input:disabled {
-  color: #edefee !important; background-color: #2a2d2c !important; }
+  color: #edefee !important; -webkit-text-fill-color: #edefee !important;
+  background-color: #2a2d2c !important; }
 /* ---- checkboxes: hairline box border, bright green check ---- */
 .stApp input[type="checkbox"] { accent-color: #4acd8b; }
 div[data-testid="stCheckbox"] div[data-baseweb="checkbox"] span {
@@ -1950,6 +1961,32 @@ def rail_css(collapsed: bool, theme) -> str:
     moves) and only its content (``stSidebarContent``) becomes an
     absolutely-positioned 260px panel above the content.
 
+    Round 8 (2026-11-08) — three live failures, all proven in the
+    real DOM, not the synthetic one: (1) the hover only triggered
+    on a narrow strip of the rail live, though the local probe
+    shows it firing everywhere (the section is full-height and
+    ``elementFromPoint`` returns sidebar elements at every y, with
+    and without a file loaded) — the trigger is hardened with a
+    rest z-index on the section so nothing above it can steal
+    pointer events; (2) the collapse did not stick: after a
+    collapse click the pointer rests on the toggle, so the ungated
+    ``:hover`` re-expanded the overlay instantly and the sidebar
+    "re-expanded within a few seconds" into a hybrid 260px panel
+    showing only the nav buttons — the hover-expand rules are now
+    gated on the toggle (``:not(:has(.st-key-dcs_rail_toggle:hover))``)
+    and the hiding rules use the matching ``:is()`` condition, so
+    hovering the toggle leaves the rail collapsed and the mounted
+    widgets stay hidden there; (3) the fixed toggle bar stretched
+    to the full viewport width (1920px) because the wide-state
+    ``width: 100%`` container rule at (0,3,3) beat the pin rule
+    at (0,3,2) — the pin selector now carries the full ancestor
+    chain at (0,5,4) and the container rules exclude the toggle
+    explicitly. The Profile dark disabled-field fix is in the dark
+    sheet, not here: Chromium paints disabled input text with
+    ``-webkit-text-fill-color``, not ``color`` — the round-7 probe
+    read computed ``color`` (#edefee, correct) and missed that the
+    fill sat at rgba(3,3,3,0.4).
+
     For the hover to reveal the labels, the nav labels are always
     rendered (sidebar_nav) — the hover overlay shows them. The
     non-nav controls are NOT in the DOM while collapsed: app.py
@@ -2039,13 +2076,37 @@ def rail_css(collapsed: bool, theme) -> str:
     # collapsed into one overlapping stack (caught by the
     # round-7 real-DOM probe — the expanded sidebar rendered
     # empty except for the toggle).
-    def _toggle_pin_rules(width, hover=False):
+    # The pin selector carries the FULL ancestor chain
+    # (section > user content > vertical block > element
+    # container, all descendant combinators — the intermediate
+    # plain div between the user content and the block is
+    # skipped over, never a ``>``): specificity (0,5,4). That
+    # matters because the wide-state rules below force element
+    # containers to ``width: 100% !important`` at specificity
+    # (0,3,3) — with the old (0,3,2) pin selector the 100% rule
+    # WON, so the fixed toggle bar stretched to the full
+    # viewport width (1920px, button 1896px) instead of living
+    # inside the 260px sidebar column (round-8 live failure).
+    # The wide-state container rules also exclude the toggle
+    # explicitly (:not(.st-key-dcs_rail_toggle)) — belt and
+    # braces, so the pin width is the only width the toggle
+    # container ever gets.
+    # The hover variant takes ``gated=True``: the 260px hover
+    # pin must NOT apply while the pointer is on the toggle
+    # itself (see the hover gate below) — otherwise the toggle
+    # bar would stick out of the 60px rail while the content
+    # stays collapsed.
+    def _toggle_pin_rules(width, hover=False, gated=False):
+        _chain = ('div[data-testid="stSidebarUserContent"] '
+                  'div[data-testid="stVerticalBlock"] '
+                  'div[data-testid="stElementContainer"]'
+                  '.st-key-dcs_rail_toggle')
+        _gate = (':not(:has(.st-key-dcs_rail_toggle:hover))'
+                 if gated else '')
         _sel = (
-            'section[data-testid="stSidebar"]:hover '
-            'div[data-testid="stElementContainer"].st-key-dcs_rail_toggle {'
+            f'section[data-testid="stSidebar"]:hover{_gate} {_chain} {{'
             if hover else
-            'section[data-testid="stSidebar"] '
-            'div[data-testid="stElementContainer"].st-key-dcs_rail_toggle {')
+            f'section[data-testid="stSidebar"] {_chain} {{')
         return [
             _sel,
             "  margin-top: 0 !important; position: fixed !important;",
@@ -2059,6 +2120,18 @@ def rail_css(collapsed: bool, theme) -> str:
         "/* ---- sidebar rail: Supabase icon rail / labelled sidebar ---- */",
         'section[data-testid="stSidebar"] {',
         f"  width: {_width} !important; min-width: {_width} !important;",
+        # The section carries a rest z-index (1000; the hover
+        # overlay lifts it to 1000000): at rest the rail sat at
+        # z-index auto, so anything painted above it could steal
+        # pointer events from the rail and the hover would never
+        # fire — the round-8 live check saw the hover trigger on
+        # only a narrow strip of the rail, and the local real-DOM
+        # probe could not reproduce it (the section is full-height
+        # and hover fires everywhere locally), so the trigger is
+        # hardened here rather than debugged further: the section
+        # is above the main area at rest, and the hover rules
+        # below are the only thing that expands it.
+        "  z-index: 1000 !important;",
         f"  max-width: {_width} !important; flex: 0 0 {_width} !important;",
         f"  transition: transform {_ease},",
         f"    min-width {_ease},",
@@ -2114,6 +2187,46 @@ def rail_css(collapsed: bool, theme) -> str:
         # rule wins the cascade.
     ] + _toggle_pin_rules(_width)
     if collapsed:
+        # Two shared selector prefixes for the collapsed branch.
+        # _hover — the hover-EXPAND trigger, gated on the toggle:
+        # the overlay expands when the section is hovered AND the
+        # pointer is NOT on the toggle itself. The gate is the
+        # round-8 collapse fix: after a collapse click the pointer
+        # rests on the toggle (bottom of the rail), so an ungated
+        # :hover would re-expand the overlay instantly and the
+        # collapse would never stick — the live check saw the
+        # sidebar "re-expand within a few seconds" into a hybrid
+        # 260px panel showing only the nav buttons (the overlay in
+        # collapsed state, non-nav widgets not in the DOM). With
+        # the gate, hovering the toggle leaves the rail collapsed;
+        # moving the pointer up to the nav icons expands it. The
+        # toggle strip (~52px at the bottom) is the one part of
+        # the rail that does not trigger the expand — it is a
+        # control, not rail content, and expanding from it would
+        # undo the click that just landed on it.
+        # _hidden — the "rail looks collapsed" condition for the
+        # hiding rules: the pointer is away from the rail, OR it
+        # is on the toggle (in which case the overlay is NOT
+        # expanded, so the mounted widgets would squeeze into the
+        # 60px rail as vertical one-letter text if they showed).
+        # :has() is supported in Chromium since 105 (the live
+        # checker's browser and every modern browser); the 5028aa3
+        # note that ":has() never took effect live" was a
+        # hypothesis, never proven — that safety net also hid the
+        # nav buttons by construction. The gate is verified in
+        # the round-8 real-DOM probe (hover the toggle: content
+        # stays 60px; hover a nav icon: 260px) and the live check
+        # is the final proof.
+        # NOTE: this REDEFINES _hover — above this point _hover
+        # was the hover-WASH token (_tokens["hover"]); below it
+        # _hover is the gated hover selector. Any value below
+        # that needs the wash token must read _tokens["hover"]
+        # directly (a round-8 regression shipped the selector
+        # as the wash background until the rail tests caught it).
+        _hover = ('section[data-testid="stSidebar"]:hover'
+                  ':not(:has(.st-key-dcs_rail_toggle:hover))')
+        _hidden = ('section[data-testid="stSidebar"]:is(:not(:hover), '
+                   ':has(.st-key-dcs_rail_toggle:hover))')
         _deny = [
             # DESCENDANT selectors throughout: the 8b4dd04 denylist
             # used ``stSidebarUserContent > stVerticalBlock >
@@ -2125,18 +2238,18 @@ def rail_css(collapsed: bool, theme) -> str:
             # form hid every non-nav widget in the real-DOM probe
             # (selectbox, markdowns, uploader, checkbox, alert all
             # display:none, nav button still visible).
-            'section[data-testid="stSidebar"]:not(:hover) div[data-testid="stVerticalBlock"] div[data-testid="stCheckbox"],',
-            'section[data-testid="stSidebar"]:not(:hover) div[data-testid="stVerticalBlock"] div[data-testid="stMarkdown"],',
-            'section[data-testid="stSidebar"]:not(:hover) div[data-testid="stVerticalBlock"] div[data-testid="stMultiSelect"],',
-            'section[data-testid="stSidebar"]:not(:hover) div[data-testid="stVerticalBlock"] div[data-testid="stDateInput"],',
-            'section[data-testid="stSidebar"]:not(:hover) div[data-testid="stVerticalBlock"] div[data-testid="stCaption"],',
-            'section[data-testid="stSidebar"]:not(:hover) div[data-testid="stVerticalBlock"] div[data-testid="stExpander"],',
-            'section[data-testid="stSidebar"]:not(:hover) div[data-testid="stVerticalBlock"] div[data-testid="stFileUploader"],',
-            'section[data-testid="stSidebar"]:not(:hover) div[data-testid="stVerticalBlock"] div[data-testid="stSelectbox"],',
-            'section[data-testid="stSidebar"]:not(:hover) div[data-testid="stVerticalBlock"] div[data-testid="stAlert"],',
-            'section[data-testid="stSidebar"]:not(:hover) div[data-testid="stVerticalBlock"] div[data-testid="stTextInput"],',
-            'section[data-testid="stSidebar"]:not(:hover) div[data-testid="stVerticalBlock"] div[data-testid="stRadio"],',
-            'section[data-testid="stSidebar"]:not(:hover) div[data-testid="stVerticalBlock"] div[data-testid="stNumberInput"] {',
+            f'{_hidden} div[data-testid="stVerticalBlock"] div[data-testid="stCheckbox"],',
+            f'{_hidden} div[data-testid="stVerticalBlock"] div[data-testid="stMarkdown"],',
+            f'{_hidden} div[data-testid="stVerticalBlock"] div[data-testid="stMultiSelect"],',
+            f'{_hidden} div[data-testid="stVerticalBlock"] div[data-testid="stDateInput"],',
+            f'{_hidden} div[data-testid="stVerticalBlock"] div[data-testid="stCaption"],',
+            f'{_hidden} div[data-testid="stVerticalBlock"] div[data-testid="stExpander"],',
+            f'{_hidden} div[data-testid="stVerticalBlock"] div[data-testid="stFileUploader"],',
+            f'{_hidden} div[data-testid="stVerticalBlock"] div[data-testid="stSelectbox"],',
+            f'{_hidden} div[data-testid="stVerticalBlock"] div[data-testid="stAlert"],',
+            f'{_hidden} div[data-testid="stVerticalBlock"] div[data-testid="stTextInput"],',
+            f'{_hidden} div[data-testid="stVerticalBlock"] div[data-testid="stRadio"],',
+            f'{_hidden} div[data-testid="stVerticalBlock"] div[data-testid="stNumberInput"] {{',
             "  display: none !important; }",
         ]
         _css += [
@@ -2157,10 +2270,14 @@ def rail_css(collapsed: bool, theme) -> str:
             # above the page. No rerun, no remount: the width
             # transition on the content is the real 0.2s glide.
             # The section's z-index lifts the overlay above the
-            # main area; the shadow is the overlay's depth.
+            # main area; the shadow is the overlay's depth. The
+            # expand rules are gated on the toggle (see _hover
+            # above): hovering the toggle itself must not expand,
+            # or the collapse click's pointer would re-expand the
+            # overlay the instant the rerun renders collapsed.
             'section[data-testid="stSidebar"]:hover {',
             "  z-index: 1000000 !important; }",
-            'section[data-testid="stSidebar"]:hover div[data-testid="stSidebarContent"] {',
+            f'{_hover} div[data-testid="stSidebarContent"] {{',
             "  position: absolute !important; left: 0 !important;",
             "  top: 0 !important; bottom: 0 !important;",
             "  width: 260px !important; max-width: 260px !important;",
@@ -2172,40 +2289,45 @@ def rail_css(collapsed: bool, theme) -> str:
             # content-sized ~100px box), and the toggle pins FIXED
             # at the overlay's 260px width. The vertical block
             # carries bottom padding so the last content row can
-            # scroll above the fixed toggle.
-            'section[data-testid="stSidebar"]:hover div[data-testid="stVerticalBlock"] {',
+            # scroll above the fixed toggle. The toggle's own
+            # container is excluded from the full-width rule (it
+            # has its own pin width — see _toggle_pin_rules).
+            f'{_hover} div[data-testid="stVerticalBlock"] {{',
             "  padding-bottom: 56px !important; }",
-            'section[data-testid="stSidebar"]:hover div[data-testid="stVerticalBlock"] div[data-testid="stElementContainer"],',
-            'section[data-testid="stSidebar"]:hover div[data-testid="stVerticalBlock"] div[data-testid="stLayoutWrapper"] {',
+            f'{_hover} div[data-testid="stVerticalBlock"] div[data-testid="stElementContainer"]:not(.st-key-dcs_rail_toggle),',
+            f'{_hover} div[data-testid="stVerticalBlock"] div[data-testid="stLayoutWrapper"] {{',
             "  width: 100% !important; align-self: stretch !important; }",
             # Hover-expanded rows read left-aligned like the
             # pinned-expanded ones: the collapsed branch's button
             # rule centres them (icon-only rail), and it would win
             # over the base sheet's flex-start here.
-            'section[data-testid="stSidebar"]:hover div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"] {',
+            f'{_hover} div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"] {{',
             "  justify-content: flex-start !important; }",
-        ] + _toggle_pin_rules(RAIL_WIDTH_EXPANDED, hover=True) + [
-            # Hiding, collapsed and NOT hovered (the denylist): every
-            # non-nav child of the vertical block is hidden — the
-            # client-mode checkbox, the slicers, the uploader, the
-            # expanders, the theme selectbox, the status pill and
-            # any sidebar alert. The widgets stay mounted (their
-            # values survive); only the nav rows + toggle stay
-            # visible. Explicit testids, NO :has(): the 5028aa3
-            # safety net used :has() and never took effect live —
-            # and, per the bundle, it would have hidden the nav
-            # buttons too (their direct child is the intermediate
-            # help-wrapper div, not another stButton div).
+        ] + _toggle_pin_rules(RAIL_WIDTH_EXPANDED, hover=True,
+                               gated=True) + [
+            # Hiding, collapsed and visually collapsed (the
+            # denylist): every non-nav child of the vertical block
+            # is hidden — the client-mode checkbox, the slicers,
+            # the uploader, the expanders, the theme selectbox,
+            # the status pill and any sidebar alert. The widgets
+            # stay mounted (their values survive); only the nav
+            # rows + toggle stay visible. Explicit testids, all
+            # DESCENDANT selectors (no ``>`` — see the 8b4dd04
+            # note above). The hiding condition is _hidden: the
+            # pointer is away from the rail, OR it is on the
+            # toggle (overlay not expanded, so a shown widget
+            # would squeeze into the 60px rail as vertical
+            # one-letter text).
         ] + _deny + [
             # Non-nav sidebar buttons (sample, load sheet): they
             # carry no help=, so Streamlit renders their <button>
             # as a DIRECT child of the wrapper — unlike nav/toggle
             # buttons, which have the help-wrapper div in between.
-            # Hide the direct-child button when collapsed and not
-            # hovered; the nav + toggle keep showing.
-            'section[data-testid="stSidebar"]:not(:hover) div[data-testid="stVerticalBlock"] div[data-testid="stButton"] > button {',
+            # Hide the direct-child button when the rail is
+            # visually collapsed; the nav + toggle keep showing.
+            f'{_hidden} div[data-testid="stVerticalBlock"] div[data-testid="stButton"] > button {{',
             "  display: none !important; }",
-            # Nav labels, collapsed and not hovered: the label text
+            # Nav labels, visually collapsed: the label text
             # lives in a <span style="display: contents"> inside
             # the button (the only span Streamlit renders with that
             # inline style), so hiding it leaves the icon alone in
@@ -2213,8 +2335,8 @@ def rail_css(collapsed: bool, theme) -> str:
             # label shows. Both serialisations of the inline style
             # are covered (React may or may not put a space after
             # the colon).
-            'section[data-testid="stSidebar"]:not(:hover) div[data-testid="stButton"] button span[style*="display: contents"],',
-            'section[data-testid="stSidebar"]:not(:hover) div[data-testid="stButton"] button span[style*="display:contents"] {',
+            f'{_hidden} div[data-testid="stButton"] button span[style*="display: contents"],',
+            f'{_hidden} div[data-testid="stButton"] button span[style*="display:contents"] {{',
             "  display: none !important; }",
             'section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"] {',
             "  width: 100% !important; height: 36px !important;",
@@ -2226,7 +2348,7 @@ def rail_css(collapsed: bool, theme) -> str:
             'section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"] * {',
             f"  color: {_ink} !important; }}",
             'section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"]:hover {',
-            f"  background-color: {_hover} !important;",
+            f"  background-color: {_tokens['hover']} !important;",
             "  border: none !important; }",
             'section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"]:disabled {',
             f"  background-color: {_active} !important;",
@@ -2243,9 +2365,16 @@ def rail_css(collapsed: bool, theme) -> str:
             # vertical block carries bottom padding so the last
             # content row can scroll above it. The element
             # containers go full-width (the expanded-pill fix).
+            # The toggle's own container is excluded: it has its
+            # own pin width (260px here) — without the exclusion
+            # the 100% rule beat the pin at (0,3,3) vs (0,3,2)
+            # and the fixed toggle bar stretched to the full
+            # viewport width (round-8 live failure). The pin
+            # selector now also carries the full ancestor chain
+            # at (0,5,4), so both defences hold the pin width.
             'section[data-testid="stSidebar"] div[data-testid="stVerticalBlock"] {',
             "  padding-bottom: 56px !important; }",
-            'section[data-testid="stSidebar"] div[data-testid="stVerticalBlock"] div[data-testid="stElementContainer"],',
+            'section[data-testid="stSidebar"] div[data-testid="stVerticalBlock"] div[data-testid="stElementContainer"]:not(.st-key-dcs_rail_toggle),',
             'section[data-testid="stSidebar"] div[data-testid="stVerticalBlock"] div[data-testid="stLayoutWrapper"] {',
             "  width: 100% !important; align-self: stretch !important; }",
         ]

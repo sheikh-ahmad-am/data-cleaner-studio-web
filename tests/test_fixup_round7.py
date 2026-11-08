@@ -213,7 +213,12 @@ def test_r7_hover_glide_is_visibly_gradual():
     width (a transition from auto never interpolates — the 8b4dd04
     snap), the hover width is 260px, and the ease is 250ms
     (real-DOM probe: 60 -> 213 -> 252 -> 259 -> 260px across 40ms
-    samples — visibly gradual, not a snap)."""
+    samples — visibly gradual, not a snap). Round 8 gates the
+    hover trigger on the toggle (``:not(:has(...))`` — hovering
+    the toggle must not expand, or the collapse click's pointer
+    would re-expand the overlay instantly), so the overlay rule
+    is the GATED form and no ungated hover-content rule may
+    remain."""
     for theme in ("light", "dark"):
         css = ui_design.rail_css(True, theme)
         assert "width: 60px" in css, \
@@ -222,9 +227,16 @@ def test_r7_hover_glide_is_visibly_gradual():
         assert "250ms cubic-bezier(0.4,0,0.2,1)" in css, \
             f"collapsed {theme} rail must glide on the proven " \
             "250ms ease"
-        assert 'section[data-testid="stSidebar"]:hover ' \
+        assert 'section[data-testid="stSidebar"]:hover' \
+            ':not(:has(.st-key-dcs_rail_toggle:hover)) ' \
             'div[data-testid="stSidebarContent"]' in css, \
-            f"collapsed {theme} rail must carry the hover overlay rule"
+            f"collapsed {theme} rail must carry the gated hover " \
+            "overlay rule"
+        assert 'section[data-testid="stSidebar"]:hover ' \
+            'div[data-testid="stSidebarContent"]' not in css, \
+            f"collapsed {theme} rail must not carry an ungated " \
+            "hover overlay rule (it would re-expand on the " \
+            "toggle hover right after a collapse click)"
         assert "width: 260px" in css, \
             f"collapsed {theme} rail must expand to 260px on hover"
     print("round 7 hover glide is gradual OK")
@@ -497,14 +509,22 @@ def test_r7_dark_disabled_inputs_rule_still_present():
     """Pin: the dark disabled-input rule (Profile's read-only
     Primary email + Username) is still in the dark sheet with the
     exact values the real-DOM probe measured live (#edefee text on
-    #2a2d2c). The live miss was the theme-flip transient, not the
-    rule — the rule must not regress."""
+    #2a2d2c). Round 7's probe read computed ``color`` and called
+    the rule proven — round 8 proved that WRONG: Chromium paints
+    disabled input text with ``-webkit-text-fill-color``, which
+    sat at rgba(3,3,3,0.4), so the fields stayed dim live
+    despite the correct ``color``. The fill pin below is the
+    actual fix, and this test now pins it too — the rule must
+    not regress."""
     assert ".stApp input:disabled" in ui_design.DARK_CSS, \
         "dark sheet must carry the disabled-input rule"
     assert "color: #edefee !important" in ui_design.DARK_CSS, \
         "dark disabled inputs must pin bright #edefee text"
     assert "background-color: #2a2d2c !important" in ui_design.DARK_CSS, \
         "dark disabled inputs must pin the #2a2d2c panel"
+    assert "-webkit-text-fill-color: #edefee !important" in ui_design.DARK_CSS, \
+        "dark disabled inputs must pin the fill colour Chromium " \
+        "actually paints with — color alone leaves them dim live"
     print("round 7 dark disabled-input rule pinned OK")
 
 

@@ -241,6 +241,8 @@ section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid=
   background-color: #ffffff !important; color: #030303 !important;
   border: 1px solid #e5e5e5 !important;
   width: 100% !important; justify-content: flex-start !important; }
+section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"]:hover {
+  background-color: #f8f8f8 !important; }
 section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"] * {
   color: #030303 !important; }
 section[data-testid="stSidebar"] div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"]:disabled {

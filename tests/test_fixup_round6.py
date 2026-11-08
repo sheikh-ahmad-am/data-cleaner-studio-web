@@ -270,17 +270,26 @@ def test_r6_labels_and_controls_in_dom_when_collapsed(_tmp_env):
 
 def test_r6_denylist_hides_controls_not_nav():
     """Collapsed rail CSS hides every non-button sidebar child with
-    an explicit testid denylist (no :has() — the old safety net
-    matched the nav buttons too and never took effect live). The
-    expanded rail shows every control."""
+    an explicit testid denylist. Round 6 banned :has() outright —
+    the old safety net matched the nav buttons too and never took
+    effect live. Round 8 reintroduces :has() for ONE purpose only:
+    the toggle gate (``:not(:has(.st-key-dcs_rail_toggle:hover))``)
+    that stops the hover overlay re-expanding the rail while the
+    pointer rests on the toggle after a collapse click, and the
+    matching :is() hidden condition. Every :has() in the collapsed
+    sheet must be that gate — the denylist itself still hides by
+    explicit testids, never by :has(). The expanded rail shows
+    every control."""
     denylisted = ("stCheckbox", "stMarkdown", "stMultiSelect",
                   "stDateInput", "stCaption", "stExpander",
                   "stFileUploader", "stSelectbox", "stAlert",
                   "stTextInput", "stRadio", "stNumberInput")
     for theme in ("light", "dark"):
         css = ui_design.rail_css(collapsed=True, theme=theme)
-        assert ":has(" not in css, \
-            f"collapsed {theme} rail CSS must not use :has() at all"
+        assert css.count(":has(") == css.count(
+            ":has(.st-key-dcs_rail_toggle:hover)"), \
+            f"collapsed {theme} rail CSS must use :has() ONLY in " \
+            "the toggle gate, never as a widget-hiding rule"
         for testid in denylisted:
             assert f'div[data-testid="{testid}"]' in css, \
                 f"collapsed {theme} rail CSS must hide {testid}"
