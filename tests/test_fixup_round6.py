@@ -140,6 +140,15 @@ def nav_buttons(at):
             if (b.key or "").startswith("dcs_nav_")]
 
 
+def expand_rail(at):
+    """Pin the rail open (click the toggle): the non-nav sidebar
+    controls only render when pinned open (round 7), so tests that
+    need the sample button / uploader / slicers must expand first."""
+    find_button_by_key(at, "dcs_rail_toggle").click().run()
+    assert at.session_state.get("dcs_rail_collapsed") is False, \
+        "the rail must be pinned open after clicking the toggle"
+
+
 def topbar_left(at):
     """The top-bar left markdown element (the brand + title/crumb)."""
     return next(v for v in vals(at.markdown)
@@ -213,11 +222,18 @@ def test_r6_hover_glide_is_client_side():
 # ---------------------------------------------------------------------------
 
 def test_r6_labels_and_controls_in_dom_when_collapsed(_tmp_env):
-    """The hover expand needs the labels AND the expanded-sidebar
-    controls in the DOM while collapsed — the rail CSS hides them
-    when collapsed-and-not-hovered and reveals them on hover, with
-    no rerun. The 5028aa3 choice (empty labels, controls not
-    rendered when collapsed) made the hover expand impossible."""
+    """Round 7 REVERSED this test's round-6 expectation. The hover
+    expand needs only the NAV labels in the DOM while collapsed —
+    the rail CSS hides them when collapsed-and-not-hovered and
+    reveals them on hover. The non-nav controls (theme selectbox,
+    file uploader, sample button, client-mode checkbox) are NOT
+    rendered while collapsed: app.py guards them on the rail state,
+    because what is not in the DOM cannot render as vertical
+    one-letter text (the 8b4dd04 live failure — "Theme", the status
+    pill, the uploader and the checkbox all squeezed into
+    single-letter columns despite a CSS denylist). They reappear
+    when the rail is pinned open; their values persist in session
+    state across the collapse."""
     at = AppTest.from_file(APP)
     at.run()
     signup(at, "alice1")
@@ -226,19 +242,30 @@ def test_r6_labels_and_controls_in_dom_when_collapsed(_tmp_env):
     rows = nav_buttons(at)
     assert [b.label for b in rows] == [NAV_LABELS[k] for k in NAV_ORDER], \
         "collapsed rail must carry all 12 nav labels in the DOM"
-    assert list(at.sidebar.selectbox), \
-        "collapsed rail must render the theme selectbox in the DOM"
-    assert list(at.sidebar.file_uploader), \
-        "collapsed rail must render the file uploader in the DOM"
-    assert any(b.label == "Try the messy sample" for b in at.button), \
-        "collapsed rail must render the sidebar sample button in the DOM"
-    assert any(c.label == "Client mode (simple view)"
-               for c in at.sidebar.checkbox), \
-        "collapsed rail must render the client-mode checkbox in the DOM"
+    assert not list(at.sidebar.selectbox), \
+        "collapsed rail must NOT render the theme selectbox"
+    assert not list(at.sidebar.file_uploader), \
+        "collapsed rail must NOT render the file uploader"
+    assert not any(b.label == "Try the messy sample" for b in at.button), \
+        "collapsed rail must NOT render the sidebar sample button"
+    assert not any(c.label == "Client mode (simple view)"
+                   for c in at.sidebar.checkbox), \
+        "collapsed rail must NOT render the client-mode checkbox"
     toggle = find_button_by_key(at, "dcs_rail_toggle")
     assert toggle.label == "" and toggle.help == "Expand sidebar", \
         "collapsed rail must show the expand toggle"
-    print("round 6 labels + controls in DOM when collapsed OK")
+    # Pin it open: the controls come back.
+    expand_rail(at)
+    assert list(at.sidebar.selectbox), \
+        "pinned-open rail must render the theme selectbox"
+    assert list(at.sidebar.file_uploader), \
+        "pinned-open rail must render the file uploader"
+    assert any(b.label == "Try the messy sample" for b in at.button), \
+        "pinned-open rail must render the sidebar sample button"
+    assert any(c.label == "Client mode (simple view)"
+               for c in at.sidebar.checkbox), \
+        "pinned-open rail must render the client-mode checkbox"
+    print("round 6/7 collapsed rail: nav only in DOM, controls on expand OK")
 
 
 def test_r6_denylist_hides_controls_not_nav():
@@ -280,8 +307,20 @@ def test_r6_denylist_hides_controls_not_nav():
             f"collapsed {theme} rail CSS must hide no-help buttons"
     for theme in ("light", "dark"):
         css = ui_design.rail_css(collapsed=False, theme=theme)
-        assert "display: none !important" not in css, \
-            f"expanded {theme} rail must show every sidebar control"
+        # The expanded rail hides none of the denylisted controls —
+        # but it DOES hide Streamlit's native top "«" collapse
+        # control (round 7: the rail collapses to the 60px icon
+        # rail, never to 0px). So the only display:none allowed in
+        # the expanded sheet is that one control.
+        for rule in css.split("}"):
+            if "display: none !important" in rule:
+                selector = rule.split("{")[0]
+                for testid in denylisted:
+                    assert f'div[data-testid="{testid}"]' not in selector, \
+                        f"expanded {theme} rail must not hide {testid}"
+                assert "stSidebarCollapseButton" in selector, \
+                    f"expanded {theme} rail must only hide the native " \
+                    f"collapse control: {selector!r}"
     print("round 6 denylist OK")
 
 
@@ -394,6 +433,7 @@ def test_r6_breadcrumb_file_only_or_page_only(_tmp_env):
     at = AppTest.from_file(APP)
     at.run()
     signup(at, "alice1")
+    expand_rail(at)  # round 7: the sample button only renders pinned open
     # No file: title (page name) only, no crumb.
     left0 = topbar_left(at)
     assert "dcs-topbar-crumb" not in left0, \
@@ -441,6 +481,7 @@ def test_r6_branded_spinner_on_sample_path(_tmp_env, monkeypatch):
     at = AppTest.from_file(APP)
     at.run()
     signup(at, "alice1")
+    expand_rail(at)  # round 7: the sample button only renders pinned open
     find_button(at, "Try the messy sample", key="sample_btn").click().run()
     assert not at.exception, f"exception loading sample: {at.exception}"
     assert at.session_state.get("raw") is not None, \

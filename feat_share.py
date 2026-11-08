@@ -102,11 +102,20 @@ import storage
 
 try:
     from ui_design import column_type_label as _column_type_label
+    from ui_design import info_card as _info_card
 except Exception:  # noqa: BLE001 - ui_design is presentation-only
     def _column_type_label(name, dtype):
         return (f'<span class="dcs-coltype">{html.escape(str(name))} '
                 f'<span class="dcs-coltype-kind">'
                 f"{html.escape(str(dtype))}</span></span>")
+
+    def _info_card(text, st_module=None):
+        _st = st_module or st
+        _st.markdown(
+            '<div style="background:#ffffff;border:1px solid #e8e8e8;'
+            'border-radius:12px;padding:1rem 1.25rem;">'
+            f"{html.escape(str(text))}</div>",
+            unsafe_allow_html=True)
 
 __all__ = [
     "suggest_fixes", "apply_suggestion",
@@ -1385,8 +1394,9 @@ def render_recent(st, df=None, source_name="", raw_bytes=None, base_dir=None,
                            "will appear in Recent files below.")
     entries = list_recent(base_dir)
     if not entries:
-        st.info("No recent files yet. Tick 'Keep a copy for quick reopen' "
-                "when you load a file and it will appear here.")
+        _info_card("No recent files yet. Tick 'Keep a copy for quick "
+                   "reopen' when you load a file and it will appear "
+                   "here.")
         return None
     for i, entry in enumerate(entries):
         st.write(f"**{entry['name']}** — {entry.get('when', '')} — "

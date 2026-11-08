@@ -408,6 +408,12 @@ div[data-baseweb="menu"] li[role="option"]:hover {
 div[data-testid="stAlert"], div[data-testid="stAlert"] * {
   color: #030303 !important; }
 div[data-testid="stAlert"] a { color: #117f50 !important; }
+/* ---- info boxes ONLY: no sky-blue ---- */
+div[data-testid="stAlert"]:has(div[data-testid="stAlertContentInfo"]) div[data-testid="stAlertContainer"] {
+  background-color: #ffffff !important; border: 1px solid #e8e8e8 !important;
+  border-radius: 12px !important; }
+div[data-testid="stAlert"]:has(div[data-testid="stAlertContentInfo"]) div[data-testid="stAlertContentInfo"] {
+  border: none !important; background-color: transparent !important; }
 /* ---- pills: fully rounded, uppercase ~10px, letterspaced ---- */
 .dcs-pill { display: inline-block; font-size: 10px; font-weight: 600;
   letter-spacing: 0.08em; text-transform: uppercase;
@@ -838,7 +844,8 @@ def _render_shared_dashboard(snapshot: dict) -> None:
         except Exception:  # noqa: BLE001 - a bad snapshot must still render
             st.write(rows)
     else:
-        st.info("This shared dashboard has no chart data saved in it.")
+        ui_design.info_card(
+            "This shared dashboard has no chart data saved in it.")
 
 
 _share_token = None
@@ -1514,7 +1521,7 @@ if _current_user is None:
             ui_design.render_login_theme_toggle()
         banner = auth.get_local_mode_banner()
         if banner:
-            st.info(banner)
+            ui_design.info_card(banner)
         warning = auth.get_backend_warning()
         if warning:
             st.warning(warning)
@@ -1722,14 +1729,14 @@ if not st.session_state.get("a_recipes"):
         st.session_state["a_recipes"] = _saved_recipes
 
 # ------------------------------------------------------- language + title ---
-# The language picker widget (key "n_lang_pick", in
-# feat_enrich.render_language_picker) only runs later in this script,
-# after the top bar — but its value is already in session state at
-# the top of the run. Read it HERE, before the top bar renders:
-# otherwise the top bar (and every label built from _lang) shows the
-# previous language for one run after a switch. The label->code map
-# below mirrors the picker's options dict — if the picker ever
-# changes its labels, this map must change with it.
+# The language picker widget (key "n_lang_pick", in the avatar
+# menu — ui_design.render_avatar_menu) only runs later in this
+# script, after the top bar — but its value is already in session
+# state at the top of the run. Read it HERE, before the top bar
+# renders: otherwise the top bar (and every label built from _lang)
+# shows the previous language for one run after a switch. The
+# label->code map below mirrors the picker's options dict — if the
+# picker ever changes its labels, this map must change with it.
 _LANG_PICK_LABELS = {"English": "en", "हिन्दी": "hi", "اردو": "ur"}
 try:
     _lang_pick = st.session_state.get("n_lang_pick")
@@ -1976,20 +1983,24 @@ def _restore_cleaned_state(source_name):
 # section radio further down is the authority, and pending_tab is
 # how every programmatic switch reaches it.
 # Rail state for this run (session state, default collapsed — the
-# dashboard's own default). The hover rail needs every sidebar
-# control IN THE DOM while collapsed (the rail CSS hides them when
-# collapsed and not hovered, and reveals them on hover with no
-# rerun) — so nothing here is guarded on the rail state any more:
-# the theme selectbox, status pill, banner, uploader, sample button
-# and saved files render always, and the stylesheet decides what
-# shows. The widgets stay mounted, so their values survive
-# collapse/expand and hover.
+# dashboard's own default). The non-nav sidebar widgets do NOT
+# render while the rail is collapsed: what is not in the DOM cannot
+# render as vertical one-letter text (the 8b4dd04 live failure —
+# "Theme", the status pill, "Load your data", the uploader and the
+# client-mode checkbox all squeezed into single-letter columns).
+# The nav + toggle always render (they ARE the collapsed rail).
+# Widget values persist in session state under their keys and are
+# picked back up when the rail re-opens; the rail CSS denylist stays
+# as a backstop for the widgets that must stay mounted (the Excel
+# sheet picker, the "More ways to load" expander). The top-bar
+# Upload pill still pin-expands the rail when clicked.
 _rail_collapsed = ui_design.rail_collapsed()
 # Theme toggle (sidebar): Light/Dark switch writing
 # st.session_state["dcs_theme"]; the stylesheet injected at the top of
 # this file follows it on the next rerun. In the collapsed rail the
 # theme control also lives in the avatar menu (top bar).
-ui_design.render_theme_toggle()
+if not _rail_collapsed:
+    ui_design.render_theme_toggle()
 # Sync client_mode from the toggle widget BEFORE the sidebar nav
 # renders: the toggle itself (feat_analyse.render_client_mode_toggle)
 # only runs later in this script, after the upload block, and it is
@@ -2024,23 +2035,28 @@ with st.sidebar:
     # bottom of the rail.
     # Quiet status pill (feat_status): the app's own health — the
     # mode in local mode, "All systems operational" only when the
-    # cloud health check genuinely passed.
-    feat_status.render_status_pill(st)
-# The file picker renders always (hover rail: it must be in the DOM
-# while collapsed so hovering the rail reveals it). The top-bar
-# Upload pill still pin-expands the rail when clicked.
+    # cloud health check genuinely passed. Not rendered while the
+    # rail is collapsed (it would squeeze into vertical letters).
+    if not _rail_collapsed:
+        feat_status.render_status_pill(st)
+# The file picker renders only when the rail is pinned open (see
+# the rail-state comment above). The top-bar Upload pill still
+# pin-expands the rail when clicked.
 _banner = auth.get_local_mode_banner()
-if _banner:
-    st.sidebar.info(_banner)
+if _banner and not _rail_collapsed:
+    ui_design.info_card(_banner, st_module=st.sidebar)
 
-st.sidebar.markdown(
-    f'<div class="dcs-micro-label">{html.escape(_t("load") + " your data")}'
-    "</div>",
-    unsafe_allow_html=True)
+if not _rail_collapsed:
+    st.sidebar.markdown(
+        f'<div class="dcs-micro-label">{html.escape(_t("load") + " your data")}'
+        "</div>",
+        unsafe_allow_html=True)
 
-uploaded = st.sidebar.file_uploader(
-    "Upload a file", type=["csv", "xlsx", "xls", "json", "parquet"],
-    help="CSV, Excel, JSON or Parquet. Up to 1000MB.")
+uploaded = None
+if not _rail_collapsed:
+    uploaded = st.sidebar.file_uploader(
+        "Upload a file", type=["csv", "xlsx", "xls", "json", "parquet"],
+        help="CSV, Excel, JSON or Parquet. Up to 1000MB.")
 if uploaded is not None and st.session_state.get("last_upload") != uploaded.name:
     try:
         storage.save_upload(_skey, uploaded.name, uploaded.getvalue())
@@ -2065,7 +2081,7 @@ if uploaded is not None and st.session_state.get("last_upload") != uploaded.name
         except Exception as e:  # noqa: BLE001 - show the error, don't crash
             st.sidebar.error(f"Could not read {uploaded.name}: {e}")
 
-if st.session_state.get("pending_excel"):
+if st.session_state.get("pending_excel") and not _rail_collapsed:
     ex_name, ex_bytes = st.session_state["pending_excel"]
     try:
         ex_sheets = feat_combine.list_excel_sheets(ex_bytes)
@@ -2092,7 +2108,7 @@ if st.session_state.get("pending_excel"):
                 st.sidebar.error(f"Could not load the '{ex_choice}' sheet "
                                  f"from {ex_name}: {e}")
 
-if st.sidebar.button(
+if (not _rail_collapsed) and st.sidebar.button(
         _t("try_sample"), key="sample_btn"):
     _sample_path = _APP_DIR / "sample_data" / "messy_sales.csv"
     ui_loading.skeleton_table(rows=5, columns=4)
@@ -2107,7 +2123,7 @@ try:
     _saved_uploads = storage.list_files(_skey, "uploads")
 except Exception:  # noqa: BLE001
     _saved_uploads = []
-if _saved_uploads:
+if _saved_uploads and not _rail_collapsed:
     with st.sidebar.expander("Your saved files"):
         _saved_pick = st.sidebar.selectbox(
             "Open a saved upload", [""] + _saved_uploads,
@@ -2144,50 +2160,52 @@ if _saved_uploads:
             except Exception as e:  # noqa: BLE001
                 st.sidebar.error(f"Could not delete that file: {e}")
 
-# "More ways to load" renders always (hover rail: it must be in the
-# DOM while collapsed so hovering the rail reveals it).
-with st.sidebar.expander("More ways to load"):
-    sheet_url = st.text_input(
-        "Google Sheets link (public sheet)",
-        help="File -> Share -> Anyone with the link. Paste the link here.")
-    if st.button("Load sheet", key="sheet_btn"):
-        if not sheet_url.strip():
-            st.error("Paste a Google Sheets link first — "
-                     "File -> Share -> Anyone with the link, then "
-                     "paste the link here.")
-        else:
-            try:
-                ui_loading.skeleton_table(rows=5, columns=4)
-                with branded_spinner("Loading that sheet…"):
-                    _set_raw(engine.load_sheets_url(sheet_url.strip()), "Google Sheet",
-                             kind="sheets", url=sheet_url.strip())
-                st.session_state["last_upload"] = None
-            except Exception as e:  # noqa: BLE001
-                st.error(f"Could not load that Google Sheet — check the "
-                         "link and sharing settings: {e}")
-
-    st.write("... or a database file")
-    db_file = st.file_uploader(
-        "SQLite database (.db)", type=["db", "sqlite", "sqlite3"],
-        help="A SQLite database file — pick one of its tables to load.")
-    if db_file is not None:
-        try:
-            tables = engine.list_sqlite_tables(db_file.getvalue())
-        except Exception as e:  # noqa: BLE001
-            st.error(f"Could not read that database file ({db_file.name}): {e}")
-            tables = []
-        if tables:
-            table = st.selectbox("Table", tables, key="db_table")
-            if st.button("Load table", key="db_load"):
+# "More ways to load" renders only when the rail is pinned open
+# (see the rail-state comment above): its text input, buttons and
+# database uploader would otherwise squeeze into vertical letters.
+if not _rail_collapsed:
+    with st.sidebar.expander("More ways to load"):
+        sheet_url = st.text_input(
+            "Google Sheets link (public sheet)",
+            help="File -> Share -> Anyone with the link. Paste the link here.")
+        if st.button("Load sheet", key="sheet_btn"):
+            if not sheet_url.strip():
+                st.error("Paste a Google Sheets link first — "
+                         "File -> Share -> Anyone with the link, then "
+                         "paste the link here.")
+            else:
                 try:
                     ui_loading.skeleton_table(rows=5, columns=4)
-                    with branded_spinner("Loading that table…"):
-                        _set_raw(engine.load_sqlite(db_file.getvalue(), table),
-                                 f"{db_file.name} : {table}")
+                    with branded_spinner("Loading that sheet…"):
+                        _set_raw(engine.load_sheets_url(sheet_url.strip()), "Google Sheet",
+                                 kind="sheets", url=sheet_url.strip())
                     st.session_state["last_upload"] = None
                 except Exception as e:  # noqa: BLE001
-                    st.error(f"Could not load the '{table}' table from "
-                             f"{db_file.name}: {e}")
+                    st.error(f"Could not load that Google Sheet — check the "
+                             "link and sharing settings: {e}")
+
+        st.write("... or a database file")
+        db_file = st.file_uploader(
+            "SQLite database (.db)", type=["db", "sqlite", "sqlite3"],
+            help="A SQLite database file — pick one of its tables to load.")
+        if db_file is not None:
+            try:
+                tables = engine.list_sqlite_tables(db_file.getvalue())
+            except Exception as e:  # noqa: BLE001
+                st.error(f"Could not read that database file ({db_file.name}): {e}")
+                tables = []
+            if tables:
+                table = st.selectbox("Table", tables, key="db_table")
+                if st.button("Load table", key="db_load"):
+                    try:
+                        ui_loading.skeleton_table(rows=5, columns=4)
+                        with branded_spinner("Loading that table…"):
+                            _set_raw(engine.load_sqlite(db_file.getvalue(), table),
+                                     f"{db_file.name} : {table}")
+                        st.session_state["last_upload"] = None
+                    except Exception as e:  # noqa: BLE001
+                        st.error(f"Could not load the '{table}' table from "
+                                 f"{db_file.name}: {e}")
 
 _last_raw_bytes = uploaded.getvalue() if uploaded is not None else None
 # Recent files belongs to the Preview tab only: it used to render on
@@ -2216,11 +2234,13 @@ if _reopened is not None:
         _toast.info(f"Opened {_reopened_name}. Clean it in the Clean "
                     "tab to rebuild the KPIs and the report.")
 
-feat_analyse.render_client_mode_toggle(st)
+if not _rail_collapsed:
+    feat_analyse.render_client_mode_toggle(st)
 
-# Settings expander renders always (hover rail).
-with st.sidebar.expander("Settings (API key)"):
-    ai_settings.render_settings(st)
+# Settings expander renders only when the rail is pinned open.
+if not _rail_collapsed:
+    with st.sidebar.expander("Settings (API key)"):
+        ai_settings.render_settings(st)
 
 # Theme toggle: the sidebar Light/Dark switch
 # (ui_design.render_theme_toggle, wired just below the Profile / Log
@@ -2231,14 +2251,17 @@ with st.sidebar.expander("Settings (API key)"):
 # Supabase stylesheets. .streamlit/config.toml stays base="light":
 # it is only the first-paint base; the runtime CSS overrides do the
 # switching, since Streamlit's native theme is static.
-# The language picker and the auto-save toggle render in the MAIN
-# area (their docstrings say "Sidebar" but the code uses plain st.*,
-# not st.sidebar.*) — so they belong to the Preview home, not to
-# every tab: on Profile / Dashboard / any other tab they used to sit
-# above that tab's own content. Guarded to Preview like the intro
-# above; the setting is still one click away on the home tab.
+# The language picker lives in the avatar menu now (the standalone
+# "Language / भाषा / زبان" section on the Preview tab was removed at
+# the user's ask — ui_design.render_avatar_menu carries the same
+# selectbox, key "n_lang_pick", options and save). The auto-save
+# toggle renders in the MAIN area (its docstring says "Sidebar" but
+# the code uses plain st.*, not st.sidebar.*) — so it belongs to the
+# Preview home, not to every tab: on Profile / Dashboard / any other
+# tab it used to sit above that tab's own content. Guarded to
+# Preview like the intro above; the setting is still one click away
+# on the home tab.
 if _top_active == _nav_labels["preview"]:
-    feat_enrich.render_language_picker(st)
     _ws_on = feat_enrich.render_workspace_toggle(st)
 else:
     # The toggle is not rendered on this tab, so read the mirrored data
@@ -2250,7 +2273,8 @@ else:
 
 # ---------------------------------------------------------- auto-refresh ---
 raw = st.session_state.raw
-if raw is not None and st.session_state.source_kind == "sheets":
+if (raw is not None and st.session_state.source_kind == "sheets"
+        and not _rail_collapsed):
     with st.sidebar.expander("Auto-refresh"):
         st.checkbox("Auto-refresh this sheet", value=False,
                     key="auto_refresh",
@@ -2555,9 +2579,23 @@ if _pending_view:
     _apply_pending_view(_pending_view)
 
 # --------------------------------------------------------------- slicers ---
-st.sidebar.markdown(
-    '<div class="dcs-micro-label">Filters (slicers)</div>',
-    unsafe_allow_html=True)
+# The slicer widgets render only when the rail is pinned open (see
+# the rail-state comment above — "FILTERS (SLICERS)" squeezed into
+# vertical letters live). The FILTERING still runs while collapsed,
+# but NOT by reading the widget keys: a widget's session-state
+# value is cleaned up the moment the widget unmounts, so
+# ``st.session_state.get("slice_<col>")`` returns the default the
+# run after a collapse and the filter would reset. Instead every
+# pick is copied to a plain (non-widget) ``slice_persist_<col>``
+# key on every expanded run — plain keys survive unmounting — and
+# the collapsed filter reads that key. The widget's default is
+# also seeded from the persistent key, so re-opening the rail
+# restores the pick instead of resetting to everything. A slicer
+# never picked yet defaults to everything.
+if not _rail_collapsed:
+    st.sidebar.markdown(
+        '<div class="dcs-micro-label">Filters (slicers)</div>',
+        unsafe_allow_html=True)
 filtered = clean
 if clean is not None:
     num_cols = engine.numeric_cols(clean)
@@ -2566,22 +2604,40 @@ if clean is not None:
                 and clean[c].nunique() <= 50]
     date_cols = engine.date_cols(clean)
     for c in cat_cols:
-        picked = st.sidebar.multiselect(
-            f"{engine._pretty(c)}", sorted(clean[c].dropna().unique()),
-            default=sorted(clean[c].dropna().unique()), key=f"slice_{c}")
+        _all_vals = sorted(clean[c].dropna().unique())
+        _persist_key = f"slice_persist_{c}"
+        if not _rail_collapsed:
+            _persisted = st.session_state.get(_persist_key)
+            _default = (_all_vals if _persisted is None else
+                        [v for v in _persisted if v in _all_vals])
+            picked = st.sidebar.multiselect(
+                f"{engine._pretty(c)}", _all_vals,
+                default=_default, key=f"slice_{c}")
+            st.session_state[_persist_key] = list(picked)
+        else:
+            picked = st.session_state.get(_persist_key, _all_vals)
         filtered = filtered[filtered[c].isin(picked)]
     if date_cols:
         dcol = date_cols[0]
         dmin, dmax = clean[dcol].min(), clean[dcol].max()
-        start, end = st.sidebar.date_input(
-            f"{engine._pretty(dcol)} range",
-            value=(dmin.date(), dmax.date()), key=f"slice_{dcol}")
+        _dpersist_key = f"slice_persist_{dcol}"
+        if not _rail_collapsed:
+            start, end = st.sidebar.date_input(
+                f"{engine._pretty(dcol)} range",
+                value=st.session_state.get(
+                    _dpersist_key, (dmin.date(), dmax.date())),
+                key=f"slice_{dcol}")
+            st.session_state[_dpersist_key] = (start, end)
+        else:
+            start, end = st.session_state.get(
+                _dpersist_key, (dmin.date(), dmax.date()))
         if start and end:
             mask = (clean[dcol] >= pd.Timestamp(start)) & (
                 clean[dcol] <= pd.Timestamp(end) + pd.Timedelta(days=1)
                 - pd.Timedelta(seconds=1))
             filtered = filtered[mask]
-    st.sidebar.caption(f"Showing {len(filtered):,} of {len(clean):,} rows")
+    if not _rail_collapsed:
+        st.sidebar.caption(f"Showing {len(filtered):,} of {len(clean):,} rows")
 
 # Rail toggle LAST in the sidebar (after the slicers): the rail CSS
 # pins the vertical block's last child to the bottom (margin-top:auto

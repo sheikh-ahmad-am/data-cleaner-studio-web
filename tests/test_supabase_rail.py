@@ -508,15 +508,17 @@ def test_rail_default_collapsed_after_signup(_tmp_env):
     toggle = find_button_by_key(at, "dcs_rail_toggle")
     assert toggle.label == "" and toggle.help == "Expand sidebar", \
         "collapsed rail must show the expand toggle"
-    # Hover rail: the controls ARE in the DOM when collapsed (the
-    # rail CSS hides them until hover) — that is what makes the hover
-    # expand able to reveal them with no rerun.
-    assert list(at.sidebar.selectbox), \
-        "collapsed rail must render the theme selectbox in the DOM"
-    assert list(at.sidebar.file_uploader), \
-        "collapsed rail must render the file uploader in the DOM"
-    assert any(b.label == "Try the messy sample" for b in at.button), \
-        "collapsed rail must render the sidebar sample button in the DOM"
+    # Round 7 reversal: the controls are NOT in the DOM when
+    # collapsed (do-not-render — what is not in the DOM cannot
+    # render as vertical one-letter text). The round-5 hover-rail
+    # kept them mounted and CSS-hidden, which is what failed
+    # live. They reappear when the rail is pinned open.
+    assert not list(at.sidebar.selectbox), \
+        "collapsed rail must not render the theme selectbox"
+    assert not list(at.sidebar.file_uploader), \
+        "collapsed rail must not render the file uploader"
+    assert not any(b.label == "Try the messy sample" for b in at.button), \
+        "collapsed rail must not render the sidebar sample button"
     assert not any('<div class="dcs-section-label"' in v
                    for v in vals(at.sidebar.markdown)), \
         "the rail must not render section headers"
@@ -561,13 +563,14 @@ def test_rail_toggle_expands_and_collapses(_tmp_env):
     assert not at.exception, f"exception collapsing rail: {at.exception}"
     assert at.session_state.get("dcs_rail_collapsed") is True, \
         "clicking the expanded toggle must collapse the rail"
-    # Hover rail: collapsing keeps the labels in the DOM (CSS hides
-    # them); the rail state itself is what flips back.
+    # Round 7 reversal: collapsing removes the non-nav controls
+    # from the DOM (do-not-render); only the nav labels + toggle
+    # stay. They come back when the rail re-opens.
     assert [b.label for b in nav_buttons(at)] == \
         [NAV_LABELS[k] for k in NAV_ORDER], \
         "collapsed rail must keep its labels in the DOM"
-    assert list(at.sidebar.selectbox), \
-        "collapsed rail must keep the theme selectbox in the DOM"
+    assert not list(at.sidebar.selectbox), \
+        "collapsed rail must not render the theme selectbox"
     print("rail toggle expands and collapses OK")
 
 

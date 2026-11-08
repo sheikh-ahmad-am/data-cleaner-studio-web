@@ -174,12 +174,22 @@ def render_status_pill(st) -> None:
         label, kind, dot = ("Local mode", "grey", "dcs-dot dcs-dot--muted")
     # The dot is the login screen's 8px status dot (.dcs-dot, same
     # size and green) — the pill alone reads as a label; dot + pill
-    # reads as a status, the Supabase way.
+    # reads as a status, the Supabase way. The two rows live in ONE
+    # flex-column wrapper with 16px bottom padding: Streamlit's
+    # markdown container carries a -16px bottom margin, so without
+    # the padding the pill row overflows the block by ~17px and the
+    # next sidebar element ("Load your data" — there is no banner
+    # between them in cloud mode) is pulled up into it. The local
+    # mode banner used to hide this; in cloud mode it overlapped
+    # live. The wrapper makes the block exactly as tall as its
+    # content + the compensation, in both modes.
     st.markdown(
+        '<div style="display: flex; flex-direction: column; gap: 4px;'
+        ' padding-bottom: 16px;">'
         '<div class="dcs-micro-label">Status</div>'
         '<div style="display: flex; align-items: center; gap: 6px;">'
         f'<span class="{dot}"></span>'
-        f"{ui_design.pill(label, kind=kind)}</div>",
+        f"{ui_design.pill(label, kind=kind)}</div></div>",
         unsafe_allow_html=True)
 
 

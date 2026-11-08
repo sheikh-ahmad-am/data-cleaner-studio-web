@@ -40,6 +40,9 @@ class FakeSt:
     def subheader(self, text):
         self._rec("subheader", text)
 
+    def markdown(self, text, **kw):
+        self._rec("markdown", text)
+
     def write(self, text):
         self._rec("write", text)
 
@@ -241,10 +244,17 @@ def test_render_tutorial_and_banner():
             assert any(f"{i}. {step['title']}" in s for s in subs), subs
         assert len(st.messages("write")) >= len(feat_tutorial.TUTORIAL_STEPS)
         # First-run banner shows on a first run, with a "Got it" button.
+        # Round 7: the banner is a plain .dcs-card (info_card), not
+        # st.info — the sky-blue halo is gone.
         st = FakeSt()
         shown = feat_tutorial.render_first_run_banner(st, settings_path)
         assert shown is True
-        assert any("First time" in m for m in st.messages("info"))
+        assert any("First time" in m for m in st.messages("markdown")), \
+            "the banner text must render"
+        assert any("dcs-card" in m for m in st.messages("markdown")), \
+            "the banner must render as a plain card, not an info box"
+        assert not list(st.messages("info")), \
+            "the banner must not render as st.info (sky-blue)"
         assert "tut_got_it" in st.keys_used("tut_")
         # Already seen: no banner at all.
         feat_tutorial.mark_tutorial_seen(settings_path)

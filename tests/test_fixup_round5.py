@@ -180,16 +180,25 @@ def test_gap1_collapsed_hides_non_nav_sidebar_content():
                         f"stButton wrapper: {sel.strip()!r}"
     for theme in ("light", "dark"):
         css = ui_design.rail_css(collapsed=False, theme=theme)
-        assert "display: none !important" not in css, \
-            f"expanded {theme} rail must show every sidebar control"
+        # The expanded sheet may hide ONLY Streamlit's native
+        # collapse control (round 7 item 8 — it hides the sidebar
+        # to 0px); every app control must show.
+        for rule in css.split("}"):
+            if "display: none !important" in rule:
+                selector = rule.split("{")[0]
+                assert "stSidebarCollapseButton" in selector, \
+                    f"expanded {theme} rail must hide only the " \
+                    f"native collapse control, got {selector.strip()!r}"
     print("gap 1 collapsed denylist OK")
 
 
 def test_gap1_client_mode_survives_collapse(_tmp_env):
-    """The client-mode checkbox stays mounted when the rail
-    collapses (the CSS hides it, the widget is not unmounted), so
-    its value — and the client_mode data key — survive a
-    collapse/expand cycle instead of resetting."""
+    """The client-mode VALUE survives a collapse/expand cycle
+    instead of resetting. Round 7 reversal: the checkbox is NOT
+    in the DOM when collapsed (do-not-render — what is not in
+    the DOM cannot render as vertical one-letter text); the
+    value persists in session state, and the checkbox comes back
+    checked when the rail re-opens."""
     at = AppTest.from_file(APP)
     at.run()
     signup(at, "alice1")
@@ -202,10 +211,9 @@ def test_gap1_client_mode_survives_collapse(_tmp_env):
     at.session_state["dcs_rail_collapsed"] = True
     at.run()
     assert not at.exception, f"exception collapsing rail: {at.exception}"
-    cb2 = next(c for c in at.sidebar.checkbox
-               if c.label == "Client mode (simple view)")
-    assert cb2.value is True, \
-        "collapsing the rail must not reset the client-mode checkbox"
+    assert not any(c.label == "Client mode (simple view)"
+                   for c in at.sidebar.checkbox), \
+        "collapsed rail must not render the client-mode checkbox"
     assert at.session_state.get("client_mode") is True, \
         "collapsing the rail must not reset client_mode"
     at.session_state["dcs_rail_collapsed"] = False
@@ -218,9 +226,11 @@ def test_gap1_client_mode_survives_collapse(_tmp_env):
 
 
 def test_gap1_slicer_survives_collapse(_tmp_env):
-    """The slicers stay mounted when the rail collapses, so a
-    picked filter value survives a collapse/expand cycle instead
-    of resetting to all values."""
+    """A picked slicer VALUE survives a collapse/expand cycle
+    instead of resetting to all values. Round 7 reversal: the
+    multiselect is NOT in the DOM when collapsed (do-not-render);
+    the value persists in session state, and the multiselect
+    comes back with the value when the rail re-opens."""
     import pandas as pd
 
     at = AppTest.from_file(APP)
@@ -242,10 +252,15 @@ def test_gap1_slicer_survives_collapse(_tmp_env):
     at.session_state["dcs_rail_collapsed"] = True
     at.run()
     assert not at.exception, f"exception collapsing rail: {at.exception}"
-    slicer2 = next(m for m in at.sidebar.multiselect
-                   if m.label == "Category")
-    assert list(slicer2.value) == ["Electronics"], \
-        "collapsing the rail must not reset the slicer"
+    assert not any(m.label == "Category"
+                   for m in at.sidebar.multiselect), \
+        "collapsed rail must not render the slicer"
+    # The pick lives under a plain (non-widget) persistent key:
+    # the widget's own key is cleaned up when it unmounts, so the
+    # collapsed filter reads slice_persist_<col> instead.
+    assert list(at.session_state.get("slice_persist_Category", [])) == \
+        ["Electronics"], \
+        "collapsing the rail must not reset the slicer value"
     at.session_state["dcs_rail_collapsed"] = False
     at.run()
     slicer3 = next(m for m in at.sidebar.multiselect
@@ -260,35 +275,51 @@ def test_gap1_slicer_survives_collapse(_tmp_env):
 # ---------------------------------------------------------------------------
 
 def test_gap2_toggle_pinned_to_rail_bottom():
-    """The toggle pin is per-state. Collapsed-and-not-hovered keeps
-    margin-top:auto + sticky (proven live — the collapsed rail is
-    short, so the flex column has free space). Expanded and
-    hover-expanded use an ABSOLUTE pin at the scroll container's
-    bottom — margin-top:auto has no free space when the content
-    overflows, and sticky did not hold live in the expanded state.
-    The vertical block carries bottom padding so the last rows are
+    """The toggle pin is FIXED in every state (round 7): absolute
+    scrolled away with the content (toggle at 1409px in a 998px
+    viewport live) and sticky stopped 56px short; fixed held at
+    the viewport bottom at every scroll offset in the real-DOM
+    probe. The pin targets the toggle's element container by its
+    Streamlit key class (a broad ``div:last-child`` selector
+    fixed EVERY sidebar widget to the bottom and emptied the
+    sidebar — caught by the round-7 real-DOM probe). The
+    vertical block carries bottom padding so the last rows are
     not covered by the pinned toggle. The toggle wrapper carries
     the sidebar surface so scrolling rows never show through it."""
     for theme in ("light", "dark"):
         collapsed_css = ui_design.rail_css(True, theme)
-        assert "margin-top: auto !important" in collapsed_css, \
-            f"collapsed {theme} rail must pin the toggle with " \
-            "margin-top:auto"
-        assert "position: sticky !important" in collapsed_css, \
-            f"collapsed {theme} rail must stick the toggle"
+        assert "position: fixed !important" in collapsed_css, \
+            f"collapsed {theme} rail must pin the toggle fixed"
         assert "bottom: 0 !important" in collapsed_css, \
-            f"collapsed {theme} rail must stick the toggle to the bottom"
-        assert "position: absolute !important" in collapsed_css, \
-            f"collapsed {theme} rail must carry the absolute pin for " \
-            "the hover-expanded state"
+            f"collapsed {theme} rail must pin the toggle to the bottom"
+        assert 'div[data-testid="stElementContainer"].st-key-dcs_rail_toggle' \
+            in collapsed_css, \
+            f"collapsed {theme} rail must pin the toggle by its key class"
+        # Every rule that pins the toggle must be fixed, never
+        # absolute (the hover OVERLAY's absolute is on the content,
+        # not the toggle — that one stays).
+        for rule in collapsed_css.split("}"):
+            if "st-key-dcs_rail_toggle" in rule:
+                assert "position: fixed !important" in rule, \
+                    f"collapsed {theme} toggle pin must be fixed, got {rule!r}"
+                assert "position: absolute !important" not in rule, \
+                    f"collapsed {theme} toggle pin must not be absolute"
+                assert "margin-top: auto" not in rule, \
+                    f"collapsed {theme} toggle pin must not use margin-top:auto"
         assert "padding-bottom: 56px !important" in collapsed_css, \
             f"collapsed {theme} rail must pad the vertical block for " \
             "the pinned toggle"
         expanded_css = ui_design.rail_css(False, theme)
-        assert "position: absolute !important" in expanded_css, \
-            f"expanded {theme} rail must pin the toggle absolutely"
+        assert "position: fixed !important" in expanded_css, \
+            f"expanded {theme} rail must pin the toggle fixed"
         assert "bottom: 0 !important" in expanded_css, \
             f"expanded {theme} rail must pin the toggle to the bottom"
+        for rule in expanded_css.split("}"):
+            if "st-key-dcs_rail_toggle" in rule:
+                assert "position: fixed !important" in rule, \
+                    f"expanded {theme} toggle pin must be fixed, got {rule!r}"
+                assert "position: absolute !important" not in rule, \
+                    f"expanded {theme} toggle pin must not be absolute"
         assert "padding-bottom: 56px !important" in expanded_css, \
             f"expanded {theme} rail must pad the vertical block for " \
             "the pinned toggle"

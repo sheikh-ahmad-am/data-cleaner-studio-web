@@ -707,6 +707,12 @@ div[data-baseweb="menu"] li[role="option"]:hover {
 div[data-testid="stAlert"], div[data-testid="stAlert"] * {
   color: #030303 !important; }
 div[data-testid="stAlert"] a { color: #117f50 !important; }
+/* ---- info boxes ONLY: no sky-blue ---- */
+div[data-testid="stAlert"]:has(div[data-testid="stAlertContentInfo"]) div[data-testid="stAlertContainer"] {
+  background-color: #ffffff !important; border: 1px solid #e8e8e8 !important;
+  border-radius: 12px !important; }
+div[data-testid="stAlert"]:has(div[data-testid="stAlertContentInfo"]) div[data-testid="stAlertContentInfo"] {
+  border: none !important; background-color: transparent !important; }
 /* ---- pills: fully rounded, uppercase ~10px, letterspaced ---- */
 .dcs-pill { display: inline-block; font-size: 10px; font-weight: 600;
   letter-spacing: 0.08em; text-transform: uppercase;
@@ -1298,6 +1304,12 @@ div[data-testid="stAlert"] { background-color: #232625;
 div[data-testid="stAlert"], div[data-testid="stAlert"] * {
   color: #edefee !important; }
 div[data-testid="stAlert"] a { color: #4acd8b !important; }
+/* ---- info boxes ONLY: no sky-blue ---- */
+div[data-testid="stAlert"]:has(div[data-testid="stAlertContentInfo"]) div[data-testid="stAlertContainer"] {
+  background-color: #232625 !important; border: 1px solid #2e2e2e !important;
+  border-radius: 12px !important; }
+div[data-testid="stAlert"]:has(div[data-testid="stAlertContentInfo"]) div[data-testid="stAlertContentInfo"] {
+  border: none !important; background-color: transparent !important; }
 /* ---- pills: fully rounded, uppercase ~10px, letterspaced ---- */
 .dcs-pill { display: inline-block; font-size: 10px; font-weight: 600;
   letter-spacing: 0.08em; text-transform: uppercase;
@@ -1938,30 +1950,42 @@ def rail_css(collapsed: bool, theme) -> str:
     moves) and only its content (``stSidebarContent``) becomes an
     absolutely-positioned 260px panel above the content.
 
-    For the hover to reveal anything, the labels and the
-    expanded-sidebar controls must be IN THE DOM while collapsed —
-    so the nav labels are always rendered (sidebar_nav) and the
-    collapsed-mode Python guards are gone (app.py renders the
-    uploader, pickers, expanders, checkbox and slicers always).
-    When collapsed and NOT hovered, CSS hides them: an explicit
-    testid denylist (no ``:has()`` — the 5028aa3 safety net used
-    ``:has()`` and never took effect live, while also matching the
-    nav buttons themselves), the no-help buttons (sample, load
-    sheet — their <button> is a DIRECT child of the wrapper, unlike
-    nav/toggle buttons, which have the help-wrapper div in
-    between), and the nav label spans. The widgets stay mounted,
-    so their values survive collapse/expand and hover.
+    For the hover to reveal the labels, the nav labels are always
+    rendered (sidebar_nav) — the hover overlay shows them. The
+    non-nav controls are NOT in the DOM while collapsed: app.py
+    guards them on the rail state (they render only when pinned
+    open), because what is not in the DOM cannot render as vertical
+    one-letter text — the 8b4dd04 live failure, where the theme
+    selectbox, status pill, uploader and checkbox all squeezed into
+    single-letter columns despite a CSS denylist. The denylist
+    stays as a backstop for the two widgets that must stay mounted
+    (the Excel sheet picker, the "More ways to load" expander):
+    an explicit testid denylist of DESCENDANT selectors (no ``>``,
+    no ``:has()`` — the 8b4dd04 denylist used ``>`` and matched
+    zero elements live: an intermediate plain div sits between the
+    user content and the vertical block, and every widget root is
+    a grandchild of the block, never a direct child), the no-help
+    buttons (sample, load sheet — their <button> is a DIRECT child
+    of the wrapper, unlike nav/toggle buttons, which have the
+    help-wrapper div in between), and the nav label spans. The
+    widgets that stay mounted keep their values; the guarded ones
+    persist theirs in session state and pick them back up on
+    re-open. Hovering a collapsed rail therefore shows the nav
+    labels + the toggle; the uploader, theme, status and slicers
+    appear when the rail is pinned open.
 
     Both states: the sidebar is a flex column
     (``stSidebarContent`` > header + ``stSidebarUserContent`` >
     vertical block). The toggle — the vertical block's LAST child,
-    rendered after the slicers — is pinned to the visible bottom:
-    collapsed (content fits) it uses ``margin-top: auto`` +
-    ``position: sticky; bottom: 0`` (proven live); expanded and
-    hover-expanded (content scrolls) it is ``position: absolute``
-    at the scroll container's bottom, so it never sits below the
-    fold — the vertical block carries bottom padding so the last
-    content row scrolls above it.
+    rendered after the slicers — is pinned FIXED to the viewport's
+    bottom-left at the rail's width in every state, so it never
+    sits below the fold however tall the content is (absolute
+    scrolled away with the content live; sticky stopped 56px
+    short; fixed held at the viewport bottom at every scroll
+    offset in the real-DOM probe). The vertical block carries
+    bottom padding so the last content row scrolls above it.
+    Streamlit's native top "«" collapse control is hidden: the
+    rail collapses to the 60px icon rail, never to 0px.
 
     Collapsed: 60px sidebar, 6px content padding, 4px gaps, rail
     buttons as 36px borderless squares with a centred icon (12
@@ -1990,19 +2014,46 @@ def rail_css(collapsed: bool, theme) -> str:
                if normalize_theme(theme) == "dark"
                else "0 0 24px rgba(3, 3, 3, 0.18)")
     _ease = "200ms cubic-bezier(0.22,1,0.36,1)"
-    # The toggle's absolute pin (expanded + hover-expanded): the
-    # wrapper is removed from flow and pinned to the scroll
-    # container's visible bottom. The vertical block's bottom
-    # padding (same states) lets the last content row scroll above
-    # it. Shared by the expanded branch and the collapsed :hover
-    # rules, so the two stay identical.
-    _toggle_pin = [
-        'section[data-testid="stSidebar"] div[data-testid="stSidebarUserContent"] > div[data-testid="stVerticalBlock"] > div:last-child {',
-        "  margin-top: 0 !important; position: absolute !important;",
-        "  bottom: 0 !important; left: 0 !important; right: 0 !important;",
-        "  z-index: 2 !important;",
-        f"  background: {_bg} !important; padding: 4px 12px 8px !important; }}",
-    ]
+    # The hover glide's own ease: 250ms, the value the real-DOM
+    # probe measured as visibly gradual (60 -> 213 -> 252 -> 259
+    # -> 260px across 40ms samples). The 200ms ease read as a snap
+    # live (the check saw no glide, snap or <=150ms).
+    _glide = "250ms cubic-bezier(0.4,0,0.2,1)"
+    # The toggle's FIXED pin (all states): the wrapper is removed
+    # from flow and pinned to the viewport's bottom-left, so it
+    # never sits below the fold however tall the sidebar content
+    # is. The vertical block's bottom padding (same states) lets
+    # the last content row scroll above it. FIXED, not absolute:
+    # absolute scrolls away with the content (the 5028aa3 live
+    # failure — the toggle sat at content-bottom, 1409px down a
+    # 998px viewport), and sticky stopped 56px short. Fixed held
+    # at the viewport bottom (998px) at every scroll offset in the
+    # real-DOM probe. The selector targets the toggle's element
+    # container ONLY, by its Streamlit key class
+    # (``st-key-dcs_rail_toggle`` — the class Streamlit puts on
+    # the element container of a widget with that key). A plain
+    # ``div:last-child`` descendant selector is WRONG here: it
+    # matches every div that is a last child of its parent
+    # anywhere in the vertical block, so it fixed EVERY sidebar
+    # widget to the viewport bottom and the whole sidebar
+    # collapsed into one overlapping stack (caught by the
+    # round-7 real-DOM probe — the expanded sidebar rendered
+    # empty except for the toggle).
+    def _toggle_pin_rules(width, hover=False):
+        _sel = (
+            'section[data-testid="stSidebar"]:hover '
+            'div[data-testid="stElementContainer"].st-key-dcs_rail_toggle {'
+            if hover else
+            'section[data-testid="stSidebar"] '
+            'div[data-testid="stElementContainer"].st-key-dcs_rail_toggle {')
+        return [
+            _sel,
+            "  margin-top: 0 !important; position: fixed !important;",
+            "  bottom: 0 !important; left: 0 !important;",
+            f"  width: {width} !important;",
+            "  z-index: 2 !important;",
+            f"  background: {_bg} !important; padding: 4px 12px 8px !important; }}",
+        ]
     _css = [
         "<style>",
         "/* ---- sidebar rail: Supabase icon rail / labelled sidebar ---- */",
@@ -2024,54 +2075,82 @@ def rail_css(collapsed: bool, theme) -> str:
         # content + vertical block fill the height. Its width
         # transition is the hover glide (collapsed): the content
         # goes 60px -> 260px as an overlay and back, with no rerun.
+        # The base width is EXPLICIT (60px, set in the collapsed
+        # branch): a transition from ``auto`` never interpolates,
+        # which is why the 8b4dd04 glide snapped — the content's
+        # width was auto (59px) and jumped straight to 260px.
         'section[data-testid="stSidebar"] div[data-testid="stSidebarContent"] {',
         "  display: flex !important; flex-direction: column !important;",
-        f"  transition: width {_ease} !important; }}",
+        f"  transition: width {_glide} !important; }}",
+        # Streamlit's native collapse control (the top "«" that
+        # hides the sidebar entirely to 0px, "»" to restore) is
+        # suppressed: the rail collapses to the 60px icon rail,
+        # never to 0px, and only the bottom toggle + hover govern
+        # it. Without this the two collapse controls fight — the
+        # native one hides the whole sidebar while the bottom one
+        # still says "Collapse sidebar".
+        'div[data-testid="stSidebarCollapseButton"] {',
+        "  display: none !important; }",
         'section[data-testid="stSidebar"] div[data-testid="stSidebarHeader"] {',
         "  flex: none !important; }",
         'section[data-testid="stSidebar"] div[data-testid="stSidebarUserContent"] {',
         "  flex: 1 1 auto !important; min-height: 0 !important;",
         "  display: flex !important; flex-direction: column !important; }",
-        'section[data-testid="stSidebar"] div[data-testid="stSidebarUserContent"] > div[data-testid="stVerticalBlock"] {',
+        'section[data-testid="stSidebar"] div[data-testid="stVerticalBlock"] {',
         "  flex: 1 1 auto !important; min-height: 0 !important;",
         "  display: flex !important; flex-direction: column !important; }",
         # Pin the toggle to the bottom of the rail (collapsed, not
-        # hovered — the state where the content fits): the toggle
-        # wrapper (last child) takes the free space above it
-        # (margin-top:auto) and sticks to the viewport bottom
-        # while the rail scrolls. The wrapper carries the sidebar
-        # surface so scrolling rows never show through it; the 4px
-        # top padding is the occlusion strip over the gap above
-        # the button. Expanded / hover-expanded override this
-        # with the absolute pin below (content scrolls there, so
-        # margin-top:auto has no free space and sticky did not
-        # hold live).
-        'section[data-testid="stSidebar"] div[data-testid="stSidebarUserContent"] > div[data-testid="stVerticalBlock"] > div:last-child {',
-        "  margin-top: auto !important; position: sticky !important;",
-        "  bottom: 0 !important; z-index: 2 !important;",
-        f"  background: {_bg} !important; padding-top: 4px !important; }}",
-    ]
+        # hovered): FIXED to the viewport's bottom-left at the
+        # rail's width, so it holds however tall the sidebar
+        # content is. (The 8b4dd04 sticky rule never matched live
+        # — its ``stSidebarUserContent > stVerticalBlock`` chain
+        # is broken by the intermediate plain div — and the
+        # collapsed pin only "passed" because the content happened
+        # to fit. Fixed is the uniform mechanism, proven in the
+        # real-DOM probe at every scroll offset.) The pin width is
+        # the CURRENT state's width (``_width``): a collapsed-width
+        # pin left in the expanded stylesheet would put a 60px
+        # rule in the expanded CSS even though the later 260px
+        # rule wins the cascade.
+    ] + _toggle_pin_rules(_width)
     if collapsed:
         _deny = [
-            'section[data-testid="stSidebar"]:not(:hover) div[data-testid="stSidebarUserContent"] > div[data-testid="stVerticalBlock"] > div[data-testid="stCheckbox"],',
-            'section[data-testid="stSidebar"]:not(:hover) div[data-testid="stSidebarUserContent"] > div[data-testid="stVerticalBlock"] > div[data-testid="stMarkdown"],',
-            'section[data-testid="stSidebar"]:not(:hover) div[data-testid="stSidebarUserContent"] > div[data-testid="stVerticalBlock"] > div[data-testid="stMultiSelect"],',
-            'section[data-testid="stSidebar"]:not(:hover) div[data-testid="stSidebarUserContent"] > div[data-testid="stVerticalBlock"] > div[data-testid="stDateInput"],',
-            'section[data-testid="stSidebar"]:not(:hover) div[data-testid="stSidebarUserContent"] > div[data-testid="stVerticalBlock"] > div[data-testid="stCaption"],',
-            'section[data-testid="stSidebar"]:not(:hover) div[data-testid="stSidebarUserContent"] > div[data-testid="stVerticalBlock"] > div[data-testid="stExpander"],',
-            'section[data-testid="stSidebar"]:not(:hover) div[data-testid="stSidebarUserContent"] > div[data-testid="stVerticalBlock"] > div[data-testid="stFileUploader"],',
-            'section[data-testid="stSidebar"]:not(:hover) div[data-testid="stSidebarUserContent"] > div[data-testid="stVerticalBlock"] > div[data-testid="stSelectbox"],',
-            'section[data-testid="stSidebar"]:not(:hover) div[data-testid="stSidebarUserContent"] > div[data-testid="stVerticalBlock"] > div[data-testid="stAlert"],',
-            'section[data-testid="stSidebar"]:not(:hover) div[data-testid="stSidebarUserContent"] > div[data-testid="stVerticalBlock"] > div[data-testid="stTextInput"],',
-            'section[data-testid="stSidebar"]:not(:hover) div[data-testid="stSidebarUserContent"] > div[data-testid="stVerticalBlock"] > div[data-testid="stRadio"],',
-            'section[data-testid="stSidebar"]:not(:hover) div[data-testid="stSidebarUserContent"] > div[data-testid="stVerticalBlock"] > div[data-testid="stNumberInput"] {',
+            # DESCENDANT selectors throughout: the 8b4dd04 denylist
+            # used ``stSidebarUserContent > stVerticalBlock >
+            # div[data-testid=...]`` and matched ZERO elements live
+            # — an intermediate plain div sits between the user
+            # content and the vertical block, and every widget root
+            # is a GRANDCHILD of the block (inside its element
+            # container), never a direct child. The descendant
+            # form hid every non-nav widget in the real-DOM probe
+            # (selectbox, markdowns, uploader, checkbox, alert all
+            # display:none, nav button still visible).
+            'section[data-testid="stSidebar"]:not(:hover) div[data-testid="stVerticalBlock"] div[data-testid="stCheckbox"],',
+            'section[data-testid="stSidebar"]:not(:hover) div[data-testid="stVerticalBlock"] div[data-testid="stMarkdown"],',
+            'section[data-testid="stSidebar"]:not(:hover) div[data-testid="stVerticalBlock"] div[data-testid="stMultiSelect"],',
+            'section[data-testid="stSidebar"]:not(:hover) div[data-testid="stVerticalBlock"] div[data-testid="stDateInput"],',
+            'section[data-testid="stSidebar"]:not(:hover) div[data-testid="stVerticalBlock"] div[data-testid="stCaption"],',
+            'section[data-testid="stSidebar"]:not(:hover) div[data-testid="stVerticalBlock"] div[data-testid="stExpander"],',
+            'section[data-testid="stSidebar"]:not(:hover) div[data-testid="stVerticalBlock"] div[data-testid="stFileUploader"],',
+            'section[data-testid="stSidebar"]:not(:hover) div[data-testid="stVerticalBlock"] div[data-testid="stSelectbox"],',
+            'section[data-testid="stSidebar"]:not(:hover) div[data-testid="stVerticalBlock"] div[data-testid="stAlert"],',
+            'section[data-testid="stSidebar"]:not(:hover) div[data-testid="stVerticalBlock"] div[data-testid="stTextInput"],',
+            'section[data-testid="stSidebar"]:not(:hover) div[data-testid="stVerticalBlock"] div[data-testid="stRadio"],',
+            'section[data-testid="stSidebar"]:not(:hover) div[data-testid="stVerticalBlock"] div[data-testid="stNumberInput"] {',
             "  display: none !important; }",
         ]
         _css += [
+            # The collapsed content's width is EXPLICIT (60px):
+            # a transition from ``auto`` never interpolates, so
+            # the hover glide snapped live. With a definite 60px
+            # base and a 260px hover width, the 250ms transition
+            # has two lengths to interpolate between (real-DOM
+            # probe: 60 -> 213 -> 252 -> 259 -> 260px).
             'section[data-testid="stSidebar"] div[data-testid="stSidebarContent"] {',
-            "  padding-left: 6px !important; padding-right: 6px !important; }",
+            "  padding-left: 6px !important; padding-right: 6px !important;",
+            f"  width: {RAIL_WIDTH_COLLAPSED} !important; }}",
             'section[data-testid="stSidebar"] div[data-testid="stVerticalBlock"] {',
-            "  gap: 4px !important; }",
+            "  gap: 4px !important; padding-bottom: 56px !important; }",
             # Hover expand (pinned-collapsed only): the section
             # stays a 60px flex item — the main area never moves —
             # and only its content becomes a 260px overlay floating
@@ -2086,18 +2165,26 @@ def rail_css(collapsed: bool, theme) -> str:
             "  top: 0 !important; bottom: 0 !important;",
             "  width: 260px !important; max-width: 260px !important;",
             f"  box-shadow: {_shadow} !important;",
-            f"  transition: width {_ease} !important; }}",
-            # Hover-expanded toggle pin + bottom padding (same
-            # absolute pin as the expanded state): the overlay's
-            # content scrolls, so the toggle must be pinned to the
-            # overlay's visible bottom, not left at the end of the
-            # content below the fold.
-            'section[data-testid="stSidebar"]:hover div[data-testid="stSidebarUserContent"] > div[data-testid="stVerticalBlock"] {',
+            f"  transition: width {_glide} !important; }}",
+            # Hover-expanded: the element containers go full-width
+            # (the expanded-pill fix — the nav buttons' width:100%
+            # resolves against the 260px overlay, not a
+            # content-sized ~100px box), and the toggle pins FIXED
+            # at the overlay's 260px width. The vertical block
+            # carries bottom padding so the last content row can
+            # scroll above the fixed toggle.
+            'section[data-testid="stSidebar"]:hover div[data-testid="stVerticalBlock"] {',
             "  padding-bottom: 56px !important; }",
-        ] + [l.replace(
-            'section[data-testid="stSidebar"] div[data-testid="stSidebarUserContent"] > div[data-testid="stVerticalBlock"] > div:last-child {',
-            'section[data-testid="stSidebar"]:hover div[data-testid="stSidebarUserContent"] > div[data-testid="stVerticalBlock"] > div:last-child {')
-            for l in _toggle_pin] + [
+            'section[data-testid="stSidebar"]:hover div[data-testid="stVerticalBlock"] div[data-testid="stElementContainer"],',
+            'section[data-testid="stSidebar"]:hover div[data-testid="stVerticalBlock"] div[data-testid="stLayoutWrapper"] {',
+            "  width: 100% !important; align-self: stretch !important; }",
+            # Hover-expanded rows read left-aligned like the
+            # pinned-expanded ones: the collapsed branch's button
+            # rule centres them (icon-only rail), and it would win
+            # over the base sheet's flex-start here.
+            'section[data-testid="stSidebar"]:hover div[data-testid="stButton"] button[data-testid="stBaseButton-secondary"] {',
+            "  justify-content: flex-start !important; }",
+        ] + _toggle_pin_rules(RAIL_WIDTH_EXPANDED, hover=True) + [
             # Hiding, collapsed and NOT hovered (the denylist): every
             # non-nav child of the vertical block is hidden — the
             # client-mode checkbox, the slicers, the uploader, the
@@ -2116,7 +2203,7 @@ def rail_css(collapsed: bool, theme) -> str:
             # buttons, which have the help-wrapper div in between.
             # Hide the direct-child button when collapsed and not
             # hovered; the nav + toggle keep showing.
-            'section[data-testid="stSidebar"]:not(:hover) div[data-testid="stSidebarUserContent"] > div[data-testid="stVerticalBlock"] > div[data-testid="stButton"] > button {',
+            'section[data-testid="stSidebar"]:not(:hover) div[data-testid="stVerticalBlock"] div[data-testid="stButton"] > button {',
             "  display: none !important; }",
             # Nav labels, collapsed and not hovered: the label text
             # lives in a <span style="display: contents"> inside
@@ -2149,15 +2236,21 @@ def rail_css(collapsed: bool, theme) -> str:
         ]
     else:
         _css += [
-            # Expanded: the content scrolls, so the toggle is
-            # pinned absolutely to the scroll container's visible
-            # bottom (margin-top:auto has no free space here and
-            # sticky did not hold live), and the vertical block
-            # carries bottom padding so the last content row can
-            # scroll above it.
-            'section[data-testid="stSidebar"] div[data-testid="stSidebarUserContent"] > div[data-testid="stVerticalBlock"] {',
+            # Expanded: the content scrolls, so the toggle pins
+            # FIXED to the viewport bottom (absolute scrolled away
+            # with the content live; fixed held at 998px at every
+            # scroll offset in the real-DOM probe), and the
+            # vertical block carries bottom padding so the last
+            # content row can scroll above it. The element
+            # containers go full-width (the expanded-pill fix).
+            'section[data-testid="stSidebar"] div[data-testid="stVerticalBlock"] {',
             "  padding-bottom: 56px !important; }",
-        ] + _toggle_pin
+            'section[data-testid="stSidebar"] div[data-testid="stVerticalBlock"] div[data-testid="stElementContainer"],',
+            'section[data-testid="stSidebar"] div[data-testid="stVerticalBlock"] div[data-testid="stLayoutWrapper"] {',
+            "  width: 100% !important; align-self: stretch !important; }",
+        ]
+        # (The toggle pin is already emitted above at the state's
+        # width — 260px here — so no second pin is needed.)
     _css.append("</style>")
     return "\n".join(_css)
 
@@ -2252,6 +2345,40 @@ def avatar_initial(user) -> str:
     return (str(name).strip()[:1].upper() or "?")
 
 
+def _render_language_menu_selectbox(st_module=None) -> str:
+    """The language picker as a small row in the avatar menu (the
+    standalone "Language / भाषा / زبان" section on the Preview tab
+    is gone — the user asked for it to live here instead). Same
+    options (English / हिन्दी / اردو), same widget key
+    ("n_lang_pick") and same save (settings.json + the
+    "n_lang_data" session key), so switching works exactly as
+    before — the coordinator reads the key at the top of the run.
+    Returns the chosen language code."""
+    st_mod = st_module or st
+    import ai_settings  # local import: ui_design must not import it
+    # at the top level (ai_settings is a plain settings store).
+    _options = {"en": "English", "hi": "हिन्दी", "ur": "اردو"}
+    try:
+        _current = ai_settings.load_settings().get("language", "en")
+    except Exception:  # noqa: BLE001 - a broken settings file
+        _current = "en"  # must not stop the menu rendering.
+    _codes = list(_options)
+    _choice = st_mod.selectbox(
+        "Language", [_options[c] for c in _codes],
+        index=_codes.index(_current) if _current in _codes else 0,
+        key="n_lang_pick", label_visibility="collapsed")
+    _code = _codes[[_options[c] for c in _codes].index(_choice)]
+    try:
+        if _code != _current:
+            _settings = ai_settings.load_settings()
+            _settings["language"] = _code
+            ai_settings.save_settings(_settings)
+        st_mod.session_state["n_lang_data"] = _code
+    except Exception:  # noqa: BLE001 - the session key is the
+        st_mod.session_state["n_lang_data"] = _code  # fallback.
+    return _code
+
+
 def render_avatar_menu(st_module=None, user=None, container=None):
     """Render the avatar (a single green circle with the user's
     initial) and the Supabase-style account menu that opens from it.
@@ -2263,8 +2390,11 @@ def render_avatar_menu(st_module=None, user=None, container=None):
     (the selected row carries the filled dot, the way Supabase's
     System/Dark/Light rows do), a hairline, a Timezone row
     ("Auto (Asia/Calcutta)" — display-only; the app runs on IST),
-    a hairline, then Sign out. No "Upgrade to Pro", no paid-tier
-    anything: the app has no paid tier and none is invented.
+    a hairline, a small "Language" row (English / हिन्दी / اردو —
+    the standalone Language section on the Preview tab was removed
+    at the user's ask, and the picker moved here), a hairline, then
+    Sign out. No "Upgrade to Pro", no paid-tier anything: the app
+    has no paid tier and none is invented.
 
     ``container`` is where the avatar lives — a top-bar column (the
     dashboard puts the avatar at the top bar's far right) or
@@ -2349,6 +2479,11 @@ def render_avatar_menu(st_module=None, user=None, container=None):
             '<span class="dcs-menu-value">Auto (Asia/Calcutta)</span>'
             "</div>",
             unsafe_allow_html=True)
+        st_mod.markdown('<div class="dcs-menu-divider"></div>',
+                        unsafe_allow_html=True)
+        st_mod.markdown('<div class="dcs-menu-label">Language</div>',
+                        unsafe_allow_html=True)
+        _render_language_menu_selectbox(st_mod)
         st_mod.markdown('<div class="dcs-menu-divider"></div>',
                         unsafe_allow_html=True)
         if icon_button("Sign out", "logout", key="avatar_logout_btn",
@@ -2544,6 +2679,23 @@ def pill(text: str, kind: str = "mint") -> str:
     cls = kinds.get(kind, "dcs-pill-mint")
     return (f'<span class="dcs-pill {cls}">{html.escape(str(text))}'
             f"</span>")
+
+
+def info_card(text: str, st_module=None) -> None:
+    """Render a plain Supabase-style card for an informational note
+    — the replacement for ``st.info``, whose pale sky-blue halo
+    (``rgba(28,131,255,0.1)`` on the alert container, around a
+    white inner box) the user asked to remove. Uses the ``.dcs-card``
+    class, so it follows the theme (white / #e8e8e8 hairline in
+    light, #232625 / #2e2e2e in dark) and carries no blue, no icon
+    and no colour at all. The text is escaped. A CSS backstop in
+    both stylesheets neutralises any ``st.info`` that still renders
+    (see the ``stAlertContentInfo`` rules), so no blue box survives
+    anywhere — but call sites should use this card directly."""
+    st_mod = st_module or st
+    st_mod.markdown(
+        f'<div class="dcs-card">{html.escape(str(text))}</div>',
+        unsafe_allow_html=True)
 
 
 def empty_state(title: str, body: str = "",

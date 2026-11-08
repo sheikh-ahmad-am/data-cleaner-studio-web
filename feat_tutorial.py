@@ -184,10 +184,12 @@ def render_first_run_banner(st, settings_path=None) -> bool:
         return True
     if not is_first_run(settings_path):
         return False
-    st.info("First time here? This app turns a messy file into clean "
-            "data, KPIs, charts and a report in seven short steps. "
-            "Open the 'How to use' tab for the full guide, or press "
-            "'Got it' and start with a file from the sidebar.")
+    ui_design.info_card("First time here? This app turns a messy file "
+                        "into clean data, KPIs, charts and a report in "
+                        "seven short steps. Open the 'How to use' tab "
+                        "for the full guide, or press 'Got it' and "
+                        "start with a file from the sidebar.",
+                        st_module=st)
     if ui_design.icon_button("Got it", "check", key="tut_got_it",
                              help="Dismiss this banner.", st_module=st):
         mark_tutorial_seen(settings_path)
