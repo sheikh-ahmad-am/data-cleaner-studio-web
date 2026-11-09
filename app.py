@@ -3065,6 +3065,11 @@ _active_label = st.radio("Section", _tab_options, key="active_tab",
                          horizontal=True, label_visibility="collapsed")
 _active_tab = next(k for k, v in _tab_labels.items()
                    if v == _active_label)
+# Round 3e — the Quick Jump query must clear on a direct radio
+# click too. The palette renders before this radio exists on the
+# run, so it cannot see the change itself; note it here (flag +
+# rerun when a query is typed — see feat_quickjump).
+feat_quickjump.note_section_change(st, _active_label)
 tab = set(_tab_keys)
 
 # --------------------------------------------------------------- preview ---

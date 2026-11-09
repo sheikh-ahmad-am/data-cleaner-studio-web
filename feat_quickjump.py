@@ -32,6 +32,24 @@ globally — and the Enter click goes through the very same result
 button the mouse uses, so the jump takes exactly the mouse path.
 Cmd+K / Ctrl+K global capture is still NOT feasible.
 
+Round 3e — two consistency fixes. (1) The query clears on
+EVERY section change, not just on a button jump: the palette
+tracks the last section seen and clears before the input mounts
+whenever it differs, and app.py notes a direct Section-radio
+click after the radio is created (the palette renders before
+the radio exists on the run, so it cannot see that change
+itself). After any jump or any sidebar navigation, reopening
+the dialog shows an empty box. (2) Freshness: the input's
+placeholder is the query the rendered buttons were filtered
+for, so the bridge only clicks a highlighted result when the
+live value still equals the placeholder — editing the text
+after results rendered turns Enter into a fresh submit for the
+new query instead of a jump to the previously highlighted
+result — and a capture-phase click listener blocks a mouse
+click on a stale result button the same way (the mousedown
+already blurred the input, so the new text submits and the
+fresh results render anyway).
+
 Every action listed here is real: all eleven sections plus the key
 actions (Upload, Load sample, Clean, Export, Ask, Back up, Morning
 run, Shortcuts, What's new). A jump only navigates — it never runs a
@@ -220,11 +238,25 @@ def _render_quick_jump_body(st, host, items, compact=False):
     otherwise. Returns the section key jumped to, or None.
     Clicking a result sets the clear flag + pending_tab and reruns
     — the flag clears the query on the next run, so the panel never
-    re-renders stale results after a jump."""
+    re-renders stale results after a jump.
+
+    Round 3e — the placeholder IS the rendered query: it is set
+    from the query the server knew when this run rendered
+    (``st.session_state["quickjump_query"]`` before the input
+    mounts), so the keyboard bridge can tell a fresh result list
+    from a stale one by comparing the input's live value to its
+    placeholder (see ``QUICKJUMP_KEYS_BRIDGE_HTML``). The
+    placeholder only ever shows while the box is empty — whenever
+    a value is typed it is invisible — so setting it to the query
+    changes nothing the user sees.
+    """
+    _prior_query = str(st.session_state.get("quickjump_query", "") or "")
+    _placeholder = (_prior_query if _prior_query.strip()
+                    else "Search sections and actions…")
     query = host.text_input(
         "Quick jump ⌘K",
         key="quickjump_query",
-        placeholder="Search sections and actions…",
+        placeholder=_placeholder,
         label_visibility="collapsed" if compact else "visible",
         help=("Type to filter, then Enter to show the matches — Enter "
               "again (or ↓ + Enter) jumps to the highlighted one. "
@@ -309,11 +341,39 @@ def _render_quick_jump_body(st, host, items, compact=False):
 #: button in the popover body (the text input itself renders a
 #: button with empty text, and clicking that on Enter would
 #: swallow the submit).
+#:
+#: Round 3e — freshness (the stale-highlight fix): the server sets
+#: the input's placeholder to the query the rendered buttons were
+#: filtered for (see _render_quick_jump_body), so the bridge can
+#: tell a fresh list from a stale one without any new widget: the
+#: list is fresh exactly when the input's live value equals its
+#: placeholder. Editing the text after results rendered makes the
+#: value differ from the placeholder, so Enter must NOT click the
+#: previously highlighted button — it lets Streamlit's own submit
+#: go through instead, and the matches re-render for the NEW
+#: text. ArrowDown / ArrowUp ignore the move while the list is
+#: stale (there is nothing meaningful to highlight), and the
+#: autoPick click in paint() only fires on a fresh list — so a
+#: pending autoPick can never click a button rendered for an
+#: older query after the text changed. The same freshness check
+#: guards the MOUSE path: a capture-phase click listener blocks
+#: a click on a stale result button (the mousedown already
+#: blurred the input, so the new text submits and the fresh
+#: results render anyway). There is deliberately NO server-side
+#: backstop in the click handler — it could not work: the
+#: handler only ever iterates buttons matching the current
+#: query, so a "does this button still match" check inside it
+#: would always be true by construction.
 QUICKJUMP_KEYS_BRIDGE_HTML = """<script>(function(){try{
 var doc=window.parent.document;
 var S=doc.__dcsQuickJumpKeys;
 if(!S){S=doc.__dcsQuickJumpKeys={highlight:0,lastQuery:null,installed:false,timer:null,autoPick:false,moved:false};}
 function inputEl(){return doc.querySelector('input[aria-label="Quick jump ⌘K"]');}
+function isFresh(){
+var input=inputEl();
+if(!input){return false;}
+var ph=input.getAttribute('placeholder')||'';
+return ph!==''&&input.value===ph;}
 function resultButtons(){
 var input=inputEl();
 if(!input){return [];}
@@ -325,11 +385,12 @@ var input=inputEl();
 if(!input){S.lastQuery=null;S.autoPick=false;S.moved=false;return;}
 if(input.value!==S.lastQuery){S.lastQuery=input.value;S.highlight=0;S.autoPick=false;S.moved=false;}
 var btns=resultButtons();
+var fresh=isFresh();
 if(btns.length&&S.highlight>=btns.length){S.highlight=btns.length-1;}
 btns.forEach(function(b,i){
-b.style.outline=(i===S.highlight&&btns.length)?'2px solid #117f50':'';
+b.style.outline=(i===S.highlight&&btns.length&&fresh)?'2px solid #117f50':'';
 b.style.outlineOffset='1px';});
-if(S.autoPick&&btns.length){
+if(S.autoPick&&btns.length&&fresh){
 var target=btns[Math.min(S.highlight,btns.length-1)];
 S.autoPick=false;S.highlight=0;S.lastQuery=null;S.moved=false;
 target.click();}}
@@ -338,31 +399,40 @@ doc.addEventListener('keydown',function(e){
 var input=inputEl();
 if(!input||e.target!==input){return;}
 if(e.key==='ArrowDown'){
+if(resultButtons().length&&!isFresh()){return;}
 e.preventDefault();
 S.highlight=S.highlight+1;
 S.moved=true;
 paint();}
 else if(e.key==='ArrowUp'){
+if(resultButtons().length&&!isFresh()){return;}
 e.preventDefault();
 S.highlight=Math.max(S.highlight-1,0);
 S.moved=true;
 paint();}
 else if(e.key==='Enter'){
 var btns=resultButtons();
-if(btns.length){
+if(btns.length&&isFresh()){
 e.preventDefault();
 e.stopPropagation();
 var target=btns[Math.min(S.highlight,btns.length-1)];
 S.highlight=0;S.lastQuery=null;S.autoPick=false;S.moved=false;
 target.click();}
 else if(input.value.trim()!==''){
-// No results rendered yet: a plain first Enter only submits,
-// so the matches render in the still-open popover for the user
-// to see and pick (second Enter, or a click). Auto-pick only
-// when the user already moved the highlight (ArrowDown/Up +
-// Enter) — that is a choice, so it jumps straight to it.
+// No results rendered yet, or the rendered results are stale
+// (the text was edited after they rendered): let Streamlit's
+// own submit go through, so the matches re-render for the NEW
+// text — never click a button rendered for an older query.
+// Auto-pick only when the user already moved the highlight
+// (ArrowDown/Up + Enter) — that is a choice, so it jumps
+// straight to it once the fresh results render.
 if(S.moved){S.autoPick=true;}}}
-},true);}
+},true);
+doc.addEventListener('click',function(e){
+var t=e.target&&e.target.closest?e.target.closest('[class*="st-key-quickjump_go_"]'):null;
+if(!t){return;}
+if(!isFresh()){e.preventDefault();e.stopPropagation();}}
+,true);}
 if(S.timer){clearInterval(S.timer);}
 S.timer=setInterval(paint,200);
 paint();
@@ -397,6 +467,30 @@ def render_quick_jump(st, actions=None, container=None, compact=False):
     """
     box = container if container is not None else st.sidebar
     items = list(QUICK_ACTIONS if actions is None else actions)
+    # Round 3e — clear the query on EVERY section change, not just
+    # on a button jump (the Round 3d live failure: the old query
+    # survived an ArrowDown+Enter jump, a sidebar-radio navigation
+    # and a Profile + Back-to-dashboard round trip, because the
+    # clear flag is only set by the result-button click handler).
+    # ``active_tab`` is the Section radio's widget key and holds
+    # the section LABEL; every programmatic switch (pending_tab)
+    # is applied to it before this runs, so a jump lands here with
+    # the new section already in place. Remember the last section
+    # seen; when it differs, clear the query BEFORE the input
+    # mounts, so no stale results survive the navigation. A jump
+    # to the SAME section changes nothing here — the clear flag
+    # covers that case. A language switch changes the labels and
+    # may clear the query — harmless. ``active_tab`` can be absent
+    # on the first runs after login (None) and transiently after
+    # a flow pops it (Status "Back to data"): an absent value
+    # still counts as a change when a section was stored, and
+    # nothing is stored until a real section is seen.
+    _current_section = st.session_state.get("active_tab")
+    _last_section = st.session_state.get("quickjump_last_section")
+    if _last_section is not None and _last_section != _current_section:
+        st.session_state["quickjump_query"] = ""
+    if _current_section is not None:
+        st.session_state["quickjump_last_section"] = _current_section
     if st.session_state.pop(_QUICKJUMP_CLEAR_KEY, False):
         # A jump landed on the previous run: clear the query BEFORE
         # the input mounts, so the results do not re-render.
@@ -409,3 +503,32 @@ def render_quick_jump(st, actions=None, container=None, compact=False):
             # the popover, so the host here is ``st`` itself.
             return _render_quick_jump_body(st, st, items, compact=True)
     return _render_quick_jump_body(st, box, items, compact=compact)
+
+
+def note_section_change(st, label):
+    """Round 3e — the radio-path half of the section-change clear.
+
+    Call this in app.py immediately AFTER the Section radio is
+    created, with the radio's current label. The palette renders
+    up at the top bar BEFORE the radio exists on the run, so when
+    a radio click lands, ``render_quick_jump`` still sees the OLD
+    section and cannot clear there — the change is only visible
+    here, after the radio is created. The palette input already
+    mounted this run, so the query key itself cannot be written
+    now (Streamlit forbids writing a widget key after its widget
+    instantiated). Instead set the plain clear flag and rerun:
+    the rerun clears the query before the input mounts. Only
+    when a query is actually typed — a radio click with an empty
+    box costs no extra rerun. ``label`` is the section LABEL
+    (the radio's value), the same thing ``render_quick_jump``
+    tracks as ``quickjump_last_section``.
+    """
+    last = st.session_state.get("quickjump_last_section")
+    query = str(st.session_state.get("quickjump_query", "") or "")
+    if last is not None and label is not None and last != label \
+            and query.strip():
+        st.session_state[_QUICKJUMP_CLEAR_KEY] = True
+        st.session_state["quickjump_last_section"] = label
+        st.rerun()
+    if label is not None:
+        st.session_state["quickjump_last_section"] = label

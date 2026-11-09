@@ -58,7 +58,7 @@ class FakeSt:
         return _call
 
     def text_input(self, label, key=None, **kwargs):
-        self._rec("text_input", label, key)
+        self._rec("text_input", label, key, **kwargs)
         return self.presets.get(key, "")
 
     def button(self, label, key=None, **kwargs):
@@ -234,7 +234,8 @@ def test_keyboard_bridge_constant_exists():
     assert "target.click()" in html or ".click()" in html, \
         "Enter must click the highlighted result button"
     assert "preventDefault" in html, \
-        "Enter must stop Streamlit's own submit (else a double rerun)"
+        "Enter must stop Streamlit's own submit when it clicks a " \
+        "fresh result (a stale Enter lets the submit through)"
     assert "stopPropagation" in html, \
         "Enter must not reach Streamlit's key handler after the click"
     # A text input submits on Enter, never per keystroke — so while
@@ -294,6 +295,135 @@ def test_keyboard_bridge_injected_by_app():
     print("keyboard bridge injected by app OK")
 
 
+# --------------------------------------------------------------------------
+# (h) Round 3e — query clears on EVERY section change, and the
+# placeholder is the rendered query (freshness)
+# --------------------------------------------------------------------------
+
+def _text_input_kwargs(fake):
+    for c in fake.calls:
+        if c[0] == "text_input":
+            return c[2]
+    return {}
+
+
+def test_placeholder_is_the_rendered_query():
+    # The bridge tells a fresh list from a stale one by comparing
+    # the input's live value to its placeholder — so the server
+    # must set the placeholder to the query the rendered buttons
+    # were filtered for, and to the base text when the query is
+    # blank (the placeholder only ever shows while the box is
+    # empty, so a typed value never shows it).
+    fake = FakeSt(presets={"quickjump_query": "clean"})
+    fake.session_state["quickjump_query"] = "clean"
+    fj.render_quick_jump(fake)
+    assert _text_input_kwargs(fake).get("placeholder") == "clean", \
+        "placeholder must be the rendered query"
+    fake = FakeSt(presets={"quickjump_query": ""})
+    fake.session_state["quickjump_query"] = ""
+    fj.render_quick_jump(fake)
+    assert _text_input_kwargs(fake).get("placeholder") == \
+        "Search sections and actions…", \
+        "blank query keeps the base placeholder"
+    print("placeholder is the rendered query OK")
+
+
+def test_render_section_change_clears_query():
+    # Round 3d live failure, case (b)/(c): the old query survived
+    # a section change because only the button-click handler set
+    # the clear flag. A change of active_tab must clear the query
+    # before the input mounts.
+    fake = FakeSt(presets={"quickjump_query": "clean"})
+    fake.session_state["active_tab"] = "KPIs"
+    fake.session_state["quickjump_last_section"] = "Upload & preview"
+    assert fj.render_quick_jump(fake) is None
+    assert fake.session_state.get("quickjump_query") == "", \
+        "query must clear when the section changes"
+    assert fake.session_state.get("quickjump_last_section") == "KPIs", \
+        "the new section must be remembered"
+    # Same section: no clear (the jump flag covers same-section
+    # jumps) — and a first run with nothing stored must not clear
+    # either.
+    fake = FakeSt(presets={"quickjump_query": "clean"})
+    fake.session_state["quickjump_query"] = "clean"
+    fake.session_state["active_tab"] = "Clean"
+    fake.session_state["quickjump_last_section"] = "Clean"
+    fj.render_quick_jump(fake)
+    assert fake.session_state.get("quickjump_query") == "clean", \
+        "same section must not clear the query"
+    fake = FakeSt(presets={"quickjump_query": "clean"})
+    fake.session_state["quickjump_query"] = "clean"
+    fake.session_state["active_tab"] = "Upload & preview"
+    fj.render_quick_jump(fake)
+    assert fake.session_state.get("quickjump_query") == "clean", \
+        "first run (nothing stored) must not clear the query"
+    assert fake.session_state.get("quickjump_last_section") == \
+        "Upload & preview"
+    print("section-change clear OK")
+
+
+def test_note_section_change_reruns_to_clear():
+    # The radio-path half: app.py calls this AFTER the Section
+    # radio is created, because the palette renders before the
+    # radio exists on the run. A changed label with a typed query
+    # sets the clear flag and reruns (the rerun clears before the
+    # input mounts); an empty query costs no extra rerun.
+    fake = FakeSt()
+    fake.session_state["quickjump_last_section"] = "Upload & preview"
+    fake.session_state["quickjump_query"] = "clean"
+    fj.note_section_change(fake, "KPIs")
+    assert fake.session_state.get("quickjump_clear_after_jump") is True, \
+        "radio nav with a typed query must set the clear flag"
+    assert fake.session_state.get("quickjump_last_section") == "KPIs"
+    assert any(c[0] == "rerun" for c in fake.calls), \
+        "radio nav with a typed query must rerun"
+    fake = FakeSt()
+    fake.session_state["quickjump_last_section"] = "Upload & preview"
+    fake.session_state["quickjump_query"] = ""
+    fj.note_section_change(fake, "KPIs")
+    assert not any(c[0] == "rerun" for c in fake.calls), \
+        "radio nav with an empty box must not rerun"
+    assert fake.session_state.get("quickjump_last_section") == "KPIs"
+    print("note_section_change OK")
+
+
+def test_note_section_change_called_by_app():
+    app_src = (Path(__file__).resolve().parent.parent / "app.py"
+               ).read_text(encoding="utf-8")
+    assert "note_section_change" in app_src, \
+        "app.py must note a Section-radio change after the radio"
+    print("note_section_change called by app OK")
+
+
+def test_keyboard_bridge_freshness_gates():
+    # Round 3e — the stale-highlight fix. Freshness is the input's
+    # live value against its placeholder (the rendered query):
+    # Enter clicks a highlighted result ONLY when fresh, Arrow
+    # keys ignore the move while stale, autoPick only fires on a
+    # fresh list, and a capture-phase click listener blocks a
+    # mouse click on a stale result button.
+    html = fj.QUICKJUMP_KEYS_BRIDGE_HTML
+    assert "isFresh" in html, \
+        "bridge must define a freshness check"
+    assert "getAttribute('placeholder')" in html, \
+        "freshness must compare against the placeholder"
+    assert "input.value===ph" in html, \
+        "fresh means the live value still equals the placeholder"
+    assert "btns.length&&isFresh()" in html, \
+        "Enter must click a result only when the list is fresh"
+    assert "S.autoPick&&btns.length&&fresh" in html, \
+        "autoPick must fire only on a fresh list"
+    assert "addEventListener('click'" in html, \
+        "bridge must intercept clicks on result buttons"
+    assert "closest('[class*=\"st-key-quickjump_go_\"]')" in html, \
+        "the click intercept must scope to result buttons only"
+    # The old unconditional pins must NOT have survived: Enter no
+    # longer clicks whenever buttons exist.
+    assert "if(btns.length){" not in html, \
+        "Enter must not click unconditionally when buttons exist"
+    print("keyboard bridge freshness gates OK")
+
+
 if __name__ == "__main__":
     test_empty_query_shows_all()
     test_search_filters()
@@ -307,4 +437,9 @@ if __name__ == "__main__":
     test_keyboard_bridge_constant_exists()
     test_keyboard_bridge_never_listens_globally()
     test_keyboard_bridge_injected_by_app()
+    test_placeholder_is_the_rendered_query()
+    test_render_section_change_clears_query()
+    test_note_section_change_reruns_to_clear()
+    test_note_section_change_called_by_app()
+    test_keyboard_bridge_freshness_gates()
     print("ALL QUICKJUMP TESTS PASSED")
