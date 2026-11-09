@@ -665,6 +665,19 @@ div[data-testid="stHorizontalBlock"] div[data-testid="column"]:last-child
 .dcs-topbar-left > span { min-width: 0; overflow: hidden;
   text-overflow: ellipsis; white-space: nowrap; }
 .dcs-topbar-rule { border-top: 1px solid #e8e8e8; margin: 0.25rem 0 1rem; }
+/* ---- Quick Jump results wrap instead of truncating: the
+   "Label — hint" buttons are long and the top-bar search column
+   is narrow — the longest label clipped mid-word live
+   ("…on your Wi"). Inside the popover the buttons wrap to two
+   lines and left-align; the Search pill's expand_more chevron is
+   hidden (the pill reads clean, like the dashboard's). Key-scoped
+   (st-key-quickjump_popover / st-key-quickjump_go_*), so no other
+   popover or button is touched. ---- */
+div[data-testid="stLayoutWrapper"][class*="st-key-quickjump_popover"] button[data-testid="stPopoverButton"] > div > div[aria-hidden="true"] {
+  display: none !important; }
+div[class*="st-key-quickjump_go"] button[data-testid="stBaseButton-secondary"] {
+  white-space: normal !important; height: auto !important;
+  text-align: left !important; }
 /* ---- Profile (Preferences) page: Supabase's two-column account
    page — a narrow sub-nav at the left (Back link, section rows)
    and bordered cards at the right. The sub-nav column carries a
@@ -1867,17 +1880,19 @@ elif _top_actions["avatar"] == "logout":
 if _top_active == _nav_labels["preview"]:
     st.caption("Put in messy data. Get clean data, KPIs, charts and a report.")
     # The main flow, at a glance: upload -> clean -> KPIs -> export.
-    # One step is "you are here"; finished steps get a tick.
-    _flow_current = 2 if st.session_state.clean is None else 3
-    _flow_parts = []
-    for _i, _label in enumerate(["Upload", "Clean", "KPIs", "Export"], start=1):
-        if _i < _flow_current:
-            _flow_parts.append(f"{_label} ✓")
-        elif _i == _flow_current:
-            _flow_parts.append(f"**{_label}** — you are here")
-        else:
-            _flow_parts.append(_label)
-    st.caption("Your flow: " + " → ".join(_flow_parts))
+    # The marker follows the page you are actually on (Preview is
+    # the Upload step) — the old line derived it from whether
+    # cleaned data existed, so it always read "Clean — you are
+    # here" on Preview, and it ticked Upload before any file was
+    # loaded. Ticks follow the data instead (see flow_marker).
+    _active_key = next(
+        (k for k, v in _nav_labels.items() if v == _top_active),
+        "preview")
+    _flow_parts = ui_design.flow_marker(
+        _active_key, raw_loaded=st.session_state.raw is not None,
+        clean_loaded=st.session_state.clean is not None)
+    if _flow_parts:
+        st.caption("Your flow: " + " → ".join(_flow_parts))
     if st.session_state.pop("just_signed_up", False):
         st.success("Account created — you're logged in. Start with a file "
                    "from the sidebar, or try the sample data.")

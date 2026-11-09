@@ -193,18 +193,22 @@ def test_gap1_collapsed_hides_non_nav_sidebar_content():
         css = ui_design.rail_css(collapsed=False, theme=theme)
         # The expanded sheet may hide ONLY Streamlit's native
         # collapse control (round 7 item 8 — it hides the sidebar
-        # to 0px) and the menu button's expand_more chevron
-        # (clone Round 1 — Streamlit's own chevron inside the
+        # to 0px), the menu button's expand_more chevron (clone
+        # Round 1 — Streamlit's own chevron inside the
         # behavior-menu trigger, hidden so it does not crowd the
-        # 36px square); every app control must show.
+        # 36px square), and the sidebar resize handle (clone
+        # Round 2 — a dead control on a fixed-width rail: dragging
+        # it writes a persisted sidebarWidth while the pins hold
+        # the section at 60/260px); every app control must show.
         for rule in css.split("}"):
             if "display: none !important" in rule:
                 selector = rule.split("{")[0]
                 assert ("stSidebarCollapseButton" in selector
                         or ("st-key-dcs_rail_behavior" in selector
-                            and "aria-hidden" in selector)), \
+                            and "aria-hidden" in selector)
+                        or "stSidebarResizeHandle" in selector), \
                     f"expanded {theme} rail must hide only the " \
-                    f"native collapse control or the menu chevron, got {selector.strip()!r}"
+                    f"native collapse control, the menu chevron or the resize handle, got {selector.strip()!r}"
     print("gap 1 collapsed denylist OK")
 
 

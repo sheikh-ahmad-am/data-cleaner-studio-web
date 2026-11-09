@@ -9,11 +9,15 @@ What this module does — and its honest limit, stated plainly: a true
 overlay command palette is NOT feasible in Streamlit. Streamlit
 renders server-side and has no global keyboard listener, so Cmd+K /
 Ctrl+K cannot be captured reliably (the browser owns that shortcut in
-many contexts) and no overlay can float above the app. Do NOT fake it
-with a key-capture hack. The closest honest version is this: a sidebar
-search box labelled with a ⌘K hint that filters the app's real
-sections and key actions as the user types, and jumps to the selected
-one through the app's existing ``pending_tab`` mechanism
+many contexts). Do NOT fake it with a key-capture hack. What IS
+possible, and what the top-bar version does, is a real overlay
+panel: the search lives inside an ``st.popover`` ("Search…"), so the
+results float above the page instead of pushing content, and the
+panel closes on outside click / Escape / selection, the way
+Streamlit popovers do. The sidebar version stays an in-flow box.
+Either way the box filters the app's real sections and key actions
+as the user types, and jumps to the selected one through the app's
+existing ``pending_tab`` mechanism
 (``st.session_state["pending_tab"] = <section key>`` + ``st.rerun()``,
 applied by app.py before the top bar renders).
 
@@ -27,18 +31,16 @@ Integration (for the coordinator — app.py change, one call):
 
          import feat_quickjump
 
-  2. In the sidebar, right after the sidebar nav renders
-     (``ui_design.sidebar_nav(_nav_items, active=_nav_active,
-     collapsed=_rail_collapsed)``),
-     add::
+  2. In the top bar, pass the search column with ``compact=True``::
 
-         feat_quickjump.render_quick_jump(st)
+         feat_quickjump.render_quick_jump(
+             st, container=_top_actions["search_col"], compact=True)
 
-     The box lives in the sidebar so it is visible on every screen,
-     like Studio's top-bar search. It must be called AFTER the
-     ``pending_tab`` application near the top of the main flow (it
-     already is — the sidebar renders after that point), and it must
-     NOT be called before the login view renders.
+     The box sits in the top bar like the dashboard's Search pill.
+     It must be called AFTER the ``pending_tab`` application near
+     the top of the main flow (it already is — the top bar renders
+     after that point), and it must NOT be called before the login
+     view renders.
 
 Public API (presentation + navigation only — no behaviour changes):
   * ``QUICK_ACTIONS`` — the full action list (dicts).
@@ -47,8 +49,10 @@ Public API (presentation + navigation only — no behaviour changes):
     query returns all actions, in defined order.
   * ``resolve_section(action_key)`` — pure: the section key an action
     jumps to, or None for an unknown key.
-  * ``render_quick_jump(st, actions=None)`` — draw the sidebar box;
-    returns the section key jumped to, or None.
+  * ``render_quick_jump(st, actions=None, container=None,
+    compact=False)`` — draw the palette (popover in compact mode,
+    in-flow box otherwise); returns the section key jumped to, or
+    None.
 """
 
 from __future__ import annotations
@@ -168,25 +172,45 @@ def resolve_section(action_key):
     return None
 
 
-def render_quick_jump(st, actions=None, container=None, compact=False):
-    """Draw the Quick jump box. Returns the section key jumped to, or
-    None when the user did not pick anything this run.
+#: Plain session key set on a jump so the NEXT render clears the
+#: search query before the input mounts. Writing the input's own
+#: key after it mounts raises (a widget owns its key); the flag is
+#: a plain key, so the write is legal, and the clear happens
+#: before the input is created on the next run — the old panel
+#: stayed open after a jump because the query survived the rerun
+#: and re-rendered the same results (clone-R1 live failure).
+_QUICKJUMP_CLEAR_KEY = "quickjump_clear_after_jump"
+#: The top-bar palette's popover key. Its element container carries
+#: the ``st-key-<key>`` class, so the design system can hide the
+#: trigger's expand_more chevron (the Search pill reads clean).
+#: The live key is the base plus an epoch suffix (see
+#: ``_popover_key``): Streamlit has no API to force-close a
+#: popover, and a popover stays open across a rerun — so after a
+#: jump the epoch bumps and the next run mounts a FRESH popover
+#: widget (closed by default). Without the bump the panel would
+#: stay open after a selection showing an empty input; with it,
+#: the panel closes on selection exactly as it does on
+#: outside-click / Escape.
+QUICKJUMP_POPOVER_KEY = "quickjump_popover"
 
-    The box is a text input (labelled with the ⌘K hint) plus one
-    button per matching action. Clicking a button sets
-    ``pending_tab`` and reruns — the same mechanism the sidebar
-    Profile button and every "Go to the Clean tab" button already use,
-    so the jump lands exactly where the section radio expects it.
 
-    ``container`` is where the box renders (``st.sidebar`` by
-    default). The app passes the top bar's search column, so the box
-    sits in the top bar like the dashboard's Search pill; ``compact``
-    then hides the input's label (the placeholder already says what
-    it is) so the bar stays one row tall.
-    """
-    box = container if container is not None else st.sidebar
-    items = list(QUICK_ACTIONS if actions is None else actions)
-    query = box.text_input(
+def _popover_key(st):
+    """The live popover key: base + the epoch the last jump left
+    behind (0 when no jump has happened yet)."""
+    return f"{QUICKJUMP_POPOVER_KEY}_{st.session_state.get('quickjump_popover_epoch', 0)}"
+
+
+def _render_quick_jump_body(st, host, items, compact=False):
+    """The palette body: the search input plus one button per
+    matching action, shared by the popover (compact) and in-flow
+    (sidebar) versions. Widgets render on ``host`` — the popover
+    itself in compact mode (called inside the ``with`` block, so
+    the module-level calls land inside it), the container
+    otherwise. Returns the section key jumped to, or None.
+    Clicking a result sets the clear flag + pending_tab and reruns
+    — the flag clears the query on the next run, so the panel never
+    re-renders stale results after a jump."""
+    query = host.text_input(
         "Quick jump ⌘K",
         key="quickjump_query",
         placeholder="Search sections and actions…",
@@ -199,23 +223,71 @@ def render_quick_jump(st, actions=None, container=None, compact=False):
     if query and query.strip() and not matches:
         # Supabase empty-state pattern: a dead end always offers the
         # next step — here, the words that do match something.
-        box.info("No matching section or action — "
-                 "try 'clean', 'export' or 'profile'.")
+        host.info("No matching section or action — "
+                  "try 'clean', 'export' or 'profile'.")
         return None
     if not query or not str(query).strip():
-        box.caption("Type to filter — pick a result to jump there.")
+        host.caption("Type to filter — pick a result to jump there.")
         return None
     for action in matches[:_MAX_SHOWN]:
         label = f"{action['label']} — {action['hint']}"
-        if box.button(label, key=f"quickjump_go_{action['key']}"):
+        if host.button(label, key=f"quickjump_go_{action['key']}"):
             section = resolve_section(action["key"])
             if section is not None:
+                st.session_state[_QUICKJUMP_CLEAR_KEY] = True
+                # Bump the popover epoch: the next run mounts a
+                # fresh popover (closed), so the panel closes on
+                # selection instead of lingering open.
+                st.session_state["quickjump_popover_epoch"] = \
+                    st.session_state.get("quickjump_popover_epoch", 0) + 1
                 st.session_state["pending_tab"] = section
                 st.rerun()  # real Streamlit reruns here, so the return
                 # below only runs for fakes/tests.
                 return section
     if len(matches) > _MAX_SHOWN:
-        box.caption(
+        host.caption(
             f"…and {len(matches) - _MAX_SHOWN} more — "
             "narrow the search to see them.")
     return None
+
+
+def render_quick_jump(st, actions=None, container=None, compact=False):
+    """Draw the Quick jump palette. Returns the section key jumped
+    to, or None when the user did not pick anything this run.
+
+    ``compact`` (the top bar) renders the palette inside an
+    ``st.popover`` ("Search…"): the results float above the page
+    as an overlay — they never push content — and the panel closes
+    on outside click / Escape / selection, the way Streamlit
+    popovers do. The old in-flow stack stayed open after selection,
+    Escape, clear and navigation (clone-R1 live failure): the query
+    was never cleared, so every rerun re-rendered the same results.
+    Non-compact (the sidebar) keeps the in-flow box.
+
+    A jump clears the query on the NEXT run (the clear flag, read
+    before the input mounts) so no stale results survive a jump in
+    either version. Clicking a button sets ``pending_tab`` and
+    reruns — the same mechanism the sidebar Profile button and
+    every "Go to the Clean tab" button already use, so the jump
+    lands exactly where the section radio expects it.
+
+    ``container`` is where the palette renders (``st.sidebar`` by
+    default). The app passes the top bar's search column, so the
+    box sits in the top bar like the dashboard's Search pill;
+    ``compact`` then hides the input's label (the placeholder
+    already says what it is) so the bar stays one row tall.
+    """
+    box = container if container is not None else st.sidebar
+    items = list(QUICK_ACTIONS if actions is None else actions)
+    if st.session_state.pop(_QUICKJUMP_CLEAR_KEY, False):
+        # A jump landed on the previous run: clear the query BEFORE
+        # the input mounts, so the results do not re-render.
+        st.session_state["quickjump_query"] = ""
+    if compact:
+        with box.popover("Search…", icon=":material/search:",
+                         use_container_width=True,
+                         key=_popover_key(st)):
+            # Inside the with-block the module-level calls land in
+            # the popover, so the host here is ``st`` itself.
+            return _render_quick_jump_body(st, st, items, compact=True)
+    return _render_quick_jump_body(st, box, items, compact=compact)

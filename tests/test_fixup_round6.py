@@ -323,10 +323,12 @@ def test_r6_denylist_hides_controls_not_nav():
         # The expanded rail hides none of the denylisted controls —
         # but it DOES hide Streamlit's native top "«" collapse
         # control (round 7: the rail collapses to the 60px icon
-        # rail, never to 0px) and the menu button's expand_more
+        # rail, never to 0px), the menu button's expand_more
         # chevron (clone Round 1 — Streamlit's own chevron inside
-        # the behavior-menu trigger). So the only display:none
-        # allowed in the expanded sheet is those two.
+        # the behavior-menu trigger), and the sidebar resize handle
+        # (clone Round 2 — a dead control on a fixed-width rail).
+        # So the only display:none allowed in the expanded sheet
+        # is those three.
         for rule in css.split("}"):
             if "display: none !important" in rule:
                 selector = rule.split("{")[0]
@@ -335,9 +337,10 @@ def test_r6_denylist_hides_controls_not_nav():
                         f"expanded {theme} rail must not hide {testid}"
                 assert ("stSidebarCollapseButton" in selector
                         or ("st-key-dcs_rail_behavior" in selector
-                            and "aria-hidden" in selector)), \
+                            and "aria-hidden" in selector)
+                        or "stSidebarResizeHandle" in selector), \
                     f"expanded {theme} rail must only hide the native " \
-                    f"collapse control or the menu chevron: {selector!r}"
+                    f"collapse control, the menu chevron or the resize handle: {selector!r}"
     print("round 6 denylist OK")
 
 

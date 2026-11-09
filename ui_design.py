@@ -965,6 +965,19 @@ div[data-testid="stHorizontalBlock"] div[data-testid="column"]:last-child
 .dcs-topbar-left > span { min-width: 0; overflow: hidden;
   text-overflow: ellipsis; white-space: nowrap; }
 .dcs-topbar-rule { border-top: 1px solid #e8e8e8; margin: 0.25rem 0 1rem; }
+/* ---- Quick Jump results wrap instead of truncating: the
+   "Label — hint" buttons are long and the top-bar search column
+   is narrow — the longest label clipped mid-word live
+   ("…on your Wi"). Inside the popover the buttons wrap to two
+   lines and left-align; the Search pill's expand_more chevron is
+   hidden (the pill reads clean, like the dashboard's). Key-scoped
+   (st-key-quickjump_popover / st-key-quickjump_go_*), so no other
+   popover or button is touched. ---- */
+div[data-testid="stLayoutWrapper"][class*="st-key-quickjump_popover"] button[data-testid="stPopoverButton"] > div > div[aria-hidden="true"] {
+  display: none !important; }
+div[class*="st-key-quickjump_go"] button[data-testid="stBaseButton-secondary"] {
+  white-space: normal !important; height: auto !important;
+  text-align: left !important; }
 /* ---- Profile (Preferences) page: Supabase's two-column account
    page — a narrow sub-nav at the left (Back link, section rows)
    and bordered cards at the right. The sub-nav column carries a
@@ -1578,6 +1591,15 @@ div[data-testid="stHorizontalBlock"] div[data-testid="column"]:last-child
 .dcs-topbar-left > span { min-width: 0; overflow: hidden;
   text-overflow: ellipsis; white-space: nowrap; }
 .dcs-topbar-rule { border-top: 1px solid #2e2e2e; margin: 0.25rem 0 1rem; }
+/* ---- Quick Jump results wrap instead of truncating (dark twin of
+   the light rule above): the "Label — hint" buttons wrap to two
+   lines and left-align; the Search pill's expand_more chevron is
+   hidden. Key-scoped, so no other popover or button is touched. ---- */
+div[data-testid="stLayoutWrapper"][class*="st-key-quickjump_popover"] button[data-testid="stPopoverButton"] > div > div[aria-hidden="true"] {
+  display: none !important; }
+div[class*="st-key-quickjump_go"] button[data-testid="stBaseButton-secondary"] {
+  white-space: normal !important; height: auto !important;
+  text-align: left !important; }
 /* ---- Profile (Preferences) page: Supabase's two-column account
    page — a narrow sub-nav at the left (Back link, section rows)
    and bordered cards at the right. The sub-nav column carries a
@@ -2485,6 +2507,17 @@ def rail_css(collapsed: bool, theme, hover: bool = True) -> str:
         # still says "Collapse sidebar".
         'div[data-testid="stSidebarCollapseButton"] {',
         "  display: none !important; }",
+        # The sidebar resize handle is a dead control on a
+        # fixed-width rail: dragging it writes a persisted
+        # sidebarWidth (probe32: localStorage gains "sidebarWidth"
+        # and the inline width changes) while the rail pins hold
+        # the section at 60/260px, so the drag gives no feedback —
+        # and a stored width would surface the moment any pin
+        # weakened. The rail's widths are fixed by design (60px
+        # collapsed, 260px expanded/overlay), so the handle is
+        # hidden in every state.
+        'div[data-testid="stSidebarResizeHandle"] {',
+        "  display: none !important; }",
         'section[data-testid="stSidebar"] div[data-testid="stSidebarHeader"] {',
         "  flex: none !important; }",
         'section[data-testid="stSidebar"] div[data-testid="stSidebarUserContent"] {',
@@ -2635,6 +2668,33 @@ def rail_css(collapsed: bool, theme, hover: bool = True) -> str:
                 "  justify-content: flex-start !important; }",
             ] + _pin_rules(RAIL_WIDTH_EXPANDED, RAIL_BEHAVIOR_KEY_CLASS,
                            hover=True)
+            _css += [
+                # The behavior control button, flyout open: when the
+                # sidebar is hovered (the overlay is open) or the
+                # pointer is on the control itself, the button widens
+                # to the labelled 236px row. The collapsed 36px rule
+                # (shared tail below) would otherwise leave the
+                # "Sidebar behavior" label squeezed into a 36px
+                # square, wrapping letter-by-letter — the clone-R1
+                # live failure (probe30: the label rendered as a
+                # 41x179px vertical strip inside the 36px button).
+                # The label span is un-hidden on container hover
+                # too: the hiding rule keys on section:not(:hover),
+                # and the pointer on the control is NOT on the
+                # section — so without this the wide button would
+                # show only the tune icon. Both rules beat the
+                # base/hiding rules on specificity alone (button
+                # (0,7,6)/(0,6,4) vs (0,5,4); span (0,8,7) vs
+                # (0,7,7)) and sit in the hover-mode block only, so
+                # strict mode gains no hover rule. No :has().
+                f'section[data-testid="stSidebar"]:hover ~ div {RAIL_BEHAVIOR_CHAIN} button[data-testid="stPopoverButton"],',
+                f'{RAIL_BEHAVIOR_CHAIN}:hover button[data-testid="stPopoverButton"] {{',
+                "  width: 236px !important; min-width: 236px !important;",
+                "  justify-content: flex-start !important; }",
+                f'section[data-testid="stSidebar"] ~ div {RAIL_BEHAVIOR_CHAIN}:hover button span[style*="display: contents"],',
+                f'section[data-testid="stSidebar"] ~ div {RAIL_BEHAVIOR_CHAIN}:hover button span[style*="display:contents"] {{',
+                "  display: contents !important; }",
+            ]
         _css += [
             # Hiding, collapsed and visually collapsed (the
             # denylist): every non-nav child of the vertical block
@@ -2876,6 +2936,44 @@ def sidebar_nav(items, active: str | None = None, collapsed: bool = False,
                 type="secondary", disabled=(key == active)):
             clicked = key
     return clicked
+
+
+#: The main flow, at a glance: Upload -> Clean -> KPIs -> Export.
+#: Each step is a page — Preview is Upload, Clean is Clean, KPIs
+#: is KPIs, Report is Export. The "you are here" marker follows
+#: the page you are actually on: the old line derived it from
+#: whether cleaned data existed, so on Preview it always read
+#: "Clean — you are here" (the clone-R1 live failure), and it
+#: ticked Upload before any file was loaded (the tick followed
+#: the marker index, not the data). Ticks follow the data now: a
+#: step is ticked once its output exists (a file loaded, data
+#: cleaned); KPIs and Export have no "done" state tracked, so
+#: they are never ticked. Pages outside the flow return None
+#: (no marker).
+FLOW_STEPS = ("Upload", "Clean", "KPIs", "Export")
+_FLOW_STEP_BY_SECTION = {"preview": 1, "clean": 2, "kpis": 3,
+                         "report": 4}
+
+
+def flow_marker(active_section, raw_loaded=False,
+                clean_loaded=False):
+    """The "Your flow" parts for the page you are on, or None when
+    the page is not a flow step. Pure (no Streamlit calls), so it
+    is unit-testable. The current step is the page's step; a step
+    before it is ticked only when its output exists."""
+    _current = _FLOW_STEP_BY_SECTION.get(active_section)
+    if _current is None:
+        return None
+    _done = [bool(raw_loaded), bool(clean_loaded), False, False]
+    _parts = []
+    for _i, _label in enumerate(FLOW_STEPS, start=1):
+        if _i == _current:
+            _parts.append(f"**{_label}** — you are here")
+        elif _done[_i - 1]:
+            _parts.append(f"{_label} ✓")
+        else:
+            _parts.append(_label)
+    return _parts
 
 
 def render_rail_behavior_menu(st_module=None) -> None:
