@@ -2172,22 +2172,31 @@ elif _top_actions["avatar"] == "previews":
     st.toast("No feature previews running right now.")
 elif _top_actions["avatar"] == "logout":
     _do_logout()
+# The main flow, at a glance: upload -> clean -> KPIs -> export.
+# ONE render site in the shared shell chrome (right under the top
+# bar), so the strip shows on EVERY flow page. It used to live
+# inside the Preview block below, so on Clean / KPIs / Report it
+# was never rendered at all (the Round 3 live failure: "you are
+# here" pinned to Upload, strip absent off Preview). The marker
+# follows the page you are actually on (Preview is the Upload
+# step) — the old line derived it from whether cleaned data
+# existed, so it always read "Clean — you are here" on Preview,
+# and it ticked Upload before any file was loaded. Ticks follow
+# the data instead (see flow_marker). flow_marker returns None
+# off the flow, so Dashboard / Join / Compare / Tools / How to
+# use / Settings / Profile / Status show no strip. (On Preview
+# the strip now sits above the intro caption instead of below
+# it — the strip itself is unchanged.)
+_active_key = next(
+    (k for k, v in _nav_labels.items() if v == _top_active),
+    "preview")
+_flow_parts = ui_design.flow_marker(
+    _active_key, raw_loaded=st.session_state.raw is not None,
+    clean_loaded=st.session_state.clean is not None)
+if _flow_parts:
+    st.caption("Your flow: " + " → ".join(_flow_parts))
 if _top_active == _nav_labels["preview"]:
     st.caption("Put in messy data. Get clean data, KPIs, charts and a report.")
-    # The main flow, at a glance: upload -> clean -> KPIs -> export.
-    # The marker follows the page you are actually on (Preview is
-    # the Upload step) — the old line derived it from whether
-    # cleaned data existed, so it always read "Clean — you are
-    # here" on Preview, and it ticked Upload before any file was
-    # loaded. Ticks follow the data instead (see flow_marker).
-    _active_key = next(
-        (k for k, v in _nav_labels.items() if v == _top_active),
-        "preview")
-    _flow_parts = ui_design.flow_marker(
-        _active_key, raw_loaded=st.session_state.raw is not None,
-        clean_loaded=st.session_state.clean is not None)
-    if _flow_parts:
-        st.caption("Your flow: " + " → ".join(_flow_parts))
     if st.session_state.pop("just_signed_up", False):
         st.success("Account created — you're logged in. Start with a file "
                    "from the sidebar, or try the sample data.")
