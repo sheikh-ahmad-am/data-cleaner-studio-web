@@ -16,6 +16,14 @@ What is covered, with the cookie layer mocked (no real browser):
      deciding "logged out" and showing the login screen.
   7. NEW — a cookie lost mid-session (blocked write, tab closed
      too fast) is re-issued while still logged in.
+  8. NEW — the theme preference persists (Round 3): picking Dark
+     in the avatar menu writes a 1-year cookie after a completing
+     run, and a fresh session restores Dark.
+  9. NEW — the rail mode persists (Round 3): picking Collapsed in
+     the behavior menu (its on_change reruns) writes the cookie
+     on the rerun run, and a fresh session restores Collapsed.
+  10. NEW — System follows the OS cookie (Round 3): pref
+      "system" with os_dark "1" restores Dark, with "0" Light.
 
 The mock is deliberately REALISTIC about browser timing, because
 the bug this file guards was invisible to the old synchronous
@@ -302,7 +310,7 @@ def _run_flow() -> None:
         again.run()
         assert not again.exception, f"exception on re-restore: {again.exception}"
         assert logged_in(again), "re-restore must log in before logout test"
-        find_button(again, "Log out", key="avatar_logout_btn").click().run()
+        find_button(again, "Sign out", key="avatar_logout_btn").click().run()
         assert not again.exception, f"exception on logout: {again.exception}"
         assert login_screen(again) and not logged_in(again), \
             "logout must return to the login screen"
@@ -311,6 +319,116 @@ def _run_flow() -> None:
         assert auth.validate_session(token) is None, \
             "logout must delete the server session"
         print("7. logout deletes the server session and clears the cookie")
+
+        # ---- 8. Theme preference persists: pick Dark in the avatar
+        # ----    menu -> the 1-year cookie lands after a completing
+        # ----    run -> a fresh session restores Dark.
+        bob = AppTest.from_file(APP)
+        bob.run()
+        assert not bob.exception, f"exception on bob signup: {bob.exception}"
+        assert login_screen(bob)
+        bob.radio[0].set_value("Sign up").run()
+        find_text_input(bob, "Username").set_value("bob1").run()
+        find_text_input(bob, "Password").set_value("password123").run()
+        find_button(bob, "Create account").click().run()
+        assert not bob.exception, f"exception on bob signup: {bob.exception}"
+        assert logged_in(bob), "signup must log bob straight in"
+        bob.radio(key="avatar_theme_radio").set_value("dark").run()
+        assert not bob.exception, f"exception on theme pick: {bob.exception}"
+        assert bob.session_state.get("dcs_theme") == "dark"
+        assert bob.session_state.get("dcs_theme_pref") == "dark"
+        # The write is issued in a run that completes normally, so
+        # it is staged now and lands in the browser on the next run
+        # (the same timing as the login cookie in test 2).
+        assert RealisticFakeCookieController.store.get(
+            "dcs_theme_pref") is None, \
+            "the pref cookie must not land in the issuing run itself"
+        bob.run()
+        assert not bob.exception, f"exception on follow-up: {bob.exception}"
+        assert RealisticFakeCookieController.store.get(
+            "dcs_theme_pref") == "dark", \
+            "the theme preference must land in a cookie"
+        _pref_sets = [s for s in RealisticFakeCookieController.sets
+                      if s[0] == "dcs_theme_pref"]
+        assert _pref_sets, "the theme pick must record a cookie write"
+        _name, _value, _kwargs = _pref_sets[-1]
+        assert _kwargs.get("max_age") == 365 * 24 * 3600, _kwargs
+        assert _kwargs.get("secure") is True, _kwargs
+        assert _kwargs.get("same_site") == "lax", _kwargs
+        # Simulated refresh: a fresh session restores Dark. The
+        # cookie component only registers its snapshot after it
+        # mounts (run 1), so the restore seeds on run 2.
+        fresh2 = AppTest.from_file(APP)
+        fresh2.run()
+        assert not fresh2.exception, \
+            f"exception on refresh run 1: {fresh2.exception}"
+        assert logged_in(fresh2), "refresh must restore the login"
+        fresh2.run()
+        assert not fresh2.exception, \
+            f"exception on refresh run 2: {fresh2.exception}"
+        assert fresh2.session_state.get("dcs_theme") == "dark", \
+            "a refresh must restore the Dark theme from the cookie"
+        assert fresh2.session_state.get("dcs_theme_pref") == "dark"
+        print("8. theme preference persists: Dark in a 1-year cookie, "
+              "restored on refresh")
+
+        # ---- 9. Rail mode persists: pick Collapsed in the behavior
+        # ----    menu (its on_change reruns, so the issuing run is
+        # ----    aborted and the write must land on the rerun run)
+        # ----    -> a fresh session restores Collapsed.
+        bob.radio(key="dcs_rail_mode_radio").set_value("collapsed").run()
+        assert not bob.exception, f"exception on rail pick: {bob.exception}"
+        assert bob.session_state.get("dcs_rail_mode") == "collapsed"
+        assert bob.session_state.get("dcs_rail_collapsed") is True
+        assert RealisticFakeCookieController.store.get(
+            "dcs_rail_mode") is None, \
+            "the rail cookie must not land in the rerun-aborted run"
+        bob.run()
+        assert not bob.exception, f"exception on follow-up: {bob.exception}"
+        assert RealisticFakeCookieController.store.get(
+            "dcs_rail_mode") == "collapsed", \
+            "the rail mode must land in a cookie on the rerun run"
+        fresh3 = AppTest.from_file(APP)
+        fresh3.run()
+        assert not fresh3.exception, \
+            f"exception on refresh run 1: {fresh3.exception}"
+        assert logged_in(fresh3), "refresh must restore the login"
+        fresh3.run()
+        assert not fresh3.exception, \
+            f"exception on refresh run 2: {fresh3.exception}"
+        assert fresh3.session_state.get("dcs_rail_mode") == "collapsed", \
+            "a refresh must restore the Collapsed rail from the cookie"
+        assert fresh3.session_state.get("dcs_rail_collapsed") is True
+        assert fresh3.session_state.get("dcs_theme") == "dark", \
+            "the refresh must restore the theme too"
+        print("9. rail mode persists: Collapsed in a cookie (written on "
+              "the rerun run), restored on refresh")
+
+        # ---- 10. System follows the OS cookie: pref "system" with
+        # ----     os_dark "1" restores Dark, with "0" restores Light.
+        RealisticFakeCookieController.store["dcs_theme_pref"] = "system"
+        RealisticFakeCookieController.store["dcs_os_dark"] = "1"
+        sys_dark = AppTest.from_file(APP)
+        sys_dark.run()
+        assert not sys_dark.exception, \
+            f"exception on system/dark run 1: {sys_dark.exception}"
+        sys_dark.run()
+        assert not sys_dark.exception, \
+            f"exception on system/dark run 2: {sys_dark.exception}"
+        assert sys_dark.session_state.get("dcs_theme") == "dark", \
+            "System with os_dark=1 must restore Dark"
+        assert sys_dark.session_state.get("dcs_theme_pref") == "system"
+        RealisticFakeCookieController.store["dcs_os_dark"] = "0"
+        sys_light = AppTest.from_file(APP)
+        sys_light.run()
+        assert not sys_light.exception, \
+            f"exception on system/light run 1: {sys_light.exception}"
+        sys_light.run()
+        assert not sys_light.exception, \
+            f"exception on system/light run 2: {sys_light.exception}"
+        assert sys_light.session_state.get("dcs_theme") == "light", \
+            "System with os_dark=0 must restore Light"
+        print("10. System follows the OS cookie (dark on 1, light on 0)")
     finally:
         st.rerun = _orig_rerun
 

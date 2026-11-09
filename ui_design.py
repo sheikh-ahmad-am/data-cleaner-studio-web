@@ -1713,17 +1713,98 @@ THEME_SELECT_KEY = "dcs_theme_select"
 THEME_RADIO_KEY = "avatar_theme_radio"
 PROFILE_THEME_RADIO_KEY = "profile_theme_radio"
 
+#: The resolved theme the sync last wrote into the resolved-theme
+#: controls (sidebar selectbox, Profile radio) — Round 3. Those two
+#: controls own only the RESOLVED theme, and their ``on_change``
+#: writes the preference from it (``set_theme``). When the resolved
+#: theme changes between runs because the restore seeded late (or
+#: a flip came from another control), the widget value changes
+#: without the user touching it — and the callback would then
+#: overwrite the preference with the resolved theme ("System" ->
+#: "Dark"). A callback whose picked value equals this marker is a
+#: sync-produced change, not a user pick, and is ignored.
+THEME_SYNCED_KEY = "_dcs_theme_synced"
+
 #: The account menu's theme preference (clone Round 1): System /
 #: Dark / Light, Supabase's account-menu Theme section. ``dcs_theme``
 #: stays the resolved light/dark key the stylesheet follows;
-#: ``dcs_theme_pref`` is what the user picked. "System" falls back
-#: to Light — the app cannot genuinely follow the OS preference
-#: without a JS bridge, so a System row that claimed to would be a
-#: button that does nothing (the same reason the Profile Appearance
-#: card has no System row).
+#: ``dcs_theme_pref`` is what the user picked. "System" follows the
+#: OS preference through the ``dcs_os_dark`` cookie (Round 3): a
+#: zero-height JS bridge on every page writes it from
+#: ``matchMedia('(prefers-color-scheme: dark)')``; with no OS
+#: reading yet (first visit) System falls back to Light.
 THEME_PREF_KEY = "dcs_theme_pref"
 THEME_PREFS = ("system", "dark", "light")
 THEME_PREF_LABELS = {"system": "System", "dark": "Dark", "light": "Light"}
+
+#: Cookie names for the persisted preferences (Round 3 — the
+#: browser cookies the choices survive a reload in). The cookie
+#: name matches the session key on purpose: one name per choice,
+#: in both stores.
+THEME_PREF_COOKIE = "dcs_theme_pref"
+RAIL_MODE_COOKIE = "dcs_rail_mode"
+OS_DARK_COOKIE = "dcs_os_dark"
+
+#: Session key holding the OS dark reading (``True`` / ``False`` /
+#: ``None`` when no reading exists yet). It is a sensor reading,
+#: not a choice: the app re-reads it from the cookie on every run
+#: (see app.py's restore), so an OS switch between sessions
+#: corrects itself instead of freezing to the previous value.
+OS_DARK_KEY = "_dcs_os_dark"
+
+#: The OS-preference bridge (Round 3): a zero-height script that
+#: evaluates ``prefers-color-scheme`` and mirrors it into the
+#: ``dcs_os_dark`` cookie (``"1"`` / ``"0"``, one year, path /,
+#: SameSite=Lax, Secure on https). It only writes when the value
+#: changed, so a normal run is a no-op. It never reads or writes
+#: anything else, and a failure (sandboxed iframe, disabled JS)
+#: leaves the cookie unwritten — the app then treats System as
+#: Light, never crashes. Injected once per run by app.py, right
+#: after the stylesheets, so it runs on the login screen too.
+OS_DARK_BRIDGE_HTML = (
+    "<script>(function(){try{var d=(window.matchMedia&&"
+    "window.matchMedia('(prefers-color-scheme: dark)').matches)"
+    "?'1':'0';var m=document.cookie.match(/(?:^|;)\\s*dcs_os_dark="
+    "([^;]*)/);if(!m||m[1]!==d){var a='dcs_os_dark='+d+'; max-age="
+    "31536000; path=/; SameSite=Lax';if(window.location.protocol"
+    "==='https:'){a+='; Secure';}document.cookie=a;}}catch(e){}})();"
+    "</script>")
+
+
+def restore_pref_values(cookies) -> dict:
+    """Validate persisted preference cookies into the values the
+    app seeds session state from (Round 3). ``cookies`` is a
+    name -> value mapping (request cookies + the cookie
+    component's snapshot, merged by the caller). Only valid
+    entries are returned: ``{"theme_pref": ...}`` (system / dark /
+    light), ``{"rail_mode": ...}`` (expanded / collapsed / hover),
+    ``{"os_dark": True/False}``. Unknown or missing values are
+    dropped, never defaulted here — the caller keeps its own
+    defaults. Pure: no Streamlit, no I/O, unit-testable."""
+    out = {}
+    try:
+        _pref = cookies.get(THEME_PREF_COOKIE)
+    except Exception:  # noqa: BLE001 - a non-mapping is no cookies
+        return out
+    if _pref in THEME_PREFS:
+        out["theme_pref"] = _pref
+    try:
+        _mode = cookies.get(RAIL_MODE_COOKIE)
+    except Exception:  # noqa: BLE001 - a non-mapping is no cookies
+        return out
+    if _mode in RAIL_MODES:
+        out["rail_mode"] = _mode
+    try:
+        _os = cookies.get(OS_DARK_COOKIE)
+    except Exception:  # noqa: BLE001 - a non-mapping is no cookies
+        return out
+    # The cookie component JSON-parses numeric-looking values, so
+    # a snapshot read can arrive as int 1/0 instead of "1"/"0" —
+    # accept both (the merge in the app coerces, this is the
+    # belt-and-braces for a raw snapshot).
+    if _os in ("1", "0", 1, 0):
+        out["os_dark"] = (_os in ("1", 1))
+    return out
 
 
 def normalize_theme_pref(value) -> str:
@@ -1734,11 +1815,15 @@ def normalize_theme_pref(value) -> str:
     return normalize_theme(value)
 
 
-def resolve_theme_pref(pref) -> str:
+def resolve_theme_pref(pref, os_dark=False) -> str:
     """A theme preference -> the light/dark theme in effect.
-    "System" resolves to Light (no OS bridge)."""
-    return "light" if normalize_theme_pref(pref) == "system" else \
-        normalize_theme(pref)
+    "System" follows the OS when ``os_dark`` is known (True = the
+    OS is dark); with no OS reading (``os_dark`` False / unknown)
+    it falls back to Light. Explicit Dark / Light ignore the OS."""
+    _pref = normalize_theme_pref(pref)
+    if _pref == "system":
+        return "dark" if os_dark else "light"
+    return normalize_theme(_pref)
 
 
 def set_theme(st_module, theme) -> str:
@@ -1759,8 +1844,11 @@ def sync_theme_widgets(st_module=None) -> None:
     after the ``dcs_theme`` setdefault, before the top bar).
 
     The account menu's preference is resolved here first: a stored
-    "System" preference resolves to Light, and the resolved theme is
-    written back to ``dcs_theme`` (the key the stylesheet follows).
+    "System" preference follows the OS reading when one exists
+    (``_dcs_os_dark`` in session state, seeded from the
+    ``dcs_os_dark`` cookie by the app's restore) and falls back to
+    Light without one, and the resolved theme is written back to
+    ``dcs_theme`` (the key the stylesheet follows).
     The avatar radio owns the PREFERENCE ("system" / "dark" /
     "light"); the sidebar selectbox and the Profile radio own the
     RESOLVED theme ("light" / "dark") — they only offer those two.
@@ -1780,11 +1868,16 @@ def sync_theme_widgets(st_module=None) -> None:
         _pref = normalize_theme(
             st_mod.session_state.get("dcs_theme", THEME_DEFAULT))
         st_mod.session_state[THEME_PREF_KEY] = _pref
-    current = resolve_theme_pref(_pref)
+    current = resolve_theme_pref(
+        _pref, os_dark=bool(st_mod.session_state.get(OS_DARK_KEY)))
     st_mod.session_state["dcs_theme"] = current
     st_mod.session_state[THEME_SELECT_KEY] = current
     st_mod.session_state[THEME_RADIO_KEY] = _pref
     st_mod.session_state[PROFILE_THEME_RADIO_KEY] = current
+    # The resolved value just written into the resolved-theme
+    # controls — their on_change callbacks ignore a pick that
+    # equals this (a sync-produced change, not a user pick).
+    st_mod.session_state[THEME_SYNCED_KEY] = current
 
 
 def render_theme_toggle(st_module=None) -> str:
@@ -1802,7 +1895,15 @@ def render_theme_toggle(st_module=None) -> str:
         st_mod.session_state.get("dcs_theme", THEME_DEFAULT))
 
     def _on_change():
-        set_theme(st_mod, st_mod.session_state.get(THEME_SELECT_KEY, current))
+        _picked = st_mod.session_state.get(THEME_SELECT_KEY, current)
+        if _picked == st_mod.session_state.get(THEME_SYNCED_KEY):
+            # The value changed because the sync wrote the resolved
+            # theme into the key (a late restore seeding, or a flip
+            # from another control) — not because the user picked
+            # it. Applying it would overwrite the preference with
+            # the resolved theme ("System" -> "Dark").
+            return
+        set_theme(st_mod, _picked)
         # The avatar menu's radio is created earlier in the run (top
         # bar), so its key cannot be written here — it is re-synced
         # by sync_theme_widgets at the top of the next run, and by
@@ -1817,6 +1918,7 @@ def render_theme_toggle(st_module=None) -> str:
     # dropdown). Writing the key before creation is the legal
     # moment; after creation it would raise.
     st_mod.session_state[THEME_SELECT_KEY] = current
+    st_mod.session_state[THEME_SYNCED_KEY] = current
     st_mod.sidebar.selectbox(
         "Theme", options=list(THEMES),
         format_func=lambda t: "Dark" if t == "dark" else "Light",
@@ -2035,8 +2137,9 @@ def topbar(title: str, breadcrumb: str = "", user=None,
 # so the main area grows into the freed space on its own. The content
 # padding (~24px each side) is overridden to 6px in the collapsed
 # state or it would eat the whole 60px rail. The state lives in
-# session state (``dcs_rail_collapsed``, default True) and is
-# remembered across reruns the way dcs_theme is.
+# session state (``dcs_rail_collapsed``, default True), remembered
+# across reruns the way dcs_theme is — and across reloads in the
+# ``dcs_rail_mode`` browser cookie (Round 3, see app.py).
 # ---------------------------------------------------------------------------
 RAIL_COLLAPSED_KEY = "dcs_rail_collapsed"
 RAIL_WIDTH_COLLAPSED = "60px"
@@ -3089,8 +3192,9 @@ def render_avatar_menu(st_module=None, user=None, container=None):
     never a link), then icon rows — Account, Feature previews,
     Changelog — a hairline, a "Theme" section with a System/Dark/Light
     radio (the selected row carries the filled dot, the way Supabase's
-    System/Dark/Light rows do; "System" resolves to Light — the app
-    has no OS-preference bridge), a hairline, a Timezone row
+    System/Dark/Light rows do; "System" follows the OS preference
+    through the ``dcs_os_dark`` cookie bridge, Light when no OS
+    reading exists yet), a hairline, a Timezone row
     ("Auto (Asia/Calcutta)" — display-only; the app runs on IST),
     a hairline, a small "Language" row (English / हिन्दी / اردو —
     the standalone Language section on the Preview tab was removed
@@ -3161,11 +3265,14 @@ def render_avatar_menu(st_module=None, user=None, container=None):
         def _on_theme():
             # The radio owns the PREFERENCE (system / dark / light);
             # resolve it to the light/dark theme the stylesheet
-            # follows ("System" resolves to Light — no OS bridge).
+            # follows ("System" follows the OS reading when one
+            # exists, Light without one).
             _pref = normalize_theme_pref(
                 st_mod.session_state.get(THEME_RADIO_KEY, _pref_current))
             st_mod.session_state[THEME_PREF_KEY] = _pref
-            st_mod.session_state["dcs_theme"] = resolve_theme_pref(_pref)
+            st_mod.session_state["dcs_theme"] = resolve_theme_pref(
+                _pref,
+                os_dark=bool(st_mod.session_state.get(OS_DARK_KEY)))
             # The sidebar selectbox is created later in the run (it
             # lives below the top bar), so its key can be written
             # here — it then shows the new theme on this very run

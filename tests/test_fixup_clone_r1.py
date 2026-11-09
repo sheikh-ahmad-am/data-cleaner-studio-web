@@ -289,7 +289,7 @@ def test_clone_r1_theme_pref_constants_and_resolution():
     assert ui_design.THEME_PREF_LABELS == {
         "system": "System", "dark": "Dark", "light": "Light"}
     assert ui_design.resolve_theme_pref("system") == "light", \
-        "System must resolve to Light (no OS bridge)"
+        "System with no OS reading must resolve to Light"
     assert ui_design.resolve_theme_pref("dark") == "dark"
     assert ui_design.resolve_theme_pref("light") == "light"
     assert ui_design.normalize_theme_pref("bogus") == "light"
@@ -314,7 +314,9 @@ def test_clone_r1_set_theme_writes_pref_and_theme():
 def test_clone_r1_avatar_menu_theme_radio_has_system():
     """The account menu's Theme section is System / Dark / Light
     (Supabase's three rows). The radio owns the PREFERENCE; a
-    System pick resolves the theme to Light."""
+    System pick resolves the theme to Light when no OS reading
+    exists (AppTest has none — the Round 3 cookie bridge supplies
+    it in the real app)."""
     script = (
         "import streamlit as st\n"
         "import ui_design\n"
@@ -337,7 +339,7 @@ def test_clone_r1_avatar_menu_theme_radio_has_system():
     # Pick System: theme light, pref system.
     at.radio(key="avatar_theme_radio").set_value("system").run()
     assert at.session_state.get("dcs_theme") == "light", \
-        "System must resolve the theme to Light"
+        "System with no OS reading must resolve the theme to Light"
     assert at.session_state.get("dcs_theme_pref") == "system"
     print("clone r1 avatar menu theme radio has System OK")
 

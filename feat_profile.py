@@ -356,9 +356,11 @@ def render_profile_view(st, user, storage_key, on_logout=None):
                              "accounts — local accounts have no email address on file.")
 
         # (3) Appearance --------------------------------------------------
-        # Light/Dark only — there is no System row: the app cannot
-        # genuinely follow the OS preference without a JS bridge, so
-        # a System row would be a button that does nothing.
+        # Light/Dark only — there is no System row here: System lives
+        # in the account menu's Theme section (it follows the OS
+        # through the Round 3 cookie bridge). Picking Light or Dark
+        # here sets the preference too (set_theme), so the account
+        # menu's radio agrees on the next run.
         _profile_section(st, "profile-appearance", "Appearance",
                          "Choose how the app looks.")
         with st.container(border=True):
@@ -374,12 +376,24 @@ def render_profile_view(st, user, storage_key, on_logout=None):
                 # the top-of-run sync predates that flip.
                 st.session_state[ui_design.PROFILE_THEME_RADIO_KEY] = (
                     _current_theme)
+                st.session_state[ui_design.THEME_SYNCED_KEY] = (
+                    _current_theme)
 
                 def _on_profile_theme():
                     _new = ui_design.normalize_theme(
                         st.session_state.get(
                             ui_design.PROFILE_THEME_RADIO_KEY,
                             _current_theme))
+                    if _new == st.session_state.get(
+                            ui_design.THEME_SYNCED_KEY):
+                        # The value changed because the sync wrote
+                        # the resolved theme into the key (a late
+                        # restore seeding, or a flip from another
+                        # control) — not because the user picked it.
+                        # Applying it would overwrite the
+                        # preference with the resolved theme
+                        # ("System" -> "Dark").
+                        return
                     # set_theme also writes the preference, so the
                     # account menu's System/Dark/Light radio agrees
                     # with the resolved theme on the next run.

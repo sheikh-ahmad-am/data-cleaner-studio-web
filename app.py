@@ -779,6 +779,113 @@ div[data-testid="stVerticalBlock"] > div:has(.dcs-danger-zone) ~ div div[data-te
 st.set_page_config(page_title="Data Cleaner Studio", layout="wide",
                    page_icon=str(_APP_DIR / "assets" / "favicon.png"))
 
+# --------------------------------------- persisted preferences (Round 3) --
+# The theme preference + rail mode survive a full page reload in
+# browser cookies (the login cookie's machinery, reused — see the
+# login-cookie section further down). The restore runs HERE, before
+# the stylesheet is injected, so the first paint already uses the
+# restored theme/rail instead of flashing the defaults. It seeds keys
+# that are absent from session state — or that were defaulted because
+# no cookie was visible yet and one has since arrived (the cookie
+# component's snapshot only exists after it mounts). Once seeded from
+# cookies the in-session choice is never overwritten. The OS reading
+# is the exception — it is a sensor value, not a choice, so it
+# refreshes on every run from the freshest cookie source.
+def _request_cookies():
+    """Cookies the browser sent with this session's initial request
+    (the WebSocket handshake), or {} when unavailable.
+
+    A snapshot from session start: a cookie written during this
+    session does NOT appear here until the next page load. Never
+    raises."""
+    try:
+        cookies = st.context.cookies
+    except Exception:  # noqa: BLE001 - no request context (AppTest, …)
+        return {}
+    try:
+        return dict(cookies)
+    except Exception:  # noqa: BLE001 - not a mapping: treat as empty
+        return {}
+
+
+def _all_browser_cookies():
+    """All cookies visible to this run: the request cookies merged
+    with the cookie component's snapshot in session state. The
+    snapshot wins on conflict — it is the freshest read (it picks
+    up cookies written during this session after a refresh), while
+    the request cookies are the session-start snapshot. Never
+    raises; {} when nothing is visible yet.
+
+    The snapshot's values are NOT always strings: the component
+    JSON-parses them, so a numeric-looking cookie ("1") arrives
+    as an int (1) — and a cookie is a string, so coerce scalars
+    back. Without this the OS reading (``dcs_os_dark`` "0"/"1")
+    is dropped by the string-only merge below and System follows
+    the stale request cookie instead of the fresh snapshot."""
+    merged = {}
+    for _k, _v in _request_cookies().items():
+        if isinstance(_v, str):
+            merged[_k] = _v
+    try:
+        stored = st.session_state.get("cookies")
+    except Exception:  # noqa: BLE001 - no session state yet
+        stored = None
+    if isinstance(stored, dict):
+        for _k, _v in stored.items():
+            if isinstance(_v, str):
+                merged[_k] = _v
+            elif isinstance(_v, bool):
+                merged[_k] = "true" if _v else "false"
+            elif isinstance(_v, (int, float)):
+                merged[_k] = str(_v)
+    return merged
+
+
+def _restore_prefs_from_cookies():
+    """Seed the theme preference, rail mode and OS reading from
+    the persisted cookies — before first paint (see the block
+    comment above). Invalid values are ignored
+    (ui_design.restore_pref_values validates); missing cookies
+    leave the defaults alone. The OS reading refreshes on every
+    run (sensor, not a choice). The preference + mode seed when
+    their session keys are absent — OR when they were defaulted
+    because no cookie was visible yet (``_prefs_from_cookies``
+    unset) and a cookie has since arrived: the cookie component's
+    snapshot only exists after it mounts, so on a run where the
+    request cookies are unavailable the values land one run late
+    instead of never. Once seeded from cookies the flag sticks
+    and the in-session choice is never overwritten — a user change
+    can only happen after the first run, by which time the
+    snapshot exists. Never raises: a broken restore falls back
+    to the defaults."""
+    try:
+        _restored = ui_design.restore_pref_values(_all_browser_cookies())
+    except Exception:  # noqa: BLE001 - a broken restore never
+        return  # blocks first paint; defaults apply instead.
+    _from_cookies = bool(st.session_state.get("_prefs_from_cookies"))
+    _seeded_now = False
+    if "theme_pref" in _restored:
+        if (ui_design.THEME_PREF_KEY not in st.session_state
+                or not _from_cookies):
+            st.session_state[ui_design.THEME_PREF_KEY] = (
+                _restored["theme_pref"])
+            _seeded_now = True
+    if "rail_mode" in _restored:
+        if (ui_design.RAIL_MODE_KEY not in st.session_state
+                or not _from_cookies):
+            st.session_state[ui_design.RAIL_MODE_KEY] = (
+                _restored["rail_mode"])
+            _seeded_now = True
+    if _seeded_now:
+        st.session_state["_prefs_from_cookies"] = True
+    if "os_dark" in _restored:
+        st.session_state[ui_design.OS_DARK_KEY] = _restored["os_dark"]
+    elif ui_design.OS_DARK_KEY not in st.session_state:
+        st.session_state[ui_design.OS_DARK_KEY] = None
+
+
+_restore_prefs_from_cookies()
+
 # Injected before the login view renders (and before the share-link
 # handling below), so the auth screen gets the design system too.
 # Which stylesheet: st.session_state["dcs_theme"] ("light" by default,
@@ -813,6 +920,16 @@ st.markdown(ui_design.rail_css(
     st.session_state.get("dcs_theme") or "light",
     hover=(_rail_mode == "hover")),
     unsafe_allow_html=True)
+# OS-preference bridge (Round 3): a zero-height script that mirrors
+# prefers-color-scheme into the dcs_os_dark cookie, so a "System"
+# theme preference follows the OS on the next run / reload. It runs
+# on the login screen too (injected here, before the login view),
+# takes no space, and never raises — in AppTest it is an inert
+# iframe element.
+try:
+    st.components.v1.html(ui_design.OS_DARK_BRIDGE_HTML, height=0)
+except Exception:  # noqa: BLE001 - no OS bridge without components
+    pass
 # Rhythm (ui_loading): 1280px container cap + section-gap helpers,
 # injected once per run right after the design system.
 ui_loading.inject_rhythm()
@@ -1000,23 +1117,6 @@ except Exception:  # noqa: BLE001 - no cookie library: session-state only
     _cookie_controller = None
 
 
-def _request_cookies():
-    """Cookies the browser sent with this session's initial request
-    (the WebSocket handshake), or {} when unavailable.
-
-    A snapshot from session start: a cookie written during this
-    session does NOT appear here until the next page load. Never
-    raises."""
-    try:
-        cookies = st.context.cookies
-    except Exception:  # noqa: BLE001 - no request context (AppTest, …)
-        return {}
-    try:
-        return dict(cookies)
-    except Exception:  # noqa: BLE001 - not a mapping: treat as empty
-        return {}
-
-
 def _controller_cookie_get(name):
     """Cookie value from the controller's snapshot, or None."""
     if _cookie_controller is None:
@@ -1069,13 +1169,18 @@ def _controller_refresh():
         pass
 
 
-def _cookie_set(name, value):
-    """Store a cookie: 7-day expiry, Secure, SameSite=Lax."""
+def _cookie_set(name, value, max_age=None):
+    """Store a cookie: 7-day expiry by default (the login cookie),
+    Secure, SameSite=Lax. ``max_age`` overrides the expiry —
+    preference cookies pass a year, so a choice is not a session."""
     if _cookie_controller is None:
         return
     try:
-        _cookie_controller.set(name, value, max_age=_AUTH_COOKIE_MAX_AGE,
-                               secure=True, same_site="lax")
+        _cookie_controller.set(
+            name, value,
+            max_age=(max_age if max_age is not None
+                     else _AUTH_COOKIE_MAX_AGE),
+            secure=True, same_site="lax")
     except Exception:  # noqa: BLE001 - a cookie write never crashes login
         pass
 
@@ -1257,6 +1362,174 @@ def _ensure_login_cookie():
         st.session_state["_auth_cookie_gave_up"] = token
 
 
+# ---------------------------------------- preference cookies (Round 3) ----
+# The theme preference + rail mode are kept in browser cookies
+# (``dcs_theme_pref`` / ``dcs_rail_mode``, one year, Secure,
+# SameSite=Lax — the same attributes as the login cookie, longer
+# lived because a choice is not a session). The write path is
+# centralised here on purpose: the six controls that change these
+# values (three theme, two rail, one login toggle) all end in
+# different places — some in a run that completes normally, some
+# in a run aborted by st.rerun() — so no call site writes a
+# cookie itself. Instead _ensure_pref_cookies() runs after the
+# shell controls have rendered (and before the login screen's
+# final stop): it compares the values in effect with the values
+# the browser holds and writes only the mismatches, in a run
+# that completes normally. A write lost to a later rerun is
+# re-issued on the next run, because the desired value is still
+# in session state and still mismatched. A default value is
+# never written when no cookie exists yet — there is nothing to
+# persist, and a fresh install stays cookie-free until the user
+# actually changes something.
+_PREF_COOKIE_MAX_AGE = 365 * 24 * 3600  # seconds; a choice, not a session
+_PREF_COOKIE_VERIFY_RETRIES = 3  # re-issues of a lost cookie write
+
+
+def _ensure_one_pref_cookie(name, desired, default, state=None,
+                            cookie_get=None, cookie_set=None,
+                            controller_refresh=None):
+    """Keep one preference cookie at ``desired`` (or do nothing).
+
+    ``default`` is the value that needs no cookie: when the
+    browser holds no cookie and the desired value IS the default,
+    nothing is written. The verify cycle mirrors
+    _ensure_login_cookie: a write is pending until the browser
+    really holds the value (request cookies, or the controller's
+    snapshot after a refresh); a lost write is re-issued up to
+    _PREF_COOKIE_VERIFY_RETRIES times, then given up quietly for
+    that value — the session-state choice still applies for this
+    session, and the next change retries the write. The injectable
+    ``cookie_get`` / ``cookie_set`` / ``controller_refresh`` /
+    ``state`` exist for tests; the app calls with the defaults.
+    Never raises."""
+    _state = state if state is not None else st.session_state
+    _get = cookie_get if cookie_get is not None else _cookie_get
+    _set = cookie_set if cookie_set is not None else _cookie_set
+    _refresh = (controller_refresh if controller_refresh is not None
+                else _controller_refresh)
+    try:
+        _desired = str(desired)
+    except Exception:  # noqa: BLE001 - no desired value, no write
+        return
+    if not _desired:
+        return
+    _pending_key = f"_pref_cookie_pending_{name}"
+    _retries_key = f"_pref_cookie_retries_{name}"
+    _gave_up_key = f"_pref_cookie_gave_up_{name}"
+    try:
+        _browser = _get(name)
+    except Exception:  # noqa: BLE001 - a broken read never writes
+        return
+    if _browser == _desired:
+        for _k in (_pending_key, _retries_key, _gave_up_key):
+            _state.pop(_k, None)
+        return
+    if _browser is None and _desired == default:
+        return  # the default needs no cookie until it changes
+    if (_browser is not None and _desired == default
+            and not _state.get("_prefs_from_cookies")):
+        # No seed from cookies yet: a default in session state is
+        # not a choice — the restore has not had its run yet (the
+        # cookie layer only answers after it mounts), so the
+        # session may still hold the default while the browser
+        # holds a real saved value. Never let that default
+        # overwrite the saved cookie; the restore seeds the
+        # session from it on the next run, and the write then
+        # becomes a no-op (browser == desired).
+        return
+    try:
+        _pending = _state.get(_pending_key)
+    except Exception:  # noqa: BLE001 - no readable state, no write
+        return
+    if _pending is None:
+        if _state.get(_gave_up_key) == _desired:
+            return  # already retried + gave up for this value
+        try:
+            _set(name, _desired, max_age=_PREF_COOKIE_MAX_AGE)
+        except Exception:  # noqa: BLE001 - a failed write retries
+            pass
+        _state[_pending_key] = _desired
+        _state[_retries_key] = 0
+        try:
+            _refresh()
+        except Exception:  # noqa: BLE001 - a refresh never crashes
+            pass
+        return
+    if _pending != _desired:
+        _state[_pending_key] = _desired
+        _state[_retries_key] = 0
+        _state.pop(_gave_up_key, None)
+        try:
+            _set(name, _desired, max_age=_PREF_COOKIE_MAX_AGE)
+        except Exception:  # noqa: BLE001 - a failed write retries
+            pass
+        try:
+            _refresh()
+        except Exception:  # noqa: BLE001 - a refresh never crashes
+            pass
+        return
+    try:
+        _refresh()
+    except Exception:  # noqa: BLE001 - a refresh never crashes
+        pass
+    try:
+        if _get(name) == _desired:
+            for _k in (_pending_key, _retries_key, _gave_up_key):
+                _state.pop(_k, None)
+            return
+    except Exception:  # noqa: BLE001 - a broken read retries below
+        pass
+    try:
+        _retries = _state.get(_retries_key, 0)
+    except Exception:  # noqa: BLE001 - no readable state, no write
+        return
+    if _retries < _PREF_COOKIE_VERIFY_RETRIES:
+        _state[_retries_key] = _retries + 1
+        try:
+            _set(name, _desired, max_age=_PREF_COOKIE_MAX_AGE)
+        except Exception:  # noqa: BLE001 - a failed write retries
+            pass
+        try:
+            _refresh()
+        except Exception:  # noqa: BLE001 - a refresh never crashes
+            pass
+    else:
+        _state.pop(_pending_key, None)
+        _state.pop(_retries_key, None)
+        _state[_gave_up_key] = _desired
+
+
+def _ensure_pref_cookies(st_module=None, cookie_get=None, cookie_set=None,
+                         controller_refresh=None):
+    """Keep the theme-preference + rail-mode cookies at the values
+    in effect (see the block comment above). The desired values
+    come from session state: the preference as synced at the top
+    of the run, the rail mode via ui_design.rail_mode (which falls
+    back to the old pinned bool for pre-clone sessions). The
+    injectable ``cookie_get`` / ``cookie_set`` /
+    ``controller_refresh`` exist for tests; the app calls with the
+    defaults. Never raises."""
+    _st = st_module or st
+    try:
+        _state = _st.session_state
+        _pref = ui_design.normalize_theme_pref(
+            _state.get(ui_design.THEME_PREF_KEY,
+                       ui_design.normalize_theme(
+                           _state.get("dcs_theme",
+                                      ui_design.THEME_DEFAULT))))
+        _mode = ui_design.rail_mode(_st)
+    except Exception:  # noqa: BLE001 - no readable state, no writes
+        return
+    _ensure_one_pref_cookie(
+        ui_design.THEME_PREF_COOKIE, _pref, "light",
+        state=_state, cookie_get=cookie_get, cookie_set=cookie_set,
+        controller_refresh=controller_refresh)
+    _ensure_one_pref_cookie(
+        ui_design.RAIL_MODE_COOKIE, _mode, ui_design.RAIL_MODE_DEFAULT,
+        state=_state, cookie_get=cookie_get, cookie_set=cookie_set,
+        controller_refresh=controller_refresh)
+
+
 def _google_oauth_enabled() -> bool:
     """True only when Google OAuth is explicitly switched on.
 
@@ -1342,6 +1615,23 @@ _consume_oauth_callback()
 # is no token in state, try to restore the session from the cookie
 # before deciding the user is logged out.
 _restore_session_from_cookie()
+
+# Round 3: when the theme preference is System, the OS reading
+# (dcs_os_dark) is written by the zero-height JS bridge after
+# page load, and the cookie component's snapshot is frozen at its
+# first mount — so re-read the browser cookies now. The
+# component's frontend polls document.cookie every 300ms, so a
+# bridge write is already in its cache; invoking the component
+# re-renders it, and a changed value is pushed back and reruns
+# the app, where the restore (top of the run) re-resolves the
+# theme from the fresh OS reading. Without this, System follows
+# the OS as of the previous session, not the current one: the
+# reload that changes OS theme shows the old theme until the
+# next reload. Only System needs it — Dark/Light never read the
+# OS value. A re-read whose value is unchanged pushes nothing,
+# so this cannot loop.
+if st.session_state.get(ui_design.THEME_PREF_KEY) == "system":
+    _controller_refresh()
 
 _current_user = None
 if st.session_state.get("auth_token"):
@@ -1722,6 +2012,11 @@ if _current_user is None:
                 "<div>Private to your account. Nothing shared.</div>"
                 "</div>",
                 unsafe_allow_html=True)
+        # Keep the theme-preference + rail-mode cookies at the
+        # values in effect (Round 3): the login screen's theme
+        # toggle fires before this point, so a flip here is written
+        # on the rerun that renders the login screen again.
+        _ensure_pref_cookies()
         st.stop()
 
 # ---- logged in from here on. ----
@@ -2524,6 +2819,13 @@ def _render_dashboard_strips(st, clean, raw, storage_key):
 # + data-loaded) are deleted: a single main-area render covers both
 # states.
 ui_design.render_rail_behavior_menu()
+
+# Keep the theme-preference + rail-mode cookies at the values in
+# effect (Round 3): every shell control has rendered by now, so
+# any on_change that fired this run has already updated session
+# state — and this point is before the empty-state st.stop()s
+# below, so it runs on every logged-in run, empty or data-loaded.
+_ensure_pref_cookies()
 
 if raw is None:
     # The Profile view needs no data: when the user asked for it
