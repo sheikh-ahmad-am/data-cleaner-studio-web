@@ -210,6 +210,79 @@ def test_honest_cmdk_limit_stated():
     print("honest Cmd+K limit OK")
 
 
+# --------------------------------------------------------------------------
+# (g) Round 3c — keyboard bridge: Enter / ArrowDown / ArrowUp pick a
+# result while the search box is focused
+# --------------------------------------------------------------------------
+
+def test_keyboard_bridge_constant_exists():
+    html = fj.QUICKJUMP_KEYS_BRIDGE_HTML
+    assert isinstance(html, str) and "<script>" in html, \
+        "the keyboard bridge must be an inline script constant"
+    # It handles exactly the three keys, in the focused search box.
+    for key in ("ArrowDown", "ArrowUp", "Enter"):
+        assert f"'{key}'" in html or f'"{key}"' in html, \
+            f"bridge must handle {key}"
+    assert "Quick jump" in html, \
+        "bridge must find the search box by its aria-label"
+    assert "stPopoverBody" in html, \
+        "bridge must scope results to the popover body"
+    assert "quickjump_go_" in html, \
+        "bridge must find result buttons by their widget keys"
+    # Enter goes through the mouse path: the highlighted button is
+    # clicked, never a separate jump mechanism.
+    assert "target.click()" in html or ".click()" in html, \
+        "Enter must click the highlighted result button"
+    assert "preventDefault" in html, \
+        "Enter must stop Streamlit's own submit (else a double rerun)"
+    assert "stopPropagation" in html, \
+        "Enter must not reach Streamlit's key handler after the click"
+    # A text input submits on Enter, never per keystroke — so while
+    # the user is still typing there are no result buttons yet.
+    # The bridge must remember the pick (autoPick) and click it
+    # once the results render after the submit rerun.
+    assert "autoPick" in html, \
+        "bridge must pick the result after the submit rerun"
+    # ArrowDown pressed BEFORE the results render (the value is
+    # still unsubmitted) must be remembered, not clamped away:
+    # the highlight is only clamped once buttons exist.
+    assert "if(btns.length&&S.highlight>=btns.length)" in html, \
+        "bridge must not reset the highlight while no results exist"
+    # ...and it must NEVER click a non-result button: the text
+    # input itself renders a button with empty text, and the old
+    # "any button in the body" fallback clicked that on Enter and
+    # swallowed the submit (probe39).
+    assert "root.querySelectorAll('button')" not in html, \
+        "bridge must match ONLY st-key-quickjump_go_ result buttons"
+    print("keyboard bridge constant OK")
+
+
+def test_keyboard_bridge_never_listens_globally():
+    html = fj.QUICKJUMP_KEYS_BRIDGE_HTML
+    # No Cmd/Ctrl capture anywhere in the bridge: it only acts when
+    # the keydown target IS the search box (the honest limit from
+    # (f) still holds — Cmd+K global capture is NOT feasible).
+    assert "metaKey" not in html and "ctrlKey" not in html, \
+        "bridge must not listen for Cmd/Ctrl"
+    assert "e.target" in html, \
+        "bridge must check the keydown target is the search box"
+    # One listener, installed once: a rerun that re-runs the script
+    # must never stack a second one.
+    assert "installed" in html, \
+        "bridge install must be idempotent"
+    print("keyboard bridge never listens globally OK")
+
+
+def test_keyboard_bridge_injected_by_app():
+    app_src = (Path(__file__).resolve().parent.parent / "app.py"
+               ).read_text(encoding="utf-8")
+    assert "QUICKJUMP_KEYS_BRIDGE_HTML" in app_src, \
+        "app.py must inject the keyboard bridge"
+    assert "components.v1.html" in app_src, \
+        "bridge is injected as a zero-height components iframe"
+    print("keyboard bridge injected by app OK")
+
+
 if __name__ == "__main__":
     test_empty_query_shows_all()
     test_search_filters()
@@ -220,4 +293,7 @@ if __name__ == "__main__":
     test_render_click_jumps_to_section()
     test_render_click_export_jumps_to_report()
     test_honest_cmdk_limit_stated()
+    test_keyboard_bridge_constant_exists()
+    test_keyboard_bridge_never_listens_globally()
+    test_keyboard_bridge_injected_by_app()
     print("ALL QUICKJUMP TESTS PASSED")

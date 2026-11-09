@@ -21,6 +21,15 @@ existing ``pending_tab`` mechanism
 (``st.session_state["pending_tab"] = <section key>`` + ``st.rerun()``,
 applied by app.py before the top bar renders).
 
+One thing a small same-origin JS bridge CAN do honestly (Round 3c,
+``QUICKJUMP_KEYS_BRIDGE_HTML`` — same pattern as the Round 3 OS
+bridge): while the search box itself is focused, Enter picks the
+highlighted result and ArrowDown / ArrowUp move the highlight. The
+bridge only handles keys in that one box — it never listens
+globally — and the Enter click goes through the very same result
+button the mouse uses, so the jump takes exactly the mouse path.
+Cmd+K / Ctrl+K global capture is still NOT feasible.
+
 Every action listed here is real: all eleven sections plus the key
 actions (Upload, Load sample, Clean, Export, Ask, Back up, Morning
 run, Shortcuts, What's new). A jump only navigates — it never runs a
@@ -216,9 +225,9 @@ def _render_quick_jump_body(st, host, items, compact=False):
         placeholder="Search sections and actions…",
         label_visibility="collapsed" if compact else "visible",
         help=("Type to filter the sections and actions below, then pick "
-              "one to jump there. Streamlit cannot capture the Cmd+K / "
-              "Ctrl+K shortcut itself, so this search box is the jump — "
-              "there is no hidden keyboard shortcut."))
+              "one to jump there — Enter picks the highlighted result "
+              "(↓ moves down). Streamlit cannot capture the Cmd+K / "
+              "Ctrl+K shortcut itself, so this search box is the jump."))
     matches = filter_actions(query, items)
     if query and query.strip() and not matches:
         # Supabase empty-state pattern: a dead end always offers the
@@ -249,6 +258,99 @@ def _render_quick_jump_body(st, host, items, compact=False):
             f"…and {len(matches) - _MAX_SHOWN} more — "
             "narrow the search to see them.")
     return None
+
+
+#: Keyboard bridge for the top-bar palette (Round 3c): a
+#: zero-height script, same pattern as the Round 3 OS bridge
+#: (ui_design.OS_DARK_BRIDGE_HTML) — Streamlit has no
+#: server-side way to know Enter was pressed in a text input
+#: (its on_change also fires on blur, so it cannot tell "pick
+#: the result" from "click away to dismiss"). The bridge runs in
+#: the page, finds the search box by its aria-label, and — only
+#: while that box is focused — lets ArrowDown / ArrowUp move a
+#: highlight among the visible result buttons and Enter click the
+#: highlighted one (plain Enter picks the first result). The
+#: click goes through the very same button the mouse uses, so
+#: the jump, the query clear and the popover close take exactly
+#: the mouse path. State lives on the parent document (not in
+#: the iframe) so it survives iframe reloads; the install is
+#: idempotent, so a rerun that re-runs the script never stacks
+#: a second listener. A failure (sandboxed iframe, disabled JS)
+#: leaves the palette exactly as it was — mouse, Escape and
+#: outside-click still work; keyboard selection just does not
+#: happen. Cmd+K / Ctrl+K global capture is still NOT feasible
+#: (see the module docstring) — this bridge only handles keys
+#: while the search box itself is focused.
+#:
+#: One Streamlit fact shapes the design, stated plainly: a text
+#: input submits its value on Enter (or blur) — never per
+#: keystroke — so while the user is still typing there ARE no
+#: result buttons yet. Enter therefore works in two beats: if
+#: results are already rendered it clicks the highlighted one
+#: at once; if not, it lets Streamlit's own submit go through
+#: (no preventDefault) and remembers ``autoPick`` — the
+#: highlight index the user asked for — so that when the results
+#: render after the submit rerun, the bridge clicks that result
+#: for them. A single Enter press still lands the user on the
+#: picked page; the mouse path is untouched (a rendered result
+#: button still jumps on click, and clicking the popover
+#: background blurs the input, which submits the query and
+#: renders the results to click). ``resultButtons`` matches ONLY
+#: the ``st-key-quickjump_go_`` result buttons — never any other
+#: button in the popover body (the text input itself renders a
+#: button with empty text, and clicking that on Enter would
+#: swallow the submit).
+QUICKJUMP_KEYS_BRIDGE_HTML = """<script>(function(){try{
+var doc=window.parent.document;
+var S=doc.__dcsQuickJumpKeys;
+if(!S){S=doc.__dcsQuickJumpKeys={highlight:0,lastQuery:null,installed:false,timer:null,autoPick:false};}
+function inputEl(){return doc.querySelector('input[aria-label="Quick jump ⌘K"]');}
+function resultButtons(){
+var input=inputEl();
+if(!input){return [];}
+var body=input.closest('div[data-testid="stPopoverBody"]');
+var root=body||doc;
+return Array.prototype.slice.call(root.querySelectorAll('[class*="st-key-quickjump_go_"] button'));}
+function paint(){
+var input=inputEl();
+if(!input){S.lastQuery=null;S.autoPick=false;return;}
+if(input.value!==S.lastQuery){S.lastQuery=input.value;S.highlight=0;S.autoPick=false;}
+var btns=resultButtons();
+if(btns.length&&S.highlight>=btns.length){S.highlight=btns.length-1;}
+btns.forEach(function(b,i){
+b.style.outline=(i===S.highlight&&btns.length)?'2px solid #117f50':'';
+b.style.outlineOffset='1px';});
+if(S.autoPick&&btns.length){
+var target=btns[Math.min(S.highlight,btns.length-1)];
+S.autoPick=false;S.highlight=0;S.lastQuery=null;
+target.click();}}
+if(!S.installed){S.installed=true;
+doc.addEventListener('keydown',function(e){
+var input=inputEl();
+if(!input||e.target!==input){return;}
+if(e.key==='ArrowDown'){
+e.preventDefault();
+S.highlight=S.highlight+1;
+paint();}
+else if(e.key==='ArrowUp'){
+e.preventDefault();
+S.highlight=Math.max(S.highlight-1,0);
+paint();}
+else if(e.key==='Enter'){
+var btns=resultButtons();
+if(btns.length){
+e.preventDefault();
+e.stopPropagation();
+var target=btns[Math.min(S.highlight,btns.length-1)];
+S.highlight=0;S.lastQuery=null;S.autoPick=false;
+target.click();}
+else if(input.value.trim()!==''){
+S.autoPick=true;}}
+},true);}
+if(S.timer){clearInterval(S.timer);}
+S.timer=setInterval(paint,200);
+paint();
+}catch(err){}})();</script>"""
 
 
 def render_quick_jump(st, actions=None, container=None, compact=False):

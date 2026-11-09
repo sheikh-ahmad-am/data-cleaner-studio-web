@@ -930,6 +930,17 @@ try:
     st.components.v1.html(ui_design.OS_DARK_BRIDGE_HTML, height=0)
 except Exception:  # noqa: BLE001 - no OS bridge without components
     pass
+# Quick-jump keyboard bridge (Round 3c): a zero-height script
+# that lets Enter / ArrowDown / ArrowUp pick a result while the
+# top-bar search box is focused (see
+# feat_quickjump.QUICKJUMP_KEYS_BRIDGE_HTML). Same pattern as the
+# OS bridge above; a failure leaves the palette mouse-only, never
+# crashes — in AppTest it is an inert iframe element.
+try:
+    st.components.v1.html(feat_quickjump.QUICKJUMP_KEYS_BRIDGE_HTML,
+                           height=0)
+except Exception:  # noqa: BLE001 - no keyboard bridge without components
+    pass
 # Rhythm (ui_loading): 1280px container cap + section-gap helpers,
 # injected once per run right after the design system.
 ui_loading.inject_rhythm()

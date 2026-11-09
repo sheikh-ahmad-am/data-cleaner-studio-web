@@ -327,17 +327,22 @@ def test_r2_flow_marker_follows_the_page():
 
 
 def test_r2_flow_marker_ticks_follow_the_data():
-    """A step before the current one is ticked only when its
-    output exists. The current step wins over done: on Preview
-    with a file loaded, Upload is still "you are here", not a
-    tick — and Clean is ticked only once cleaned data exists."""
+    """A step is ticked when its output exists. The tick and the
+    marker are independent (Round 3c): a done step that is also
+    the current page shows BOTH — "Clean ✓ — you are here" — so
+    on Preview with a file loaded, Upload reads
+    "**Upload ✓** — you are here", and Clean is ticked only once
+    cleaned data exists."""
     assert ui_design.flow_marker("preview", raw_loaded=True) == [
-        "**Upload** — you are here", "Clean", "KPIs", "Export"]
+        "**Upload ✓** — you are here", "Clean", "KPIs", "Export"]
     assert ui_design.flow_marker("preview", clean_loaded=True) == [
         "**Upload** — you are here", "Clean ✓", "KPIs", "Export"]
     assert ui_design.flow_marker(
         "clean", raw_loaded=True) == [
         "Upload ✓", "**Clean** — you are here", "KPIs", "Export"]
+    assert ui_design.flow_marker(
+        "clean", raw_loaded=True, clean_loaded=True) == [
+        "Upload ✓", "**Clean ✓** — you are here", "KPIs", "Export"]
     assert ui_design.flow_marker(
         "kpis", raw_loaded=True, clean_loaded=True) == [
         "Upload ✓", "Clean ✓", "**KPIs** — you are here", "Export"]

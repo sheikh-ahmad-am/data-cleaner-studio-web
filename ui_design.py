@@ -3051,8 +3051,12 @@ def sidebar_nav(items, active: str | None = None, collapsed: bool = False,
 #: the marker index, not the data). Ticks follow the data now: a
 #: step is ticked once its output exists (a file loaded, data
 #: cleaned); KPIs and Export have no "done" state tracked, so
-#: they are never ticked. Pages outside the flow return None
-#: (no marker).
+#: they are never ticked. The tick and the marker are
+#: independent: a done step shows BOTH when it is also the
+#: current page ("Clean ✓ — you are here"), never one instead of
+#: the other (the Round 3b live failure: Clean showed no ✓ on its
+#: own page after a real clean, only on KPIs). Pages outside the
+#: flow return None (no marker).
 FLOW_STEPS = ("Upload", "Clean", "KPIs", "Export")
 _FLOW_STEP_BY_SECTION = {"preview": 1, "clean": 2, "kpis": 3,
                          "report": 4}
@@ -3063,15 +3067,18 @@ def flow_marker(active_section, raw_loaded=False,
     """The "Your flow" parts for the page you are on, or None when
     the page is not a flow step. Pure (no Streamlit calls), so it
     is unit-testable. The current step is the page's step; a step
-    before it is ticked only when its output exists."""
+    is ticked when its output exists — and the tick and the
+    marker are independent, so a done step that is also the
+    current page shows BOTH ("Clean ✓ — you are here")."""
     _current = _FLOW_STEP_BY_SECTION.get(active_section)
     if _current is None:
         return None
     _done = [bool(raw_loaded), bool(clean_loaded), False, False]
     _parts = []
     for _i, _label in enumerate(FLOW_STEPS, start=1):
+        _tick = " ✓" if _done[_i - 1] else ""
         if _i == _current:
-            _parts.append(f"**{_label}** — you are here")
+            _parts.append(f"**{_label}{_tick}** — you are here")
         elif _done[_i - 1]:
             _parts.append(f"{_label} ✓")
         else:
