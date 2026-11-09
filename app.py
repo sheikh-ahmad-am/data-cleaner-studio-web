@@ -3208,6 +3208,14 @@ if "join" in tab:
 
 # ----------------------------------------------------------------- clean ---
 if _active_tab == "clean":
+    # Round 3d: remember whether cleaned data existed when this
+    # section started. The strip (top of the run) reads the
+    # pre-section state, so a clean that lands DURING this section
+    # would otherwise show its tick one render late (the Round 3c
+    # live failure: no "Clean ✓" on the Clean page right after
+    # the clean, until the next navigation). The rerun at the end
+    # of the section (below) fixes it when the tick flips.
+    _clean_had = st.session_state.clean is not None
     feat_automate.render_undo(st)
     restored = feat_share.render_backups(
         st, df=raw, source_name=st.session_state.source_name,
@@ -3407,6 +3415,18 @@ if _active_tab == "clean":
 
         with st.expander("Clean many files at once"):
             feat_automate.render_bulk(st)
+    # Round 3d: if this section flipped the Clean tick (data
+    # cleaned for the first time, or a restore/undo cleared it),
+    # rerun now so the strip — rendered at the top of the run,
+    # before this section — shows the tick in the same view as
+    # the "Done" message, not one render later. The "Done" line
+    # re-renders from state on the rerun (it reads the local
+    # `clean`, set from session state at the top of the run), so
+    # nothing is lost; and the rerun fires only on the flip,
+    # never on later fix-ups (the tick is already on then) or on
+    # a re-clean (nothing flipped), so it cannot loop.
+    if (st.session_state.clean is not None) != _clean_had:
+        st.rerun()
 
 # ------------------------------------------------------------------ KPIs ---
 if _active_tab == "kpis":

@@ -238,11 +238,22 @@ def test_keyboard_bridge_constant_exists():
     assert "stopPropagation" in html, \
         "Enter must not reach Streamlit's key handler after the click"
     # A text input submits on Enter, never per keystroke — so while
-    # the user is still typing there are no result buttons yet.
-    # The bridge must remember the pick (autoPick) and click it
-    # once the results render after the submit rerun.
+    # the user is still typing there are no result buttons yet, and
+    # live-per-keystroke list rendering is NOT feasible with stock
+    # Streamlit. A plain first Enter therefore only submits, so the
+    # matches render in the still-open popover for the user to see
+    # and pick (second Enter, or a click). The bridge remembers a
+    # pick (autoPick) ONLY when the user already moved the
+    # highlight (ArrowDown/Up + Enter) — that is a choice, so it
+    # jumps straight to it once the results render.
     assert "autoPick" in html, \
         "bridge must pick the result after the submit rerun"
+    assert "moved:false" in html, \
+        "bridge must track whether the highlight was moved"
+    assert "S.moved" in html, \
+        "bridge must remember the highlight move"
+    assert "if(S.moved){S.autoPick=true;}" in html, \
+        "autoPick must fire only when the highlight was moved"
     # ArrowDown pressed BEFORE the results render (the value is
     # still unsubmitted) must be remembered, not clamped away:
     # the highlight is only clamped once buttons exist.

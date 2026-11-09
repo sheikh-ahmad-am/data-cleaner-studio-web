@@ -23,8 +23,10 @@ applied by app.py before the top bar renders).
 
 One thing a small same-origin JS bridge CAN do honestly (Round 3c,
 ``QUICKJUMP_KEYS_BRIDGE_HTML`` — same pattern as the Round 3 OS
-bridge): while the search box itself is focused, Enter picks the
-highlighted result and ArrowDown / ArrowUp move the highlight. The
+bridge): while the search box itself is focused, ArrowDown /
+ArrowUp move the highlight and Enter clicks the highlighted
+result — a plain first Enter submits and shows the matches, a
+second Enter (or ↓ + Enter) jumps. The
 bridge only handles keys in that one box — it never listens
 globally — and the Enter click goes through the very same result
 button the mouse uses, so the jump takes exactly the mouse path.
@@ -224,10 +226,10 @@ def _render_quick_jump_body(st, host, items, compact=False):
         key="quickjump_query",
         placeholder="Search sections and actions…",
         label_visibility="collapsed" if compact else "visible",
-        help=("Type to filter the sections and actions below, then pick "
-              "one to jump there — Enter picks the highlighted result "
-              "(↓ moves down). Streamlit cannot capture the Cmd+K / "
-              "Ctrl+K shortcut itself, so this search box is the jump."))
+        help=("Type to filter, then Enter to show the matches — Enter "
+              "again (or ↓ + Enter) jumps to the highlighted one. "
+              "Streamlit cannot capture the Cmd+K / Ctrl+K shortcut "
+              "itself, so this search box is the jump."))
     matches = filter_actions(query, items)
     if query and query.strip() and not matches:
         # Supabase empty-state pattern: a dead end always offers the
@@ -269,7 +271,9 @@ def _render_quick_jump_body(st, host, items, compact=False):
 #: the page, finds the search box by its aria-label, and — only
 #: while that box is focused — lets ArrowDown / ArrowUp move a
 #: highlight among the visible result buttons and Enter click the
-#: highlighted one (plain Enter picks the first result). The
+#: highlighted one. A plain first Enter only submits (no results
+#: are rendered yet), so the matches render for the user to see;
+#: a second Enter, or ↓ + Enter, jumps. The
 #: click goes through the very same button the mouse uses, so
 #: the jump, the query clear and the popover close take exactly
 #: the mouse path. State lives on the parent document (not in
@@ -285,17 +289,22 @@ def _render_quick_jump_body(st, host, items, compact=False):
 #: One Streamlit fact shapes the design, stated plainly: a text
 #: input submits its value on Enter (or blur) — never per
 #: keystroke — so while the user is still typing there ARE no
-#: result buttons yet. Enter therefore works in two beats: if
-#: results are already rendered it clicks the highlighted one
-#: at once; if not, it lets Streamlit's own submit go through
-#: (no preventDefault) and remembers ``autoPick`` — the
-#: highlight index the user asked for — so that when the results
-#: render after the submit rerun, the bridge clicks that result
-#: for them. A single Enter press still lands the user on the
-#: picked page; the mouse path is untouched (a rendered result
-#: button still jumps on click, and clicking the popover
-#: background blurs the input, which submits the query and
-#: renders the results to click). ``resultButtons`` matches ONLY
+#: result buttons yet, and live-per-keystroke list rendering is
+#: NOT feasible with stock Streamlit (it would need a custom
+#: component, which this app does not use). Enter therefore works
+#: in two beats: a plain first Enter lets Streamlit's own submit
+#: go through (no preventDefault), and the matches render in the
+#: still-open popover for the user to see and pick — a second
+#: Enter clicks the highlighted result. The ArrowDown/ArrowUp
+#: keys move the highlight; if the user already moved the
+#: highlight and then presses Enter, the bridge remembers the
+#: pick (``autoPick``) so that when the results render after the
+#: submit rerun it clicks that result for them — ArrowDown +
+#: Enter still jumps straight to the chosen result in one beat.
+#: The mouse path is untouched (a rendered result button still
+#: jumps on click, and clicking the popover background blurs the
+#: input, which submits the query and renders the results to
+#: click). ``resultButtons`` matches ONLY
 #: the ``st-key-quickjump_go_`` result buttons — never any other
 #: button in the popover body (the text input itself renders a
 #: button with empty text, and clicking that on Enter would
@@ -303,7 +312,7 @@ def _render_quick_jump_body(st, host, items, compact=False):
 QUICKJUMP_KEYS_BRIDGE_HTML = """<script>(function(){try{
 var doc=window.parent.document;
 var S=doc.__dcsQuickJumpKeys;
-if(!S){S=doc.__dcsQuickJumpKeys={highlight:0,lastQuery:null,installed:false,timer:null,autoPick:false};}
+if(!S){S=doc.__dcsQuickJumpKeys={highlight:0,lastQuery:null,installed:false,timer:null,autoPick:false,moved:false};}
 function inputEl(){return doc.querySelector('input[aria-label="Quick jump ⌘K"]');}
 function resultButtons(){
 var input=inputEl();
@@ -313,8 +322,8 @@ var root=body||doc;
 return Array.prototype.slice.call(root.querySelectorAll('[class*="st-key-quickjump_go_"] button'));}
 function paint(){
 var input=inputEl();
-if(!input){S.lastQuery=null;S.autoPick=false;return;}
-if(input.value!==S.lastQuery){S.lastQuery=input.value;S.highlight=0;S.autoPick=false;}
+if(!input){S.lastQuery=null;S.autoPick=false;S.moved=false;return;}
+if(input.value!==S.lastQuery){S.lastQuery=input.value;S.highlight=0;S.autoPick=false;S.moved=false;}
 var btns=resultButtons();
 if(btns.length&&S.highlight>=btns.length){S.highlight=btns.length-1;}
 btns.forEach(function(b,i){
@@ -322,7 +331,7 @@ b.style.outline=(i===S.highlight&&btns.length)?'2px solid #117f50':'';
 b.style.outlineOffset='1px';});
 if(S.autoPick&&btns.length){
 var target=btns[Math.min(S.highlight,btns.length-1)];
-S.autoPick=false;S.highlight=0;S.lastQuery=null;
+S.autoPick=false;S.highlight=0;S.lastQuery=null;S.moved=false;
 target.click();}}
 if(!S.installed){S.installed=true;
 doc.addEventListener('keydown',function(e){
@@ -331,10 +340,12 @@ if(!input||e.target!==input){return;}
 if(e.key==='ArrowDown'){
 e.preventDefault();
 S.highlight=S.highlight+1;
+S.moved=true;
 paint();}
 else if(e.key==='ArrowUp'){
 e.preventDefault();
 S.highlight=Math.max(S.highlight-1,0);
+S.moved=true;
 paint();}
 else if(e.key==='Enter'){
 var btns=resultButtons();
@@ -342,10 +353,15 @@ if(btns.length){
 e.preventDefault();
 e.stopPropagation();
 var target=btns[Math.min(S.highlight,btns.length-1)];
-S.highlight=0;S.lastQuery=null;S.autoPick=false;
+S.highlight=0;S.lastQuery=null;S.autoPick=false;S.moved=false;
 target.click();}
 else if(input.value.trim()!==''){
-S.autoPick=true;}}
+// No results rendered yet: a plain first Enter only submits,
+// so the matches render in the still-open popover for the user
+// to see and pick (second Enter, or a click). Auto-pick only
+// when the user already moved the highlight (ArrowDown/Up +
+// Enter) — that is a choice, so it jumps straight to it.
+if(S.moved){S.autoPick=true;}}}
 },true);}
 if(S.timer){clearInterval(S.timer);}
 S.timer=setInterval(paint,200);
