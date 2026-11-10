@@ -1074,6 +1074,32 @@ div[data-testid="stVerticalBlock"] > div:has(.dcs-danger-zone) ~ div div[data-te
 .dcs-bar-ok { background: #117f50; }
 .dcs-bar-warn { background: #e69344; }
 .dcs-bar-error { background: #b91c1c; }
+/* ---- Dashboard Overview: URL row under the H1 + infra diagram
+   canvas (Supabase's Project Overview diagram, mapped to this
+   app's pipeline: Upload → Clean → KPIs → Export). No diagram/map
+   toggle: there is no map counterpart in this app, so the diagram
+   is the only view. Dots use the checkbox-border token, never a
+   new hex — the token tests pin every hex in both sheets. */
+.dcs-overview-url { font-size: 13px; color: #696969;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dcs-infra-canvas { background-color: #ffffff; border: 1px solid #e8e8e8;
+  border-radius: 12px; padding: 1rem;
+  background-image: radial-gradient(circle, #d0d0d0 1px, transparent 1px);
+  background-size: 16px 16px; }
+.dcs-infra-row { display: flex; align-items: stretch; gap: 0.5rem; }
+.dcs-infra-node { flex: 1; min-width: 0; background-color: #ffffff;
+  border: 1px solid #e8e8e8; border-radius: 8px; padding: 0.75rem; }
+.dcs-infra-node-title { font-size: 11px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase; color: #696969; }
+.dcs-infra-node-count { font-size: 20px; font-weight: 500; color: #030303;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  margin-top: 0.25rem; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; }
+.dcs-infra-node-sub { font-size: 12px; color: #696969; margin-top: 0.25rem;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dcs-infra-arrow { flex: none; display: flex; align-items: center;
+  font-size: 18px; color: #696969; }
 </style>"""
 
 
@@ -1676,6 +1702,30 @@ div[data-testid="stPopoverBody"] div[data-testid="stRadio"] div[role="radiogroup
 .dcs-bar-ok { background: #4acd8b; }
 .dcs-bar-warn { background: #f3ba63; }
 .dcs-bar-error { background: #ff6369; }
+/* ---- Dashboard Overview: URL row + infra diagram canvas (dark
+   twin of the light rules above — same structure, DARK_TOKENS
+   substituted; the dotted background uses the dark
+   checkbox-border token). */
+.dcs-overview-url { font-size: 13px; color: #989a99;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dcs-infra-canvas { background-color: #232625; border: 1px solid #2e2e2e;
+  border-radius: 12px; padding: 1rem;
+  background-image: radial-gradient(circle, #4a4d4c 1px, transparent 1px);
+  background-size: 16px 16px; }
+.dcs-infra-row { display: flex; align-items: stretch; gap: 0.5rem; }
+.dcs-infra-node { flex: 1; min-width: 0; background-color: #232625;
+  border: 1px solid #2e2e2e; border-radius: 8px; padding: 0.75rem; }
+.dcs-infra-node-title { font-size: 11px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase; color: #989a99; }
+.dcs-infra-node-count { font-size: 20px; font-weight: 500; color: #edefee;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  margin-top: 0.25rem; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; }
+.dcs-infra-node-sub { font-size: 12px; color: #989a99; margin-top: 0.25rem;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dcs-infra-arrow { flex: none; display: flex; align-items: center;
+  font-size: 18px; color: #989a99; }
 </style>"""
 
 
@@ -3487,6 +3537,56 @@ def connect_strip(cells) -> str | None:
                 if _cell.get("subtitle"):
                     st.caption(_cell["subtitle"])
     return clicked
+
+
+def overview_url_row(app_url: str, repo_url: str) -> None:
+    """The Project Overview URL row: the app's public address as
+    muted monospace text under the H1, plus a "Copy" popover
+    (Supabase's Copy menu — "Copy project URL and API keys"). This
+    app has no API keys, so the menu holds the two real addresses
+    as code blocks, and ``st.code`` carries its own copy button, so
+    both copy for real."""
+    _u, _c = st.columns([5, 1])
+    with _u:
+        st.markdown(
+            f'<div class="dcs-overview-url">{html.escape(app_url)}</div>',
+            unsafe_allow_html=True)
+    with _c:
+        with st.popover("Copy", icon=icon_for("copy"),
+                        help="Copy the app or repository URL"):
+            st.caption("App URL")
+            st.code(app_url)
+            st.caption("Repository")
+            st.code(repo_url)
+
+
+def infra_diagram(nodes) -> None:
+    """The Project Overview infrastructure diagram, mapped to this
+    app's pipeline: one bordered canvas with a dotted background
+    (Supabase's diagram canvas) holding one node per pipeline step
+    with arrows between them; each node shows its live count and a
+    muted sub-line. Pure presentation — navigation lives in the
+    "Get connected" strip below, so the diagram carries no buttons:
+    a Streamlit button cannot live inside this HTML canvas, and a
+    button row would duplicate the strip. ``nodes`` is a list of
+    dicts with ``title``, ``count`` and ``sub`` (all escaped)."""
+    st.markdown('<div class="dcs-strip-label">Your pipeline</div>',
+                unsafe_allow_html=True)
+    _parts = ['<div class="dcs-infra-canvas"><div class="dcs-infra-row">']
+    for _i, _n in enumerate(nodes):
+        if _i:
+            _parts.append('<div class="dcs-infra-arrow">→</div>')
+        _parts.append(
+            '<div class="dcs-infra-node">'
+            f'<div class="dcs-infra-node-title">'
+            f"{html.escape(str(_n['title']))}</div>"
+            f'<div class="dcs-infra-node-count">'
+            f"{html.escape(str(_n['count']))}</div>"
+            f'<div class="dcs-infra-node-sub">'
+            f"{html.escape(str(_n.get('sub') or ''))}</div>"
+            "</div>")
+    _parts.append("</div></div>")
+    st.markdown("".join(_parts), unsafe_allow_html=True)
 
 
 def pill(text: str, kind: str = "mint") -> str:

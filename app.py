@@ -774,6 +774,32 @@ div[data-testid="stVerticalBlock"] > div:has(.dcs-danger-zone) ~ div div[data-te
 .dcs-bar-ok { background: #117f50; }
 .dcs-bar-warn { background: #e69344; }
 .dcs-bar-error { background: #b91c1c; }
+/* ---- Dashboard Overview: URL row under the H1 + infra diagram
+   canvas (Supabase's Project Overview diagram, mapped to this
+   app's pipeline: Upload → Clean → KPIs → Export). No diagram/map
+   toggle: there is no map counterpart in this app, so the diagram
+   is the only view. Dots use the checkbox-border token, never a
+   new hex — the token tests pin every hex in both sheets. */
+.dcs-overview-url { font-size: 13px; color: #696969;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dcs-infra-canvas { background-color: #ffffff; border: 1px solid #e8e8e8;
+  border-radius: 12px; padding: 1rem;
+  background-image: radial-gradient(circle, #d0d0d0 1px, transparent 1px);
+  background-size: 16px 16px; }
+.dcs-infra-row { display: flex; align-items: stretch; gap: 0.5rem; }
+.dcs-infra-node { flex: 1; min-width: 0; background-color: #ffffff;
+  border: 1px solid #e8e8e8; border-radius: 8px; padding: 0.75rem; }
+.dcs-infra-node-title { font-size: 11px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase; color: #696969; }
+.dcs-infra-node-count { font-size: 20px; font-weight: 500; color: #030303;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  margin-top: 0.25rem; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; }
+.dcs-infra-node-sub { font-size: 12px; color: #696969; margin-top: 0.25rem;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dcs-infra-arrow { flex: none; display: flex; align-items: center;
+  font-size: 18px; color: #696969; }
 </style>"""
 
 st.set_page_config(page_title="Data Cleaner Studio", layout="wide",
@@ -952,6 +978,10 @@ _STORAGE_KEY_RE = re.compile(r"^[a-zA-Z0-9_]{3,30}$")
 # variable or Streamlit secret when the app moves to a new address.
 # Default: the live Streamlit Community Cloud URL for this app.
 _DEFAULT_APP_URL = "https://datacleanerstudio.streamlit.app"
+
+# The public repository, for the Dashboard "Copy" menu (the second
+# address in Supabase's Copy menu, beside the project URL).
+_REPO_URL = "https://github.com/sheikh-ahmad-am/data-cleaner-studio-web"
 
 
 def _app_base_url() -> str:
@@ -2681,18 +2711,35 @@ if (raw is not None and st.session_state.source_kind == "sheets"
 # loaded, and that branch stops the script before the old definition
 # point — so the function has to exist by then.
 def _render_dashboard_strips(st, clean, raw, storage_key):
-    """The Supabase Overview, mapped to this app's own data (never
-    Supabase's): a six-tile status strip, the "Get connected" action
-    strip, service metric cards with warning/error dots, and the
-    Advisor line. Pure presentation + navigation — every number comes
+    """The Supabase Project Overview, mapped to this app's own data
+    (never Supabase's), in Supabase's order: URL row + Copy menu,
+    six info tiles, the infrastructure diagram, the "Get connected"
+    action strip, the API metrics strip (big numbers + service
+    cards), the Advisor block, and the Reports section. No Free-plan
+    usage panel — Supabase's Overview has none, and neither does
+    this page. Pure presentation + navigation — every number comes
     from the loaded file, the storage backend, or the app's own
     health check, and every strip action is a pending_tab jump.
+
+    Card mapping (the six tiles): Status = backend health
+    (feat_status); Storage = Supabase bucket usage; Rows = cleaned
+    rows; Columns = columns in the cleaned file; KPIs = auto-KPI
+    count; File = current source file. API metrics: "Rows
+    processed" = the loaded file's row count, "Success rate" = the
+    share of rows kept after cleaning. The diagram nodes are the
+    app's pipeline (Upload → Clean → KPIs → Export) with live
+    counts. "Ask Assistant" opens the How to use guide — this app
+    has no AI assistant panel, so the guide is the honest
+    counterpart.
 
     Empty state (``clean`` / ``raw`` None): the strips still render.
     Data-dependent tiles show "—" with "No data yet" (no numbers are
     invented), the metric cards show "—" with a "load a file" sub, and
     the Advisor points at loading a file instead of at cleaning.
     """
+    # URL row first, under the H1 (Supabase: project URL + Copy
+    # menu under the project name).
+    ui_design.overview_url_row(_app_base_url(), _REPO_URL)
     _status = feat_status.get_status()
     _state = _status.get("state")
     _status_value = ("Healthy" if _state == "operational" else
@@ -2732,6 +2779,31 @@ def _render_dashboard_strips(st, clean, raw, storage_key):
         for _col, (_label, _value, _sub, _icon) in zip(_cols, _row):
             with _col:
                 ui_design.kpi_tile(_label, _value, sub=_sub, icon=_icon)
+    # Infrastructure diagram (Supabase's dotted canvas + Primary
+    # Database node), mapped to this app's pipeline: Upload → Clean
+    # → KPIs → Export, each node with its live count. No diagram/map
+    # toggle — there is no map counterpart in this app, so the
+    # diagram is the only view.
+    _actions = st.session_state.get("actions") or []
+    _nodes = [
+        {"title": "Upload",
+         "count": f"{len(raw):,} rows" if raw is not None else "—",
+         "sub": (str(st.session_state.get("source_name") or "—")[:24]
+                 if raw is not None else "No file yet")},
+        {"title": "Clean",
+         "count": f"{len(clean):,} rows" if clean is not None else "—",
+         "sub": (f"{len(_actions)} cleaning steps" if _actions
+                 else "Not cleaned yet" if raw is not None
+                 else "No file yet")},
+        {"title": "KPIs",
+         "count": f"{len(_kpis)}" if _kpis else "—",
+         "sub": "Auto KPIs" if _kpis else "No data yet"},
+        {"title": "Export",
+         "count": "Ready" if clean is not None else "—",
+         "sub": "One-page report" if clean is not None
+                else "Waiting for data"},
+    ]
+    ui_design.infra_diagram(_nodes)
     # "Get connected", for this app: the six ways in, as one strip.
     _cell = ui_design.connect_strip([
         {"key": "preview", "icon": "upload", "title": "Upload",
@@ -2750,6 +2822,32 @@ def _render_dashboard_strips(st, clean, raw, storage_key):
     if _cell is not None:
         st.session_state["pending_tab"] = _cell
         st.rerun()
+    # API metrics strip (Supabase: big "Total Requests" / "Success
+    # Rate" numbers + service cards). Mapped honestly: "Rows
+    # processed" is the loaded file's row count, "Success rate" is
+    # the share of rows kept after cleaning — both "—" until the
+    # state that measures them exists. No "Last 60 minutes"
+    # dropdown: the numbers are for the current file, not a time
+    # window, so the scope says so instead of faking one.
+    _rows_processed = f"{len(raw):,}" if raw is not None else "—"
+    if clean is not None and raw is not None and len(raw):
+        _kept = f"{len(clean) / len(raw) * 100:.1f}%"
+        _kept_sub = "Rows kept after cleaning"
+    else:
+        _kept, _kept_sub = "—", "Clean a file to measure it"
+    _api_1, _api_2 = st.columns(2)
+    with _api_1:
+        st.markdown(
+            '<div class="dcs-strip-label">Rows processed</div>'
+            f'<div class="dcs-metric-value">{_rows_processed}</div>'
+            '<div class="dcs-section-sub">Current file</div>',
+            unsafe_allow_html=True)
+    with _api_2:
+        st.markdown(
+            '<div class="dcs-strip-label">Success rate</div>'
+            f'<div class="dcs-metric-value">{_kept}</div>'
+            f'<div class="dcs-section-sub">{_kept_sub}</div>',
+            unsafe_allow_html=True)
     # Service metric cards: the file's own data quality — or, with no
     # file loaded, the same cards empty (no numbers invented).
     if raw is not None:
@@ -2788,35 +2886,85 @@ def _render_dashboard_strips(st, clean, raw, storage_key):
                 warnings=0, errors=0,
                 sub="Load a file to check data quality")
         _issues = None
-    # Advisor line: what the check found, and the next step.
+    # Advisor block (Supabase: "Advisor found no issues" + "Ask
+    # Assistant"). The heading IS the verdict; the detail line says
+    # what was checked. "Ask Assistant" opens the How to use guide
+    # — this app has no AI assistant panel, so the guide is the
+    # honest counterpart. In the no-issues state Ask Assistant is
+    # the only button (the old "How to use" button went to the same
+    # place); the other states keep their action button beside it.
     if _issues is None:
-        _adv_text, _adv_go = "No data loaded yet", "preview"
-        _adv_label, _adv_icon = "Load a file", "upload"
-        _adv_detail = (" — upload a file and the Advisor will check it "
+        _adv_text = "No data loaded yet"
+        _adv_detail = ("Upload a file and the Advisor will check it "
                        "for missing cells and duplicate rows.")
+        _adv_go, _adv_label, _adv_icon = "preview", "Load a file", "upload"
         _adv_help = "Load a file."
     elif _issues == 0:
-        _adv_text, _adv_go = "Advisor found no issues", "tutorial"
-        _adv_label, _adv_icon = "How to use", "book"
-        _adv_detail = " — no missing cells, no duplicate rows."
-        _adv_help = "Open the guide."
+        _adv_text = "Advisor found no issues"
+        _adv_detail = "No missing cells, no duplicate rows."
+        _adv_go = None
     else:
         _adv_text = (f"Advisor found {_issues:,} issue"
                      f"{'s' if _issues != 1 else ''}")
         _adv_go, _adv_label, _adv_icon = "clean", "Go to Clean", "play"
-        _adv_detail = " — missing cells and duplicate rows to fix."
+        _adv_detail = "Missing cells and duplicate rows to fix."
         _adv_help = "Open the Clean tab."
-    _t, _b = st.columns([3, 1])
-    with _t:
-        st.write(f"**{_adv_text}**{_adv_detail}")
+    ui_design.section_heading(_adv_text)
+    st.markdown(
+        f'<div class="dcs-section-sub">{_adv_detail}</div>',
+        unsafe_allow_html=True)
+    _spacer, _b = st.columns([3, 1])
     with _b:
+        if _adv_go is not None:
+            if ui_design.icon_button(
+                    _adv_label, _adv_icon, kind="primary",
+                    key="dashboard_advisor_go",
+                    help=_adv_help):
+                st.session_state["pending_tab"] = _adv_go
+                st.rerun()
         if ui_design.icon_button(
-                _adv_label, _adv_icon,
-                kind="secondary" if _issues == 0 else "primary",
-                key="dashboard_advisor_go",
-                help=_adv_help):
-            st.session_state["pending_tab"] = _adv_go
+                "Ask Assistant", "sparkle", kind="secondary",
+                key="dashboard_advisor_ask",
+                help="Open the How to use guide."):
+            st.session_state["pending_tab"] = "tutorial"
             st.rerun()
+
+
+    # Reports section (Supabase: "Reports" + "Add block" + the
+    # empty-state card). This app keeps no saved reports — the
+    # Report tab builds the one-page report on the fly — so the
+    # section is always the empty state, but its copy and its
+    # buttons' destination follow the real state: no data ->
+    # Preview, data -> Clean, cleaned -> Report.
+    if clean is not None:
+        _rep_go = "report"
+        _rep_foot = ("Your data is cleaned — your one-page report "
+                     "is ready to build.")
+    elif raw is not None:
+        _rep_go = "clean"
+        _rep_foot = "Data loaded — clean it to unlock the report."
+    else:
+        _rep_go = "preview"
+        _rep_foot = "No data loaded yet — load a file to start."
+    _rh, _rb = st.columns([4, 1])
+    with _rh:
+        ui_design.section_heading("Reports")
+    with _rb:
+        if ui_design.icon_button(
+                "Add block", "add", kind="secondary",
+                key="dashboard_reports_add",
+                help="Open the report builder."):
+            st.session_state["pending_tab"] = _rep_go
+            st.rerun()
+    ui_design.card("Build a custom report",
+                   body="Keep track of your most important metrics.",
+                   footer=_rep_foot)
+    if ui_design.icon_button(
+            "Add your first block", "add", kind="secondary",
+            key="dashboard_reports_first",
+            help="Open the report builder."):
+        st.session_state["pending_tab"] = _rep_go
+        st.rerun()
 
 
 # Rail behavior control (clone Round 1 — Supabase's bottom
@@ -2888,6 +3036,14 @@ if raw is None:
         ui_design.section_heading(
             "Dashboard", sub="Your data's health, at a glance.")
         _render_dashboard_strips(st, None, None, _skey)
+        st.stop()
+    # The How to use tab needs no data either (it is the guide):
+    # render it here too, same as Dashboard above — otherwise the
+    # top-bar Help button and the Dashboard Advisor's "Ask
+    # Assistant" button both dead-end on the empty state instead
+    # of opening the guide.
+    if _top_active == _nav_labels["tutorial"]:
+        feat_tutorial.render_tutorial_page(st, settings_path=_settings_path)
         st.stop()
     # Guided empty state: what to do first, plus a one-click way to try
     # the sample — the same loader the sidebar "Try the messy sample"
