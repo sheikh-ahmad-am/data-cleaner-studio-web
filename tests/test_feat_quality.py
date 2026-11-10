@@ -283,6 +283,16 @@ def test_dictionary():
     assert " to " in by_col["Unit Price"]["sample"]  # min-max, not one value
     assert by_col["Unit Price"]["sample"] == "199 to 1,599", by_col["Unit Price"]
     assert by_col["Category"]["sample"].startswith("Home (16)"), by_col["Category"]
+    # Whitespace-normalized counts (fix round, 2026-11-10): the raw
+    # Customer column carries padded variants ("  Aarav Sharma "),
+    # so the top values count stripped names — Ananya Rao 14 (not
+    # 10 raw), Aarav Sharma 9 — and unique counts 8 distinct names,
+    # not 16 raw strings. These counts agree with a search for the
+    # name (see test_feat_share.test_search_rows).
+    assert by_col["Customer"]["sample"] == \
+        "Ananya Rao (14), Divya Nair (11), Priya Patel (10)", \
+        by_col["Customer"]
+    assert by_col["Customer"]["unique"] == 8, by_col["Customer"]
     assert by_col["Notes"]["type"] == "empty"
     assert by_col["Notes"]["missing %"] == 100.0
     assert by_col["Notes"]["sample"] == "—"

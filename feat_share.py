@@ -621,14 +621,20 @@ def goal_progress(df: pd.DataFrame, column: str, agg: str, target) -> tuple:
 def search_rows(df: pd.DataFrame, query: str) -> pd.DataFrame:
     """Rows where ANY column contains the query (case-insensitive).
 
-    A blank query returns every row. Empty cells never match.
+    A blank query returns every row. Empty cells never match. Both
+    the cell text and the query are whitespace-normalized (the shared
+    rule — engine.normalize_text_values): a search for "Aarav Sharma"
+    finds "  Aarav Sharma " and "Aarav  Sharma" too, so the match
+    count agrees with the profile's top-value counts.
     """
     if query is None or not str(query).strip():
         return df.copy()
-    q = str(query).strip().lower()
+    q = re.sub(r"\s+", " ", str(query).strip()).lower()
     mask = pd.Series(False, index=df.index)
     for col in df.columns:
-        text = df[col].where(df[col].notna(), "").astype(object).astype(str).str.lower()
+        text = (engine.normalize_text_values(
+            df[col].where(df[col].notna(), ""))
+            .astype(object).astype(str).str.lower())
         mask = mask | text.str.contains(q, regex=False)
     return df.loc[mask].reset_index(drop=True)
 

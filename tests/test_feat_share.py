@@ -314,7 +314,7 @@ def test_goal_progress():
 
 # --------------------------------------------------------------- 6 search
 def test_search_rows():
-    _, clean, _, _ = _sample_clean()
+    raw, clean, _, _ = _sample_clean()
     assert len(feat_share.search_rows(clean, "ananya")) == 13
     assert len(feat_share.search_rows(clean, "ANANYA")) == 13, "case-insensitive"
     assert len(feat_share.search_rows(clean, "Electronics")) == 33
@@ -322,6 +322,15 @@ def test_search_rows():
     assert len(feat_share.search_rows(clean, "zzz-no-match")) == 0
     assert len(feat_share.search_rows(clean, "")) == 77, "blank query = all rows"
     assert len(feat_share.search_rows(clean, "   ")) == 77
+    # Whitespace-normalized matching (fix round, 2026-11-10): the raw
+    # Customer column carries padded variants ("  Aarav Sharma "),
+    # so a search for the name must find all 9 rows — including with
+    # a doubled-space query — agreeing with the profile's top-value
+    # count for "Aarav Sharma" (9).
+    assert len(feat_share.search_rows(raw, "Aarav")) == 9
+    assert len(feat_share.search_rows(raw, "Aarav Sharma")) == 9
+    assert len(feat_share.search_rows(raw, "Aarav  Sharma")) == 9, \
+        "a doubled-space query must match the single-space rows too"
     print("search OK: ananya 13, Electronics 33, ORD-1001 1, no-match 0")
 
 

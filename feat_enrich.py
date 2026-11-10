@@ -1070,14 +1070,21 @@ def render_filter_builder(st, df: pd.DataFrame) -> None:
             st.session_state["n_filter_rules_data"].append(
                 {"column": col, "condition": cond, "value": value})
     rules = st.session_state["n_filter_rules_data"]
+    # The Clear button is evaluated BEFORE the chips render: the old
+    # order rendered the chips first, so the click-run's output held
+    # both the stale chip and the "no rules" note (the chip only
+    # vanished on the next interaction — the live check needed three
+    # clicks). Clearing reruns at once, so one click clears both the
+    # rules and the chip display on that same render.
+    if rules and st.button("Clear all rules", key="n_filter_clear",
+                           type="secondary"):
+        st.session_state["n_filter_rules_data"] = []
+        st.rerun()
+    rules = st.session_state["n_filter_rules_data"]
     if rules:
         for i, r in enumerate(rules):
             suffix = f" {r['value']}" if r.get("value") not in (None, "") else ""
             st.write(f"{i}. **{r['column']}** {r['condition']}{suffix}")
-        if st.button("Clear all rules", key="n_filter_clear",
-                      type="secondary"):
-            st.session_state["n_filter_rules_data"] = []
-            rules = []
     if not rules:
         st.info("No filter rules yet — add one above and the matching "
                 "rows will show here.")

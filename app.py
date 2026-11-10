@@ -2413,6 +2413,144 @@ def _open_recent_file(name, base_dir):
     return True
 
 
+def _render_preview_files(st, raw):
+    """Table Editor sub-sidebar: the Files list. Supabase's is
+    Schema public + New table + Search tables + the table list with
+    the selected row light-grey and black-barred; ours is the
+    current file (selected row, with its row/column counts) + the
+    recent files, a name filter, and + Load a file. The list is the
+    same saved files the sidebar's Recent list holds — this is the
+    Table Editor's home for them, not a second store.
+
+    + Load a file reveals an inline picker for one-table files
+    (CSV, JSON, Parquet — the sidebar's uploader with the same
+    branches, minus Excel: a workbook needs its sheet picked in
+    the sidebar). Collapse hides the list; the grid takes the width.
+
+    raw is None in the Preview empty state: there is no current
+    file to show as the selected row, but the panel still renders
+    (Search files, + Load a file, Collapse, the recent list) so a
+    returning file is one click away before anything is loaded.
+    """
+    st.markdown('<div class="dcs-micro-label">Files</div>',
+                unsafe_allow_html=True)
+    if ui_design.icon_button(
+            "Collapse", "chevron_left", key="preview_files_collapse",
+            help="Hide the Files list."):
+        st.session_state["preview_files_open"] = False
+        st.rerun()
+    _q = st.text_input(
+        "Search files", key="preview_files_search",
+        placeholder="Search files…", label_visibility="collapsed")
+    if st.session_state.get("preview_show_uploader"):
+        _up = st.file_uploader(
+            "Load a file", type=["csv", "json", "parquet"],
+            key="preview_files_uploader", label_visibility="collapsed",
+            help="CSV, JSON or Parquet — one table. Excel workbooks "
+                 "load from the sidebar, where you pick a sheet.")
+        if _up is not None:
+            _ok = True
+            try:
+                storage.save_upload(_skey, _up.name, _up.getvalue())
+            except Exception as e:  # noqa: BLE001 - show, don't crash
+                st.error(f"Could not save that upload ({_up.name}): {e}")
+                _ok = False
+            if _ok:
+                try:
+                    if _up.name.lower().endswith(".parquet"):
+                        _set_raw(engine.load_parquet(_up.getvalue()),
+                                 _up.name)
+                    else:
+                        _set_raw(engine.load_file(_up.name,
+                                                  _up.getvalue()),
+                                 _up.name)
+                    st.session_state["last_upload"] = _up.name
+                except Exception as e:  # noqa: BLE001 - show, don't crash
+                    st.error(f"Could not read {_up.name}: {e}")
+                    _ok = False
+            if _ok:
+                st.session_state["preview_show_uploader"] = False
+                st.rerun()
+    elif ui_design.icon_button(
+            "Load a file", "add", key="preview_files_new",
+            help="Load another file — CSV, JSON or Parquet."):
+        st.session_state["preview_show_uploader"] = True
+        st.rerun()
+    _entries = feat_share.list_recent(_user_root)
+    _query = str(_q or "").strip().lower()
+    _current = str(st.session_state.get("source_name") or "—")
+    _shown = False
+    if raw is not None and (not _query or _query in _current.lower()):
+        st.markdown(
+            f'<div class="dcs-file-row dcs-file-row-active">'
+            f"{html.escape(_current)}"
+            f'<div class="dcs-file-row-sub">{len(raw):,} rows · '
+            f"{len(raw.columns)} columns · Current</div></div>",
+            unsafe_allow_html=True)
+        _shown = True
+    if not _entries and not _query:
+        st.caption("No recent files yet. Tick 'Keep a copy for quick "
+                   "reopen' when you load a file and it will appear "
+                   "here.")
+    for _i, _entry in enumerate(_entries):
+        _name = str(_entry.get("name") or "")
+        if _name == _current:
+            continue  # already shown as the selected row above
+        if _query and _query not in _name.lower():
+            continue
+        st.markdown(
+            f'<div class="dcs-file-row">{html.escape(_name)}'
+            f'<div class="dcs-file-row-sub">'
+            f"{html.escape(str(_entry.get('when') or ''))}</div></div>",
+            unsafe_allow_html=True)
+        if st.button("Open", key=f"preview_files_open_{_i}"):
+            _open_recent_file(_name, _user_root)
+        _shown = True
+    if _query and not _shown:
+        # A filter that matches nothing says so outright instead of
+        # falling back to the "no recent files yet" helper (which
+        # would be a lie when files do exist).
+        st.caption(f"No files match '{str(_q).strip()}'.")
+
+
+def _render_preview_empty_state(st):
+    """The Preview empty state: the guided "Nothing loaded yet" card
+    with its one-click sample loader, plus the Recent items list
+    under it. Rendered at top level for the other tabs, and in the
+    right-hand column beside the Files panel for the Preview tab
+    (the Table Editor's empty state keeps its list visible)."""
+    if ui_design.empty_state(
+            "Nothing loaded yet",
+            "Upload a file from the sidebar on the left, load a Google "
+            "Sheet, or open a database table — or skip the setup and "
+            "explore with the sample file: it loads the messy sales "
+            "data (80 rows) so you can see cleaning, KPIs and the report "
+            "right away.",
+            cta_label="Try the sample data"):
+        _sample_path = _APP_DIR / "sample_data" / "messy_sales.csv"
+        with branded_spinner("Loading the sample file…"):
+            _set_raw(engine.load_file("messy_sales.csv",
+                                      _sample_path.read_bytes()),
+                     "messy_sales.csv (sample)", kind="sample")
+        st.session_state["last_upload"] = None
+        st.rerun()
+    # Table Editor default pane: "Recent items" under the load card —
+    # the same saved files the sidebar's Recent list holds, so a
+    # returning file is one click away without uploading again.
+    st.markdown('<div class="dcs-micro-label">Recent items</div>',
+                unsafe_allow_html=True)
+    _empty_recents = feat_share.list_recent(_user_root)
+    if not _empty_recents:
+        st.caption("No recent files yet. Tick 'Keep a copy for quick "
+                   "reopen' when you load a file and it will appear here.")
+    else:
+        for _i, _entry in enumerate(_empty_recents):
+            st.write(f"**{_entry.get('name', '')}** — "
+                     f"{_entry.get('when', '')}")
+            if st.button("Open", key=f"preview_empty_recent_{_i}"):
+                _open_recent_file(_entry.get("name", ""), _user_root)
+
+
 # ------------------------------------------------------------------ load ---
 # Sidebar: grouped nav (clickable icon rows — the dashboard's icon +
 # label nav) + the quiet status pill below it. The brand logo and the
@@ -3122,37 +3260,29 @@ if raw is None:
         st.stop()
     # Guided empty state: what to do first, plus a one-click way to try
     # the sample — the same loader the sidebar "Try the messy sample"
-    # button uses, not a second mechanism.
-    if ui_design.empty_state(
-            "Nothing loaded yet",
-            "Upload a file from the sidebar on the left, load a Google "
-            "Sheet, or open a database table — or skip the setup and "
-            "explore with the sample file: it loads the messy sales "
-            "data (80 rows) so you can see cleaning, KPIs and the report "
-            "right away.",
-            cta_label="Try the sample data"):
-        _sample_path = _APP_DIR / "sample_data" / "messy_sales.csv"
-        with branded_spinner("Loading the sample file…"):
-            _set_raw(engine.load_file("messy_sales.csv",
-                                      _sample_path.read_bytes()),
-                     "messy_sales.csv (sample)", kind="sample")
-        st.session_state["last_upload"] = None
-        st.rerun()
-    # Table Editor default pane: "Recent items" under the load card —
-    # the same saved files the sidebar's Recent list holds, so a
-    # returning file is one click away without uploading again.
-    st.markdown('<div class="dcs-micro-label">Recent items</div>',
-                unsafe_allow_html=True)
-    _empty_recents = feat_share.list_recent(_user_root)
-    if not _empty_recents:
-        st.caption("No recent files yet. Tick 'Keep a copy for quick "
-                   "reopen' when you load a file and it will appear here.")
+    # button uses, not a second mechanism. On the Preview tab the
+    # Table Editor's Files panel sits beside it (fix round,
+    # 2026-11-10: the list exists even with nothing loaded, so a
+    # returning file is one click away); the other tabs keep the
+    # single-column empty state.
+    if _top_active == _nav_labels["preview"]:
+        _files_open = bool(st.session_state.get("preview_files_open", True))
+        if _files_open:
+            _col_files, _col_empty = st.columns([0.24, 0.76])
+            with _col_files:
+                _render_preview_files(st, None)
+        else:
+            _col_files, _col_empty = st.columns([0.06, 0.94])
+            with _col_files:
+                if ui_design.icon_button(
+                        "", "table", key="preview_files_expand",
+                        help="Show the Files list."):
+                    st.session_state["preview_files_open"] = True
+                    st.rerun()
+        with _col_empty:
+            _render_preview_empty_state(st)
     else:
-        for _i, _entry in enumerate(_empty_recents):
-            st.write(f"**{_entry.get('name', '')}** — "
-                     f"{_entry.get('when', '')}")
-            if st.button("Open", key=f"preview_empty_recent_{_i}"):
-                _open_recent_file(_entry.get("name", ""), _user_root)
+        _render_preview_empty_state(st)
     st.stop()
 
 if (st.session_state.get("auto_refresh")
@@ -3353,93 +3483,6 @@ def _refresh_preview_file():
         f"Reloaded {_name} ({len(_df):,} rows).")
     st.rerun()
     return True
-
-
-def _render_preview_files(st, raw):
-    """Table Editor sub-sidebar: the Files list. Supabase's is
-    Schema public + New table + Search tables + the table list with
-    the selected row light-grey and black-barred; ours is the
-    current file (selected row, with its row/column counts) + the
-    recent files, a name filter, and + Load a file. The list is the
-    same saved files the sidebar's Recent list holds — this is the
-    Table Editor's home for them, not a second store.
-
-    + Load a file reveals an inline picker for one-table files
-    (CSV, JSON, Parquet — the sidebar's uploader with the same
-    branches, minus Excel: a workbook needs its sheet picked in
-    the sidebar). Collapse hides the list; the grid takes the width.
-    """
-    st.markdown('<div class="dcs-micro-label">Files</div>',
-                unsafe_allow_html=True)
-    if ui_design.icon_button(
-            "Collapse", "chevron_left", key="preview_files_collapse",
-            help="Hide the Files list."):
-        st.session_state["preview_files_open"] = False
-        st.rerun()
-    _q = st.text_input(
-        "Search files", key="preview_files_search",
-        placeholder="Search files…", label_visibility="collapsed")
-    if st.session_state.get("preview_show_uploader"):
-        _up = st.file_uploader(
-            "Load a file", type=["csv", "json", "parquet"],
-            key="preview_files_uploader", label_visibility="collapsed",
-            help="CSV, JSON or Parquet — one table. Excel workbooks "
-                 "load from the sidebar, where you pick a sheet.")
-        if _up is not None:
-            _ok = True
-            try:
-                storage.save_upload(_skey, _up.name, _up.getvalue())
-            except Exception as e:  # noqa: BLE001 - show, don't crash
-                st.error(f"Could not save that upload ({_up.name}): {e}")
-                _ok = False
-            if _ok:
-                try:
-                    if _up.name.lower().endswith(".parquet"):
-                        _set_raw(engine.load_parquet(_up.getvalue()),
-                                 _up.name)
-                    else:
-                        _set_raw(engine.load_file(_up.name,
-                                                  _up.getvalue()),
-                                 _up.name)
-                    st.session_state["last_upload"] = _up.name
-                except Exception as e:  # noqa: BLE001 - show, don't crash
-                    st.error(f"Could not read {_up.name}: {e}")
-                    _ok = False
-            if _ok:
-                st.session_state["preview_show_uploader"] = False
-                st.rerun()
-    elif ui_design.icon_button(
-            "Load a file", "add", key="preview_files_new",
-            help="Load another file — CSV, JSON or Parquet."):
-        st.session_state["preview_show_uploader"] = True
-        st.rerun()
-    _entries = feat_share.list_recent(_user_root)
-    _query = str(_q or "").strip().lower()
-    _current = str(st.session_state.get("source_name") or "—")
-    if not _query or _query in _current.lower():
-        st.markdown(
-            f'<div class="dcs-file-row dcs-file-row-active">'
-            f"{html.escape(_current)}"
-            f'<div class="dcs-file-row-sub">{len(raw):,} rows · '
-            f"{len(raw.columns)} columns · Current</div></div>",
-            unsafe_allow_html=True)
-    if not _entries:
-        st.caption("No recent files yet. Tick 'Keep a copy for quick "
-                   "reopen' when you load a file and it will appear "
-                   "here.")
-    for _i, _entry in enumerate(_entries):
-        _name = str(_entry.get("name") or "")
-        if _name == _current:
-            continue  # already shown as the selected row above
-        if _query and _query not in _name.lower():
-            continue
-        st.markdown(
-            f'<div class="dcs-file-row">{html.escape(_name)}'
-            f'<div class="dcs-file-row-sub">'
-            f"{html.escape(str(_entry.get('when') or ''))}</div></div>",
-            unsafe_allow_html=True)
-        if st.button("Open", key=f"preview_files_open_{_i}"):
-            _open_recent_file(_name, _user_root)
 
 
 def _render_preview_editor(st, raw, clean, filtered):

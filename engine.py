@@ -282,6 +282,21 @@ def detect_kind(s: pd.Series) -> str:
     return "text"
 
 
+def normalize_text_values(s: pd.Series) -> pd.Series:
+    """Text values with surrounding whitespace stripped and internal
+    whitespace runs collapsed to one space — the ONE counting rule
+    shared by profile(), profile_csv_chunked(), the data dictionary
+    and search: "  Aarav Sharma " counts as "Aarav Sharma", so the
+    profile's top values, the unique count and a search for the name
+    all agree. Non-text columns pass through unchanged (only their
+    missing values are dropped). Case is preserved — this rule is
+    about whitespace, not case."""
+    if pd.api.types.is_object_dtype(s) or pd.api.types.is_string_dtype(s):
+        return (s.dropna().astype(object).astype(str)
+                .str.strip().str.replace(r"\s+", " ", regex=True))
+    return s.dropna()
+
+
 def profile(df: pd.DataFrame) -> list:
     """One row per column: name, guessed type, missing %, unique count, sample."""
     rows = []
@@ -292,7 +307,7 @@ def profile(df: pd.DataFrame) -> list:
             "type": detect_kind(s),
             "missing": int(s.isna().sum()),
             "missing_pct": round(100 * s.isna().mean(), 1),
-            "unique": int(s.nunique(dropna=True)),
+            "unique": int(normalize_text_values(s).nunique()),
             "sample": _display_sample(s.dropna().iloc[0]) if s.notna().any() else "",
         })
     return rows
@@ -1122,12 +1137,13 @@ def profile_csv_chunked(raw: bytes, chunksize: int = 50000) -> list:
                 # A column reads as int64 in a chunk with no missing values
                 # but float64 in a chunk with missing values — 2 and 2.0
                 # must count as ONE unique value, as profile() counts them
-                # in the single full-frame dtype. Object columns keep raw
-                # strings, exactly like profile().
+                # in the single full-frame dtype. Object columns count
+                # normalized strings, exactly like profile().
                 if pd.api.types.is_numeric_dtype(s):
                     uniques[col].update(float(v) for v in vals.tolist())
                 else:
-                    uniques[col].update(vals.astype(object).astype(str).tolist())
+                    uniques[col].update(
+                        normalize_text_values(vals).tolist())
                 if len(kind_vals[col]) < _CHUNK_KIND_SAMPLE_ROWS:
                     kind_vals[col].extend(
                         vals.astype(object).astype(str).head(

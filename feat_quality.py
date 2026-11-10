@@ -471,7 +471,11 @@ def _sample_text(s: pd.Series, kind: str) -> str:
         if len(num):
             return f"{_fmt_num(num.min())} to {_fmt_num(num.max())}"
     if kind == "category":
-        top = non_null.astype(object).astype(str).value_counts().head(3)
+        # Top values count whitespace-normalized strings (the shared
+        # rule — engine.normalize_text_values): "  Aarav Sharma "
+        # counts as "Aarav Sharma", so this count agrees with the
+        # unique count below and with a search for the name.
+        top = engine.normalize_text_values(non_null).value_counts().head(3)
         return ", ".join(f"{v} ({int(n)})" for v, n in top.items())
     val = str(non_null.iloc[0])
     return val if len(val) <= 40 else val[:37] + "..."
@@ -489,7 +493,9 @@ def data_dictionary(df: pd.DataFrame) -> tuple:
             "column": str(col),
             "type": kind,
             "missing %": round(100 * float(s.isna().mean()), 1),
-            "unique": int(s.nunique(dropna=True)),
+            # Unique counts whitespace-normalized values (the shared
+            # rule) so it agrees with the sample counts above.
+            "unique": int(engine.normalize_text_values(s).nunique()),
             "sample": _sample_text(s, kind),
         })
     table = pd.DataFrame(rows, columns=["column", "type", "missing %",

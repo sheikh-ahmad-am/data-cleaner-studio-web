@@ -181,8 +181,9 @@ def test_preview_css_in_both_themes():
 
 def test_preview_no_data(_tmp_env):
     """With nothing loaded: the guided empty state, the Recent items
-    section saying there are none yet, and NO Files sub-sidebar
-    (the Table Editor's list needs a file to list)."""
+    section saying there are none yet, AND the Files sub-sidebar
+    (fix round, 2026-11-10 — the Table Editor's list exists even
+    with nothing loaded, so a returning file is one click away)."""
     at = AppTest.from_file(APP)
     at.run()
     signup(at, "alice1")
@@ -192,11 +193,63 @@ def test_preview_no_data(_tmp_env):
     assert "No recent files yet" in text, \
         "empty state must say so honestly when there are none"
     find_button(at, "Try the sample data")
-    assert not any(b.key == "preview_files_collapse" for b in at.button), \
-        "no Files sub-sidebar with no data loaded"
-    assert not any(t.label == "Search files" for t in at.text_input), \
-        "no Files search with no data loaded"
+    find_button(at, "Collapse", key="preview_files_collapse")
+    find_button(at, "Load a file", key="preview_files_new")
+    find_text_input(at, "Search files")
     print("preview no-data empty state OK")
+
+
+def test_preview_no_data_files_search_no_match(_tmp_env):
+    """Empty state, Files search: a query matching nothing says so
+    outright ("No files match 'zzz'.") instead of falling back to
+    the "no recent files yet" helper; clearing it brings the recent
+    file back."""
+    at = AppTest.from_file(APP)
+    at.run()
+    signup(at, "alice1")
+    seed_recent(at, "old.csv", b"a,b\n1,2\n3,4\n")
+    at.run()
+    assert not at.exception, f"exception re-running: {at.exception}"
+    assert "old.csv" in all_text(at), "recent file must be listed"
+    find_text_input(at, "Search files").set_value("zzz").run()
+    assert not at.exception, f"exception filtering files: {at.exception}"
+    assert any("No files match 'zzz'." in v for v in vals(at.caption)), \
+        "a non-matching Files search must say so outright"
+    # The Files panel's own rows (the dcs-file-row divs) must hide
+    # the file — the Recent items section below the empty state is
+    # a separate unfiltered list, so it still names it.
+    _rows = "\n".join(v for v in vals(at.markdown)
+                      if "dcs-file-row" in v)
+    assert "old.csv" not in _rows, \
+        "a non-matching query must hide the recent file from the panel"
+    find_text_input(at, "Search files").set_value("").run()
+    assert not at.exception, f"exception clearing filter: {at.exception}"
+    _rows = "\n".join(v for v in vals(at.markdown)
+                      if "dcs-file-row" in v)
+    assert "old.csv" in _rows, \
+        "clearing the filter must bring the recent file back"
+    print("preview no-data Files search no-match OK")
+
+
+def test_preview_no_data_files_collapse(_tmp_env):
+    """Empty state: Collapse hides the Files list (and shows the
+    slim expand button); expanding brings it back."""
+    at = AppTest.from_file(APP)
+    at.run()
+    signup(at, "alice1")
+    find_button(at, "Collapse", key="preview_files_collapse").click().run()
+    assert not at.exception, f"exception collapsing: {at.exception}"
+    assert not any(b.key == "preview_files_collapse" for b in at.button), \
+        "Collapse button must be gone once collapsed"
+    assert not any(t.label == "Search files" for t in at.text_input), \
+        "Files search must be gone once collapsed"
+    assert "Nothing loaded yet" in all_text(at), \
+        "the guided empty state must stay while collapsed"
+    find_button(at, "", key="preview_files_expand").click().run()
+    assert not at.exception, f"exception expanding: {at.exception}"
+    find_button(at, "Collapse", key="preview_files_collapse")
+    find_text_input(at, "Search files")
+    print("preview no-data Files collapse OK")
 
 
 def test_preview_no_data_recent_items(_tmp_env):
@@ -353,6 +406,44 @@ def test_preview_pagination(_tmp_env):
     assert any("Showing 1–1 of 1 rows" in v for v in vals(at.caption)), \
         "filtered window wrong"
     print("preview pagination OK")
+
+
+# ---------------------------------------------------------------------------
+# Filter builder: Clear all rules in one click
+# ---------------------------------------------------------------------------
+
+def test_preview_filter_clear_one_click(_tmp_env):
+    """Filter builder (fix round, 2026-11-10): one click on "Clear
+    all rules" clears both the rules and the chip display on that
+    same render — the old order rendered the chips before the Clear
+    button was evaluated, so the click-run's output held both the
+    stale chip and the "no rules" note."""
+    at = AppTest.from_file(APP)
+    at.run()
+    signup(at, "alice1")
+    load_sample(at)
+    # Add a rule: Region equals North (16 of 80 rows match).
+    col_sel = next(s for s in at.selectbox if s.label == "Column")
+    col_sel.set_value("Region").run()
+    assert not at.exception, f"exception picking column: {at.exception}"
+    find_text_input(at, "Value").set_value("North").run()
+    assert not at.exception, f"exception typing value: {at.exception}"
+    find_button(at, "Add rule").click().run()
+    assert not at.exception, f"exception adding rule: {at.exception}"
+    md = "\n".join(vals(at.markdown))
+    assert "equals North" in md, "the rule chip must render after Add rule"
+    assert "16 of 80 rows match" in all_text(at), \
+        "Region equals North must match 16 rows"
+    find_button(at, "Clear all rules").click().run()
+    assert not at.exception, f"exception clearing rules: {at.exception}"
+    md = "\n".join(vals(at.markdown))
+    assert "equals North" not in md, \
+        "one Clear click must remove the chip on the same render"
+    assert any("No filter rules yet" in v for v in vals(at.info)), \
+        "the empty state must show after clearing"
+    assert at.session_state["n_filter_rules_data"] == [], \
+        "the rules must be cleared in session state"
+    print("preview filter Clear all rules one-click OK")
 
 
 # ---------------------------------------------------------------------------
