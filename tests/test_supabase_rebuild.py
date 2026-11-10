@@ -413,8 +413,11 @@ def test_preview_toolbar_and_footer(_tmp_env):
     assert list(rows.options) == ["50", "100", "200"], \
         f"rows-per-page options wrong: {list(rows.options)!r}"
     find_button(at, "Clean now", key="preview_clean_now")
-    assert any("Showing 80 of 80 rows" in v for v in vals(at.caption)), \
-        "Preview footer must count the rows"
+    # Preview round (Table Editor, 2026-11-10): the footer is now a
+    # pagination window — "Showing 1–80 of 80 rows" on the single
+    # page — with Prev / Page 1 of 1 / Next beside it.
+    assert any("Showing 1–80 of 80 rows" in v for v in vals(at.caption)), \
+        "Preview footer must count the shown window"
     # The toolbar search filters the shown rows.
     find_text_input(at, "Search the preview").set_value("2024").run()
     assert not at.exception, f"exception filtering preview: {at.exception}"

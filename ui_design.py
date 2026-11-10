@@ -771,6 +771,17 @@ div[data-testid="stCodeBlock"] pre { background-color: #ffffff; }
 .dcs-coltype { font-size: 13px; color: #030303; }
 .dcs-coltype .dcs-coltype-kind { font-size: 12px; color: #696969;
   font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+/* ---- Table Editor file rows: the Files list in the Preview
+   sub-sidebar. A row is the file name + a muted sub-line; the
+   selected (current) file is Supabase's table-list row — light-grey
+   background, bold name, black left bar. ---- */
+.dcs-file-row { display: block; padding: 0.4rem 0.6rem;
+  border-radius: 6px; font-size: 13px; color: #030303;
+  border-left: 2px solid transparent; margin-bottom: 2px;
+  overflow-wrap: anywhere; }
+.dcs-file-row-sub { font-size: 12px; color: #696969; }
+.dcs-file-row-active { background-color: #f3f3f3; font-weight: 600;
+  color: #030303; border-left: 2px solid #030303; }
 /* ---- storage usage: one thin hairline, green fill, muted label ---- */
 .dcs-storage { height: 4px; background-color: #e8e8e8;
   border-radius: 999px; overflow: hidden; }
@@ -1429,6 +1440,15 @@ div[data-testid="stCodeBlock"] pre { background-color: #232625; }
 .dcs-coltype { font-size: 13px; color: #edefee; }
 .dcs-coltype .dcs-coltype-kind { font-size: 12px; color: #989a99;
   font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+/* ---- Table Editor file rows (dark): selected row is the dark
+   rail-active grey with a light left bar. ---- */
+.dcs-file-row { display: block; padding: 0.4rem 0.6rem;
+  border-radius: 6px; font-size: 13px; color: #edefee;
+  border-left: 2px solid transparent; margin-bottom: 2px;
+  overflow-wrap: anywhere; }
+.dcs-file-row-sub { font-size: 12px; color: #989a99; }
+.dcs-file-row-active { background-color: #2a2d2c; font-weight: 600;
+  color: #edefee; border-left: 2px solid #edefee; }
 /* ---- storage usage: one thin hairline, bright green fill, muted label ---- */
 .dcs-storage { height: 4px; background-color: #2e2e2e;
   border-radius: 999px; overflow: hidden; }

@@ -471,6 +471,17 @@ div[data-testid="stCodeBlock"] pre { background-color: #ffffff; }
 .dcs-coltype { font-size: 13px; color: #030303; }
 .dcs-coltype .dcs-coltype-kind { font-size: 12px; color: #696969;
   font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+/* ---- Table Editor file rows: the Files list in the Preview
+   sub-sidebar. A row is the file name + a muted sub-line; the
+   selected (current) file is Supabase's table-list row — light-grey
+   background, bold name, black left bar. ---- */
+.dcs-file-row { display: block; padding: 0.4rem 0.6rem;
+  border-radius: 6px; font-size: 13px; color: #030303;
+  border-left: 2px solid transparent; margin-bottom: 2px;
+  overflow-wrap: anywhere; }
+.dcs-file-row-sub { font-size: 12px; color: #696969; }
+.dcs-file-row-active { background-color: #f3f3f3; font-weight: 600;
+  color: #030303; border-left: 2px solid #030303; }
 /* ---- storage usage: one thin hairline, green fill, muted label ---- */
 .dcs-storage { height: 4px; background-color: #e8e8e8;
   border-radius: 999px; overflow: hidden; }
@@ -2375,6 +2386,33 @@ def _restore_cleaned_state(source_name):
         return False
 
 
+def _open_recent_file(name, base_dir):
+    """Re-open a recent file by name — the Table Editor sub-sidebar
+    and the empty state's Recent items both call this (the sidebar's
+    own Recent list has its own handler at the top of the Preview
+    tab). Loads the saved copy, sets it as raw, restores any cleaned
+    state saved for it, toasts, and reruns. Returns True on success;
+    on failure it shows the error and returns False (no rerun)."""
+    try:
+        opened = feat_share.load_recent(name, base_dir)
+    except Exception as e:  # noqa: BLE001 - show, don't crash
+        st.error(str(e))
+        return False
+    _set_raw(opened, "Recent file (reopened)", kind="recent")
+    # A toast would not survive the rerun below, so the message
+    # travels as a flash in session state — _render_preview_editor
+    # shows it (and pops it) at the top of the next render.
+    if _restore_cleaned_state(name):
+        st.session_state["preview_flash"] = (
+            f"Opened {name} — cleaned data restored too.")
+    else:
+        st.session_state["preview_flash"] = (
+            f"Opened {name}. Clean it in the Clean tab to rebuild "
+            "the KPIs and the report.")
+    st.rerun()
+    return True
+
+
 # ------------------------------------------------------------------ load ---
 # Sidebar: grouped nav (clickable icon rows — the dashboard's icon +
 # label nav) + the quiet status pill below it. The brand logo and the
@@ -3100,6 +3138,21 @@ if raw is None:
                      "messy_sales.csv (sample)", kind="sample")
         st.session_state["last_upload"] = None
         st.rerun()
+    # Table Editor default pane: "Recent items" under the load card —
+    # the same saved files the sidebar's Recent list holds, so a
+    # returning file is one click away without uploading again.
+    st.markdown('<div class="dcs-micro-label">Recent items</div>',
+                unsafe_allow_html=True)
+    _empty_recents = feat_share.list_recent(_user_root)
+    if not _empty_recents:
+        st.caption("No recent files yet. Tick 'Keep a copy for quick "
+                   "reopen' when you load a file and it will appear here.")
+    else:
+        for _i, _entry in enumerate(_empty_recents):
+            st.write(f"**{_entry.get('name', '')}** — "
+                     f"{_entry.get('when', '')}")
+            if st.button("Open", key=f"preview_empty_recent_{_i}"):
+                _open_recent_file(_entry.get("name", ""), _user_root)
     st.stop()
 
 if (st.session_state.get("auto_refresh")
@@ -3265,89 +3318,311 @@ _active_tab = next(k for k, v in _tab_labels.items()
 feat_quickjump.note_section_change(st, _active_label)
 tab = set(_tab_keys)
 
+def _refresh_preview_file():
+    """Reload the current file from its last saved copy (the toolbar
+    Refresh button): the just-uploaded bytes when the sidebar
+    uploader still holds them, the sample file for a sample load, or
+    the saved recent copy for a reopened file. Anything else says so
+    plainly instead of pretending — Excel workbooks reload from the
+    sidebar, where the sheet is picked. A reload resets the clean
+    (a fresh load always does) and the page. Returns True on success."""
+    _name = str(st.session_state.get("source_name") or "")
+    _kind = str(st.session_state.get("source_kind") or "")
+    if _name.lower().endswith((".xlsx", ".xls")):
+        st.info("Excel workbooks load from the sidebar, where you pick "
+                "a sheet — re-upload it there to reload.")
+        return False
+    try:
+        if _last_raw_bytes:
+            _df = engine.load_file(_name, _last_raw_bytes)
+        elif _kind == "sample":
+            _p = _APP_DIR / "sample_data" / "messy_sales.csv"
+            _df = engine.load_file("messy_sales.csv", _p.read_bytes())
+        elif _kind == "recent":
+            _df = feat_share.load_recent(_name, _user_root)
+        else:
+            st.info("Nothing to refresh from — upload the file again.")
+            return False
+    except Exception as e:  # noqa: BLE001 - show, don't crash
+        st.error(f"Could not reload {_name}: {e}")
+        return False
+    _set_raw(_df, _name, kind=_kind)
+    st.session_state["preview_page"] = 1
+    # Flash, not a toast: the rerun below would swallow a toast.
+    st.session_state["preview_flash"] = (
+        f"Reloaded {_name} ({len(_df):,} rows).")
+    st.rerun()
+    return True
+
+
+def _render_preview_files(st, raw):
+    """Table Editor sub-sidebar: the Files list. Supabase's is
+    Schema public + New table + Search tables + the table list with
+    the selected row light-grey and black-barred; ours is the
+    current file (selected row, with its row/column counts) + the
+    recent files, a name filter, and + Load a file. The list is the
+    same saved files the sidebar's Recent list holds — this is the
+    Table Editor's home for them, not a second store.
+
+    + Load a file reveals an inline picker for one-table files
+    (CSV, JSON, Parquet — the sidebar's uploader with the same
+    branches, minus Excel: a workbook needs its sheet picked in
+    the sidebar). Collapse hides the list; the grid takes the width.
+    """
+    st.markdown('<div class="dcs-micro-label">Files</div>',
+                unsafe_allow_html=True)
+    if ui_design.icon_button(
+            "Collapse", "chevron_left", key="preview_files_collapse",
+            help="Hide the Files list."):
+        st.session_state["preview_files_open"] = False
+        st.rerun()
+    _q = st.text_input(
+        "Search files", key="preview_files_search",
+        placeholder="Search files…", label_visibility="collapsed")
+    if st.session_state.get("preview_show_uploader"):
+        _up = st.file_uploader(
+            "Load a file", type=["csv", "json", "parquet"],
+            key="preview_files_uploader", label_visibility="collapsed",
+            help="CSV, JSON or Parquet — one table. Excel workbooks "
+                 "load from the sidebar, where you pick a sheet.")
+        if _up is not None:
+            _ok = True
+            try:
+                storage.save_upload(_skey, _up.name, _up.getvalue())
+            except Exception as e:  # noqa: BLE001 - show, don't crash
+                st.error(f"Could not save that upload ({_up.name}): {e}")
+                _ok = False
+            if _ok:
+                try:
+                    if _up.name.lower().endswith(".parquet"):
+                        _set_raw(engine.load_parquet(_up.getvalue()),
+                                 _up.name)
+                    else:
+                        _set_raw(engine.load_file(_up.name,
+                                                  _up.getvalue()),
+                                 _up.name)
+                    st.session_state["last_upload"] = _up.name
+                except Exception as e:  # noqa: BLE001 - show, don't crash
+                    st.error(f"Could not read {_up.name}: {e}")
+                    _ok = False
+            if _ok:
+                st.session_state["preview_show_uploader"] = False
+                st.rerun()
+    elif ui_design.icon_button(
+            "Load a file", "add", key="preview_files_new",
+            help="Load another file — CSV, JSON or Parquet."):
+        st.session_state["preview_show_uploader"] = True
+        st.rerun()
+    _entries = feat_share.list_recent(_user_root)
+    _query = str(_q or "").strip().lower()
+    _current = str(st.session_state.get("source_name") or "—")
+    if not _query or _query in _current.lower():
+        st.markdown(
+            f'<div class="dcs-file-row dcs-file-row-active">'
+            f"{html.escape(_current)}"
+            f'<div class="dcs-file-row-sub">{len(raw):,} rows · '
+            f"{len(raw.columns)} columns · Current</div></div>",
+            unsafe_allow_html=True)
+    if not _entries:
+        st.caption("No recent files yet. Tick 'Keep a copy for quick "
+                   "reopen' when you load a file and it will appear "
+                   "here.")
+    for _i, _entry in enumerate(_entries):
+        _name = str(_entry.get("name") or "")
+        if _name == _current:
+            continue  # already shown as the selected row above
+        if _query and _query not in _name.lower():
+            continue
+        st.markdown(
+            f'<div class="dcs-file-row">{html.escape(_name)}'
+            f'<div class="dcs-file-row-sub">'
+            f"{html.escape(str(_entry.get('when') or ''))}</div></div>",
+            unsafe_allow_html=True)
+        if st.button("Open", key=f"preview_files_open_{_i}"):
+            _open_recent_file(_name, _user_root)
+
+
+def _render_preview_editor(st, raw, clean, filtered):
+    """The Preview tab as Supabase's Table Editor, mapped to this
+    app's own data (never Supabase's): a Files sub-sidebar on the
+    left (current file + recents, name filter, + Load a file,
+    collapsible), and the data grid on the right — table heading
+    with typed column headers, Data / Definition tabs (Supabase's
+    Definition/Data toggle), toolbar (search, rows-per-page,
+    Refresh, green Clean now), footer pagination (Prev / Page X of
+    Y / Next + the shown window), and the empty state with Recent
+    items. Returns (raw, clean, filtered) — paste and suggestion
+    fixes replace raw, so the caller takes the new frames back.
+
+    What maps where: the sort controls above the grid are the Sort
+    affordance and the filter builder in the expander below is the
+    Filter affordance — they stay where they were instead of hiding
+    behind toolbar buttons. Paste a table is the Insert path.
+    Definition holds the health check + data dictionary that used
+    to sit in an expander under the grid.
+
+    Deliberately not built (stated plainly, not faked): inline cell
+    editing — st.data_editor could edit cells, but edits would
+    bypass the Clean tab's audit trail, so the grid stays read-only
+    and mutations live in Clean + Paste. Row checkboxes — no bulk
+    row action exists in this app (rows are cleaned, not deleted,
+    in Preview), so a checkbox with nothing behind it would be
+    decoration. PK/FK markers — a flat file has no keys. Add RLS /
+    Role / More — no counterparts. The typed headers stay as the
+    line above the grid: st.dataframe headers cannot carry type
+    labels in stock Streamlit.
+    """
+    # A flash message left by _open_recent_file / _refresh_preview_file
+    # (their rerun would swallow a toast): show it once, then pop it.
+    _flash = st.session_state.pop("preview_flash", None)
+    if _flash:
+        st.success(_flash)
+    _files_open = bool(st.session_state.get("preview_files_open", True))
+    if _files_open:
+        _col_files, _col_grid = st.columns([0.24, 0.76])
+        with _col_files:
+            _render_preview_files(st, raw)
+    else:
+        _col_files, _col_grid = st.columns([0.06, 0.94])
+        with _col_files:
+            if ui_design.icon_button(
+                    "", "table", key="preview_files_expand",
+                    help="Show the Files list."):
+                st.session_state["preview_files_open"] = True
+                st.rerun()
+    with _col_grid:
+        ui_design.section_heading(
+            f"Loaded: {st.session_state.source_name}",
+            sub=f"{len(raw):,} rows, {len(raw.columns)} columns")
+        # Column types, the way Supabase shows them (name text,
+        # price numeric) — the type is part of the table's honesty.
+        _col_types = "  ·  ".join(
+            ui_design.column_type_label(c, str(raw[c].dtype))
+            for c in list(raw.columns)[:12])
+        if len(raw.columns) > 12:
+            _col_types += f"  ·  +{len(raw.columns) - 12} more"
+        st.markdown(_col_types, unsafe_allow_html=True)
+        _tab_data, _tab_def = st.tabs(["Data", "Definition"])
+        with _tab_data:
+            pasted = feat_enrich.render_paste(st)
+            if pasted is not None:
+                _set_raw(pasted, "Pasted table", kind="paste")
+                raw = pasted
+                clean = None
+                filtered = None
+            shown = feat_share.render_sort(st, raw)
+            # Supabase-style toolbar above the table: search the
+            # preview, a rows-per-page pick, Refresh, and the green
+            # primary action (Clean now). (The sort controls above
+            # and the whole-file search below stay — this row is the
+            # table's own toolbar, the way the dashboard's Tables
+            # list carries search + filter + a green New button.)
+            _tb_search, _tb_rows, _tb_refresh, _tb_go = st.columns(
+                [2.0, 0.8, 0.35, 1.0])
+            with _tb_search:
+                _preview_q = st.text_input(
+                    "Search the preview", key="preview_toolbar_search",
+                    placeholder="Filter these rows…",
+                    label_visibility="collapsed")
+            with _tb_rows:
+                _preview_n = st.selectbox(
+                    "Rows", [50, 100, 200], index=1,
+                    key="preview_toolbar_rows", label_visibility="collapsed")
+            with _tb_refresh:
+                if ui_design.icon_button(
+                        "", "refresh", key="preview_refresh",
+                        help="Reload this file from its last saved copy."):
+                    _refresh_preview_file()
+            with _tb_go:
+                if ui_design.icon_button(
+                        "Clean now", "play", kind="primary",
+                        key="preview_clean_now",
+                        help="Go to the Clean tab for this file.",
+                        use_container_width=True):
+                    st.session_state["pending_tab"] = "clean"
+                    st.rerun()
+            if _preview_q and str(_preview_q).strip():
+                shown = feat_share.search_rows(shown, str(_preview_q).strip())
+            # Footer pagination (Supabase's footer: pagination +
+            # "100 rows" + Definition/Data toggle — the toggle lives
+            # as the tabs above). The page resets whenever the file,
+            # the search, the sort, or the page size changes, so a
+            # new view never opens on a page that no longer exists.
+            _n = int(_preview_n)
+            _total = len(shown)
+            _pages = max(1, -(-_total // _n))
+            _fp = (str(st.session_state.get("source_name") or ""),
+                   str(_preview_q or "").strip(),
+                   str(st.session_state.get("s_sort_col") or ""),
+                   str(st.session_state.get("s_sort_dir") or ""), _n)
+            if st.session_state.get("preview_page_for") != _fp:
+                st.session_state["preview_page"] = 1
+                st.session_state["preview_page_for"] = _fp
+            _page = min(max(1, int(st.session_state.get("preview_page", 1))),
+                        _pages)
+            _start = (_page - 1) * _n
+            st.dataframe(shown.iloc[_start:_start + _n], width="stretch")
+            _f_prev, _f_label, _f_next = st.columns([0.5, 2.0, 0.5])
+            with _f_prev:
+                if ui_design.icon_button(
+                        "", "chevron_left", key="preview_page_prev",
+                        disabled=_page <= 1, help="Previous page."):
+                    st.session_state["preview_page"] = _page - 1
+                    st.rerun()
+            with _f_label:
+                st.caption(f"Page {_page} of {_pages}")
+            with _f_next:
+                if ui_design.icon_button(
+                        "", "chevron_right", key="preview_page_next",
+                        disabled=_page >= _pages, help="Next page."):
+                    st.session_state["preview_page"] = _page + 1
+                    st.rerun()
+            # The "N tables" footer, for our table: the shown window.
+            st.caption(f"Showing {min(_start + 1, _total):,}–"
+                       f"{min(_start + _n, _total):,} of {_total:,} rows · "
+                       f"{len(raw.columns)} columns")
+            feat_share.render_search(st, raw)
+            with st.expander("Search, filter & suggested fixes"):
+                feat_enrich.render_filter_builder(st, raw)
+                sugg_df, sugg_actions = feat_share.render_suggestions(st, raw)
+                if sugg_df is not None:
+                    _set_raw(sugg_df, st.session_state.source_name)
+                    _audit("Suggestion applied",
+                           sugg_actions[0][1] if sugg_actions
+                           else "Fix applied")
+                    raw = sugg_df
+                    clean = None
+                    filtered = None
+            feat_analyse.render_trust(st, raw)
+            feat_export.render_column_charts(st, clean)
+        with _tab_def:
+            ui_design.section_heading("Health check")
+            st.write(f"Missing cells: {int(raw.isna().sum().sum()):,}  |  "
+                     f"Duplicate rows: {int(raw.duplicated().sum())}")
+            st.table(pd.DataFrame(engine.profile(raw)))
+            feat_quality.render_quality_panel(st, raw)
+            # One data dictionary, shown once: heading + table +
+            # download. (render_dictionary would show the same table
+            # twice — once as markdown, once as a dataframe — so the
+            # pieces are rendered here directly from
+            # data_dictionary().)
+            _dict_md, _dict_table = feat_quality.data_dictionary(raw)
+            ui_design.section_heading("Data dictionary")
+            st.dataframe(_dict_table, width="stretch")
+            st.download_button("Download data dictionary (.md)",
+                               _dict_md.encode("utf-8"),
+                               file_name="data_dictionary.md",
+                               key="q_dict_download")
+    return raw, clean, filtered
+
+
 # --------------------------------------------------------------- preview ---
 if _active_tab == "preview":
     if _client and clean is not None:
         st.info(feat_analyse.client_summary(clean, st.session_state.kpis))
     if st.session_state.source_kind == "workspace":
         st.caption("Restored from your last auto-saved workspace.")
-    ui_design.section_heading(
-        f"Loaded: {st.session_state.source_name}",
-        sub=f"{len(raw):,} rows, {len(raw.columns)} columns")
-    # Column types, the way Supabase shows them (name text,
-    # price numeric) — the type is part of the table's honesty.
-    _col_types = "  ·  ".join(
-        ui_design.column_type_label(c, str(raw[c].dtype))
-        for c in list(raw.columns)[:12])
-    if len(raw.columns) > 12:
-        _col_types += f"  ·  +{len(raw.columns) - 12} more"
-    st.markdown(_col_types, unsafe_allow_html=True)
-    pasted = feat_enrich.render_paste(st)
-    if pasted is not None:
-        _set_raw(pasted, "Pasted table", kind="paste")
-        raw = pasted
-        clean = None
-        filtered = None
-    shown = feat_share.render_sort(st, raw)
-    # Supabase-style toolbar above the table: search the preview, a
-    # rows-per-page pick, and the green primary action (Clean now).
-    # (The sort controls above and the whole-file search below stay —
-    # this row is the table's own toolbar, the way the dashboard's
-    # Tables list carries search + filter + a green New button.)
-    _tb_search, _tb_rows, _tb_go = st.columns([2.2, 0.8, 1.0])
-    with _tb_search:
-        _preview_q = st.text_input(
-            "Search the preview", key="preview_toolbar_search",
-            placeholder="Filter these rows…", label_visibility="collapsed")
-    with _tb_rows:
-        _preview_n = st.selectbox(
-            "Rows", [50, 100, 200], index=1, key="preview_toolbar_rows",
-            label_visibility="collapsed")
-    with _tb_go:
-        if ui_design.icon_button(
-                "Clean now", "play", kind="primary",
-                key="preview_clean_now",
-                help="Go to the Clean tab for this file.",
-                use_container_width=True):
-            st.session_state["pending_tab"] = "clean"
-            st.rerun()
-    if _preview_q and str(_preview_q).strip():
-        shown = feat_share.search_rows(shown, str(_preview_q).strip())
-    st.dataframe(shown.head(int(_preview_n)), width="stretch")
-    # The "N tables" footer, for our table: how many rows are shown.
-    st.caption(f"Showing {min(len(shown), int(_preview_n)):,} of "
-               f"{len(shown):,} rows · {len(raw.columns)} columns")
-    feat_share.render_search(st, raw)
-    with st.expander("Search, filter & suggested fixes"):
-        feat_enrich.render_filter_builder(st, raw)
-        sugg_df, sugg_actions = feat_share.render_suggestions(st, raw)
-        if sugg_df is not None:
-            _set_raw(sugg_df, st.session_state.source_name)
-            _audit("Suggestion applied",
-                   sugg_actions[0][1] if sugg_actions else "Fix applied")
-            raw = sugg_df
-            clean = None
-            filtered = None
-    with st.expander("Health check & data dictionary"):
-        profile = engine.profile(raw)
-        ui_design.section_heading("Health check")
-        st.write(f"Missing cells: {int(raw.isna().sum().sum()):,}  |  "
-                 f"Duplicate rows: {int(raw.duplicated().sum())}")
-        st.table(pd.DataFrame(profile))
-        feat_quality.render_quality_panel(st, raw)
-        feat_analyse.render_trust(st, raw)
-        # One data dictionary, shown once: heading + table + download.
-        # (render_dictionary would show the same table twice — once as
-        # markdown, once as a dataframe — so the pieces are rendered
-        # here directly from data_dictionary().)
-        _dict_md, _dict_table = feat_quality.data_dictionary(raw)
-        ui_design.section_heading("Data dictionary")
-        st.dataframe(_dict_table, width="stretch")
-        st.download_button("Download data dictionary (.md)",
-                           _dict_md.encode("utf-8"),
-                           file_name="data_dictionary.md",
-                           key="q_dict_download")
-        feat_export.render_column_charts(st, clean)
+    raw, clean, filtered = _render_preview_editor(st, raw, clean, filtered)
 
 # ------------------------------------------------------------------ join ---
 if "join" in tab:
