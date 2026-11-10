@@ -3486,7 +3486,8 @@ def settings_card(title: str, desc: str | None = None):
 
 
 def metric_card(label: str, value, warnings: int = 0, errors: int = 0,
-                bars=None, sub: str | None = None) -> None:
+                bars=None, sub: str | None = None,
+                dots: bool = True) -> None:
     """A Supabase service metric card: uppercase label at left with
     WARNINGS / ERRORS dot counts at right, a large count below, and a
     bar sparkline along the bottom. ``bars`` is a list of per-bucket
@@ -3494,7 +3495,10 @@ def metric_card(label: str, value, warnings: int = 0, errors: int = 0,
     ``(height, kind)`` pair where kind is ``"ok"`` (green),
     ``"warn"`` (amber) or ``"error"`` (red). A card with no bars
     renders the count and dots only. The dots and counts are the
-    app's own data (missing cells, duplicates) — never Supabase's."""
+    app's own data (missing cells, duplicates) — never Supabase's.
+    ``dots=False`` hides the WARNINGS / ERRORS dots (the KPIs
+    Overview cards carry their own meaning in the sub-line instead
+    of warning/error counts)."""
     _warn = (f'<span class="dcs-metric-count">'
              f'<span class="dcs-dot dcs-dot--warn"></span>'
              f"WARNINGS {int(warnings)}</span>")
@@ -3520,11 +3524,13 @@ def metric_card(label: str, value, warnings: int = 0, errors: int = 0,
                       "</div>")
     sub_html = (f'<div class="dcs-kpi-sub">{html.escape(sub)}</div>'
                 if sub else "")
+    dots_html = (f'<span class="dcs-metric-dots">{_warn} {_err}</span>'
+                 if dots else "")
     st.markdown(
         f'<div class="dcs-metric-card">'
         f'<div class="dcs-metric-head">'
         f'<span class="dcs-kpi-label">{html.escape(label)}</span>'
-        f'<span class="dcs-metric-dots">{_warn} {_err}</span></div>'
+        f'{dots_html}</div>'
         f'<div class="dcs-metric-value">{html.escape(str(value))}</div>'
         f"{sub_html}{_bars_html}</div>",
         unsafe_allow_html=True,

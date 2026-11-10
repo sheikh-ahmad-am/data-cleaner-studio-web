@@ -3179,6 +3179,432 @@ def _render_dashboard_strips(st, clean, raw, storage_key):
         st.rerun()
 
 
+def _kpi_hist_bars(series, bins=12):
+    """Heights (0-100) for a distribution sparkline of a numeric
+    series: 12 bins, tallest bin = 100. Pure pandas — no numpy in
+    this file. A constant series is one full bar."""
+    try:
+        s = pd.to_numeric(series, errors="coerce").dropna()
+    except Exception:  # noqa: BLE001
+        return []
+    if len(s) == 0:
+        return []
+    if len(s) > 10000:
+        s = s.sample(10000, random_state=0)
+    lo, hi = float(s.min()), float(s.max())
+    if lo == hi:
+        return [100.0]
+    width = (hi - lo) / bins
+    counts = [0] * bins
+    for v in s:
+        idx = int((float(v) - lo) / width)
+        if idx >= bins:
+            idx = bins - 1
+        counts[idx] += 1
+    mx = max(counts)
+    if mx == 0:
+        return []
+    return [c / mx * 100.0 for c in counts]
+
+
+def _resolve_kpi_col(df, name):
+    """Map a KPI label's column mention back to a real frame column:
+    exact match first, then the pretty name ("Order Id" for
+    "order_id"), then a separator- and case-insensitive match
+    ("unit_price" finds "Unit Price" — the clean normalizes column
+    names, so the cleaned name and the loaded name differ in case
+    AND in _ vs space). None when it matches nothing — the card
+    still renders, just without a chart."""
+    if name in df.columns:
+        return name
+    _pretty = {engine._pretty(c): c for c in df.columns}
+    if name in _pretty:
+        return _pretty[name]
+    _norm = {re.sub(r"[\s_]+", "", str(c).lower()): c for c in df.columns}
+    return _norm.get(re.sub(r"[\s_]+", "", str(name).lower()))
+
+
+def _raw_agg_text(raw, col, agg):
+    """The same aggregate on the loaded file, formatted the way
+    auto_kpis formats it — the "before cleaning" half of a card's
+    sub-line. ``col`` is a CLEANED-frame column name; it is resolved
+    against the loaded frame first (the clean normalizes column
+    names, so "quantity" in the cleaned file is "Quantity" in the
+    loaded one). None when there is nothing to compare against."""
+    if raw is None or col is None:
+        return None
+    _col = _resolve_kpi_col(raw, col)
+    if _col is None:
+        return None
+    try:
+        # The loaded file's numbers may still be text (the clean
+        # converts them) — coerce, and skip when nothing is numeric.
+        _s = pd.to_numeric(raw[_col], errors="coerce")
+        if agg == "Sum":
+            _kind = ("money" if engine._is_price_like(_col) else
+                     "count" if engine._is_qty_like(_col) else "number")
+            _v = _s.sum()
+        elif agg == "Average":
+            _kind = "money" if engine._is_price_like(_col) else "number"
+            _v = _s.mean()
+        else:
+            return None
+        if pd.isna(_v):
+            return None
+        return engine.format_number(_v, _kind)
+    except Exception:  # noqa: BLE001
+        return None
+    return None
+
+
+def _kpi_card_data(df, raw, saved=None):
+    """One dict per metric card for the KPIs Overview: label, value,
+    definition (the "?" tooltip), bars (a distribution sparkline),
+    sub (the before→after trend where the loaded file gives one).
+    Built from engine.auto_kpis(df) — the values are the KPIs the
+    page already showed — plus the user's own saved KPIs (``saved``,
+    the session state's kpi list), deduped by label (a clean
+    overwrites the saved list with the auto-KPIs, so the saved
+    list holds both)."""
+    _cards = []
+    _raw_len = len(raw) if raw is not None else None
+    _raw_cols = len(raw.columns) if raw is not None else None
+    for _k in engine.auto_kpis(df):
+        _label, _value = str(_k["label"]), str(_k["value"])
+        _definition = _label
+        _bars: list = []
+        _sub = None
+        if _label == "Rows":
+            _definition = ("Rows in the cleaned file after your filters. "
+                           "The sub-line shows how many rows the loaded "
+                           "file had before cleaning; the bars are the "
+                           "kept vs dropped share.")
+            if _raw_len:
+                _kept = len(df) / _raw_len * 100.0
+                _bars = [(_kept, "ok"), (100.0 - _kept, "warn")]
+                _sub = f"{_raw_len:,} rows in the loaded file"
+        elif _label == "Columns":
+            _definition = ("Columns in the cleaned file. The bars are "
+                           "the kept vs dropped share.")
+            if _raw_cols:
+                _kept = len(df.columns) / _raw_cols * 100.0
+                _bars = [(_kept, "ok"), (100.0 - _kept, "warn")]
+                _sub = f"{_raw_cols} columns in the loaded file"
+        elif _label.startswith("Revenue (") and _label.endswith(")"):
+            _m = re.match(r"Revenue \((.*) x (.*)\)", _label)
+            _qty = _resolve_kpi_col(df, _m.group(1)) if _m else None
+            _price = _resolve_kpi_col(df, _m.group(2)) if _m else None
+            _definition = ("Total revenue — the sum of "
+                           f"{_m.group(1)} x {_m.group(2)} over all rows. "
+                           "Never a plain price sum.")
+            if _qty is not None and _price is not None:
+                _bars = _kpi_hist_bars(df[_qty] * df[_price])
+                if raw is not None:
+                    # The loaded file's columns are not normalized
+                    # yet — resolve the pair against it, not the
+                    # cleaned names — and its numbers may still be
+                    # text, so coerce them (the clean converts them).
+                    _rq = _resolve_kpi_col(raw, _m.group(1))
+                    _rp = _resolve_kpi_col(raw, _m.group(2))
+                    if _rq is not None and _rp is not None:
+                        try:
+                            _q = pd.to_numeric(raw[_rq], errors="coerce")
+                            _p = pd.to_numeric(raw[_rp], errors="coerce")
+                            _rev = float((_q * _p).sum())
+                            if not pd.isna(_rev):
+                                _sub = (f"was {engine.format_number(_rev, 'money')} "
+                                        "in the loaded file")
+                        except Exception:  # noqa: BLE001
+                            pass
+        elif _label.startswith("Sum of "):
+            _col = _resolve_kpi_col(df, _label[len("Sum of "):])
+            _definition = (f"Total of {_label[len('Sum of '):]} across all "
+                           "rows in the cleaned file.")
+            if _col is not None:
+                _bars = _kpi_hist_bars(df[_col])
+                _raw_v = _raw_agg_text(raw, _col, "Sum")
+                if _raw_v is not None:
+                    _sub = f"was {_raw_v} in the loaded file"
+        elif _label.startswith("Average "):
+            _col = _resolve_kpi_col(df, _label[len("Average "):])
+            _definition = (f"Mean of {_label[len('Average '):]} across "
+                           "all rows in the cleaned file.")
+            if _col is not None:
+                _bars = _kpi_hist_bars(df[_col])
+                _raw_v = _raw_agg_text(raw, _col, "Average")
+                if _raw_v is not None:
+                    _sub = f"was {_raw_v} in the loaded file"
+        elif _label.startswith("Top "):
+            _col = _resolve_kpi_col(df, _label[len("Top "):])
+            _definition = (f"Most common value of {_label[len('Top '):]} "
+                           "in the cleaned file.")
+            if _col is not None:
+                _vc = engine.normalize_text_values(df[_col]).value_counts()
+                _vc = _vc.head(5)
+                _mx = int(_vc.iloc[0]) if len(_vc) else 0
+                if _mx:
+                    _bars = [(float(v) / _mx * 100.0, "ok")
+                             for v in _vc]
+                    _sub = f"{_mx} of {len(df):,} rows"
+        elif _label.endswith(" range"):
+            _col = _resolve_kpi_col(df, _label[:-len(" range")])
+            _definition = (f"Earliest to latest {_label[:-len(' range')]} "
+                           "in the cleaned file.")
+            if _col is not None:
+                try:
+                    _per = (df[_col].dropna().dt.to_period("M")
+                            .value_counts().sort_index())
+                    _mx = int(_per.max()) if len(_per) else 0
+                    if _mx:
+                        _bars = [(float(v) / _mx * 100.0, "ok")
+                                 for v in list(_per)[:24]]
+                    _days = (df[_col].max() - df[_col].min()).days
+                    _sub = f"Covers {_days} days"
+                except Exception:  # noqa: BLE001
+                    pass
+        _cards.append({"label": _label, "value": _value,
+                       "definition": _definition, "bars": _bars,
+                       "sub": _sub})
+    # The user's own saved KPIs (built below the grid): same card
+    # treatment, deduped by label against the auto cards — a label
+    # the auto set already has is the same number, not a second card.
+    _auto_labels = {_c["label"] for _c in _cards}
+    for _saved in (saved or []):
+        _label = str(_saved.get("label", ""))
+        if not _label or _label in _auto_labels:
+            continue
+        _value = str(_saved.get("value", "—"))
+        _definition = _label
+        _bars: list = []
+        _sub = None
+        _fn = None
+        _col = None
+        for _prefix in ("Sum of ", "Average of ", "Count of ",
+                        "Min of ", "Max of ", "Median of "):
+            if _label.startswith(_prefix):
+                _fn = _prefix[:-len(" of ")]
+                _col = _resolve_kpi_col(df, _label[len(_prefix):])
+                break
+        if _fn is not None and _col is not None:
+            _definition = f"Your custom KPI — {_fn.lower()} of {_col}."
+            _bars = _kpi_hist_bars(df[_col])
+            if raw is not None:
+                try:
+                    _rcol = _resolve_kpi_col(raw, _col)
+                    if _rcol is not None:
+                        _raw_v = engine.custom_kpi(raw, _rcol, _fn)
+                        _sub = (f"was {engine.format_number(_raw_v, 'number')} "
+                                "in the loaded file")
+                except Exception:  # noqa: BLE001
+                    pass
+        _cards.append({"label": _label, "value": _value,
+                       "definition": _definition, "bars": _bars,
+                       "sub": _sub})
+        _auto_labels.add(_label)
+    return _cards
+
+
+def _health_card_data(df, raw):
+    """The Data health strip: six cards scoring the CLEANED file
+    (the file the KPIs describe), each with the warnings/errors
+    dots the Dashboard's service cards carry and a bar sparkline.
+    Rows/columns kept compare against the loaded file."""
+    _cards = []
+    _missing = df.isna().sum()
+    _missing_total = int(_missing.sum())
+    _cols_affected = int((_missing > 0).sum())
+    _max_missing = int(_missing.max()) if len(_missing) else 0
+    _bars = []
+    for _c in list(df.columns)[:24]:
+        _n = int(_missing.get(_c, 0))
+        _bars.append((_n / _max_missing * 100 if _max_missing else 0,
+                      "warn" if _n > 0 else "ok"))
+    _cells = int(df.size) if df.size else 0
+    _pct = (100.0 * _missing_total / _cells) if _cells else 0.0
+    _cards.append({
+        "label": "Missing cells", "value": f"{_missing_total:,}",
+        "warnings": _cols_affected, "errors": 0, "bars": _bars,
+        "sub": (f"{_pct:.1f}% of cells empty" if _missing_total else
+                "No missing cells")})
+    _dups = int(df.duplicated().sum())
+    _dup_pct = 100.0 * _dups / len(df) if len(df) else 0.0
+    _cards.append({
+        "label": "Duplicate rows", "value": f"{_dups:,}",
+        "warnings": 0, "errors": _dups,
+        "bars": [(_dup_pct, "error")] if _dups else [(100.0, "ok")],
+        "sub": (f"{_dup_pct:.1f}% of rows duplicated" if _dups else
+                "No duplicate rows")})
+    _empty = [c for c in df.columns if df[c].isna().all()]
+    _empty_sub = ("No empty columns" if not _empty else
+                  f"{_empty[0]} is empty" if len(_empty) == 1 else
+                  f"{len(_empty)} columns empty")
+    _cards.append({
+        "label": "Empty columns", "value": f"{len(_empty)}",
+        "warnings": len(_empty), "errors": 0,
+        "bars": [(100.0, "error") if c in _empty else (2.0, "ok")
+                 for c in list(df.columns)[:24]],
+        "sub": _empty_sub})
+    if raw is not None and len(raw):
+        _kept = len(df) / len(raw) * 100.0
+        _cards.append({
+            "label": "Rows kept",
+            "value": engine.format_number(_kept, "percent"),
+            "warnings": len(raw) - len(df), "errors": 0,
+            "bars": [(_kept, "ok"), (100.0 - _kept, "warn")],
+            "sub": f"{len(df):,} of {len(raw):,} rows kept"})
+    else:
+        _cards.append({
+            "label": "Rows kept", "value": "—",
+            "warnings": 0, "errors": 0, "bars": [],
+            "sub": "No loaded file to compare against"})
+    if raw is not None and len(raw.columns):
+        _kept_c = len(df.columns) / len(raw.columns) * 100.0
+        _cards.append({
+            "label": "Columns kept",
+            "value": engine.format_number(_kept_c, "percent"),
+            "warnings": len(raw.columns) - len(df.columns), "errors": 0,
+            "bars": [(_kept_c, "ok"), (100.0 - _kept_c, "warn")],
+            "sub": (f"{len(df.columns)} of {len(raw.columns)} columns "
+                    "kept")})
+    else:
+        _cards.append({
+            "label": "Columns kept", "value": "—",
+            "warnings": 0, "errors": 0, "bars": [],
+            "sub": "No loaded file to compare against"})
+    _score, _breakdown = feat_quality.quality_score(df)
+    _bars = []
+    for _b in _breakdown:
+        _bars.append((min(100.0, _b["points_lost"] / 40.0 * 100.0), "warn"))
+    if not _bars:
+        _bars = [(100.0, "ok")]
+    _top_drag = _breakdown[0] if _breakdown else None
+    _cards.append({
+        "label": "Data quality score", "value": f"{_score}/100",
+        "warnings": len(_breakdown), "errors": 0, "bars": _bars,
+        "sub": (f"Biggest drag: {_top_drag['label']} "
+                f"(-{_top_drag['points_lost']})" if _top_drag else
+                "No issues dragging the score down")})
+    return _cards
+
+
+def _render_kpis_overview(st, clean, raw, filtered):
+    """The KPIs tab as Supabase's Observability Overview, mapped to
+    this app's own data (never Supabase's): header (H1 + scope +
+    Refresh), metric cards (one per auto-KPI + saved custom KPI,
+    each with a distribution sparkline, a before→after sub-line and
+    a "?" tooltip that names the metric), the Data health strip
+    (six cards scoring the cleaned file), the Build-your-own-KPI
+    builder, and the goal / what-if / AI-insights sections below.
+
+    Deliberately not built (stated plainly, not faked): a
+    time-window dropdown — the numbers are for the current file,
+    not a time window, so the scope says "Current file" instead of
+    faking one (the Dashboard round settled this the same way).
+    No live-updating charts — the file does not change while you
+    watch it; Refresh re-runs the computation. Inline cell editing
+    stays out for the same reason as Preview: edits would bypass
+    the Clean tab's audit trail.
+    """
+    _flash = st.session_state.pop("kpis_flash", None)
+    if _flash:
+        st.success(_flash)
+    if clean is None:
+        if raw is None:
+            if ui_design.empty_state(
+                    "No KPIs yet",
+                    "Load a file first — the KPIs will appear here once "
+                    "you've loaded and cleaned it.",
+                    cta_label="Load a file"):
+                st.session_state["pending_tab"] = "preview"
+                st.rerun()
+        else:
+            if ui_design.empty_state(
+                    "No KPIs yet",
+                    "Your file is loaded — now clean it and the KPIs will "
+                    "appear here. Go to the Clean tab, tick what to fix, and "
+                    "press the clean button.",
+                    cta_label="Go to the Clean tab"):
+                # Via pending_tab, not a direct active_tab write: the
+                # Section radio is already instantiated by the time
+                # this button runs.
+                st.session_state["pending_tab"] = "clean"
+                st.rerun()
+        return
+    _df = filtered if filtered is not None else clean
+    _name = str(st.session_state.get("source_name") or "your file")
+    _h1, _h2 = st.columns([4, 1])
+    with _h1:
+        ui_design.section_heading(
+            "KPIs",
+            sub=(f"Current file: {_name} — {len(_df):,} rows, "
+                 f"{len(_df.columns)} columns"))
+    with _h2:
+        if ui_design.icon_button(
+                "Refresh", "refresh", key="kpis_refresh",
+                help="Recompute the KPIs from the current file."):
+            st.session_state["kpis_flash"] = (
+                f"KPIs refreshed — {_name}, {len(_df):,} rows.")
+            st.rerun()
+    # Metric cards: three per row, each with its "?" tooltip. The
+    # tooltip is a real Streamlit button, not HTML, so it sits in
+    # the narrow column beside the card (a button cannot live
+    # inside the card's HTML). Clicking it opens the Preview tab.
+    _cards = _kpi_card_data(_df, raw, st.session_state.get("kpis"))
+    for _row_start in range(0, len(_cards), 3):
+        _cols = st.columns(3)
+        for _j, _card in enumerate(_cards[_row_start:_row_start + 3]):
+            _idx = _row_start + _j
+            with _cols[_j]:
+                _ct, _cq = st.columns([5, 1])
+                with _ct:
+                    ui_design.metric_card(
+                        _card["label"], _card["value"],
+                        bars=_card["bars"], sub=_card["sub"], dots=False)
+                with _cq:
+                    if ui_design.icon_button(
+                            "", "help",
+                            key=f"kpis_help_{_idx}",
+                            help=_card["definition"]):
+                        st.session_state["pending_tab"] = "preview"
+                        st.rerun()
+    ui_design.section_heading(
+        "Data health",
+        sub="Health of the cleaned file — the detail lives on the "
+            "Preview tab.")
+    _health = _health_card_data(_df, raw)
+    for _row_start in range(0, len(_health), 2):
+        _cols = st.columns(2)
+        for _j, _h in enumerate(_health[_row_start:_row_start + 2]):
+            with _cols[_j]:
+                ui_design.metric_card(
+                    _h["label"], _h["value"], warnings=_h["warnings"],
+                    errors=_h["errors"], bars=_h["bars"], sub=_h["sub"])
+    if ui_design.icon_button(
+            "View the health check", "table", key="kpis_health_go",
+            help="Open the health check on the Preview tab."):
+        st.session_state["pending_tab"] = "preview"
+        st.rerun()
+    ui_design.section_heading("Build your own KPI")
+    num_cols = engine.numeric_cols(clean)
+    if num_cols:
+        c1, c2, c3 = st.columns(3)
+        kcol = c1.selectbox("Column", num_cols, key="kpi_col")
+        kfn = c2.selectbox("Function",
+                           ["Sum", "Average", "Count", "Min",
+                            "Max", "Median"], key="kpi_fn")
+        if c3.button("Add KPI", key="kpi_add"):
+            value = engine.custom_kpi(_df, kcol, kfn)
+            st.session_state.kpis = (st.session_state.get("kpis") or []) + [
+                {"label": f"{kfn} of {engine._pretty(kcol)}",
+                 "value": f"{value:,.2f}"}]
+            # The cards render ABOVE the builder, so without a rerun
+            # the new KPI would only appear one interaction later.
+            st.rerun()
+    feat_share.render_goal(st, _df)
+    feat_analyse.render_what_if(st, _df)
+    feat_enrich.render_ai_insights(st, _df, st.session_state.kpis)
+
+
 # Rail behavior control (clone Round 1 — Supabase's bottom
 # control): the 3-way menu (Expanded / Collapsed / Expand on
 # hover). ONE render, in the MAIN area (top level), before the
@@ -3257,6 +3683,15 @@ if raw is None:
     # of opening the guide.
     if _top_active == _nav_labels["tutorial"]:
         feat_tutorial.render_tutorial_page(st, settings_path=_settings_path)
+        st.stop()
+    # The KPIs tab needs no data either: its empty state names the
+    # metric page and points at loading a file — otherwise the tab
+    # is unreachable until a file is loaded, and the user lands on
+    # the generic Preview empty state instead of the KPIs page
+    # (the Dashboard round fixed the same reachability gap for the
+    # Overview strips).
+    if _top_active == _nav_labels["kpis"]:
+        _render_kpis_overview(st, None, None, None)
         st.stop()
     # Guided empty state: what to do first, plus a one-click way to try
     # the sample — the same loader the sidebar "Try the messy sample"
@@ -3946,45 +4381,7 @@ if _active_tab == "clean":
 
 # ------------------------------------------------------------------ KPIs ---
 if _active_tab == "kpis":
-    if clean is None:
-        if ui_design.empty_state(
-                "No KPIs yet",
-                "Your file is loaded — now clean it and the KPIs will "
-                "appear here. Go to the Clean tab, tick what to fix, and "
-                "press the clean button.",
-                cta_label="Go to the Clean tab"):
-            # Via pending_tab, not a direct active_tab write: the Section
-            # radio is already instantiated by the time this button runs.
-            st.session_state["pending_tab"] = "clean"
-            st.rerun()
-    else:
-        ui_design.section_heading("KPIs")
-        kpis = engine.auto_kpis(filtered)
-        cols = st.columns(3)
-        for i, k in enumerate(kpis):
-            with cols[i % 3]:
-                ui_design.kpi_tile(k["label"], str(k["value"]))
-        ui_design.section_heading("Build your own KPI")
-        num_cols = engine.numeric_cols(clean)
-        if num_cols:
-            c1, c2, c3 = st.columns(3)
-            kcol = c1.selectbox("Column", num_cols, key="kpi_col")
-            kfn = c2.selectbox("Function",
-                               ["Sum", "Average", "Count", "Min",
-                                "Max", "Median"], key="kpi_fn")
-            if c3.button("Add KPI", key="kpi_add"):
-                value = engine.custom_kpi(filtered, kcol, kfn)
-                st.session_state.kpis = st.session_state.kpis + [
-                    {"label": f"{kfn} of {engine._pretty(kcol)}",
-                     "value": f"{value:,.2f}"}]
-            for k in st.session_state.kpis:
-                if k["label"].startswith(("Sum of", "Average of", "Count of",
-                                          "Min of", "Max of",
-                                          "Median of")):
-                    st.write(f"- **{k['label']}:** {k['value']}")
-        feat_share.render_goal(st, filtered)
-        feat_analyse.render_what_if(st, filtered)
-        feat_enrich.render_ai_insights(st, filtered, st.session_state.kpis)
+    _render_kpis_overview(st, clean, raw, filtered)
 
 
 

@@ -429,7 +429,9 @@ def auto_kpis(df: pd.DataFrame) -> list:
     and exactly one price-like column (see _find_revenue_pair), the
     price column's plain sum is replaced by Revenue = sum(quantity x
     price), labelled with both column names so nobody mistakes a plain
-    price sum for revenue. Otherwise a plain sum is labelled honestly
+    price sum for revenue. Top values count whitespace-normalized
+    (normalize_text_values), so they agree with the profile and
+    search. Otherwise a plain sum is labelled honestly
     as "Sum of <column>", never as revenue. All numbers go through
     format_number: money 2 decimals, counts 0, other numbers 1."""
     kpis = [{"label": "Rows", "value": format_number(len(df), "count")},
@@ -453,11 +455,18 @@ def auto_kpis(df: pd.DataFrame) -> list:
             avg_kind = "money" if _is_price_like(col) else "number"
             kpis.append({"label": f"Average {col}",
                          "value": format_number(df[col].mean(), avg_kind)})
-        elif str(df[col].dtype) in ("object", "str") and 1 < df[col].nunique(dropna=True) <= 30:
-            top = df[col].value_counts(dropna=False).index[0]
-            top_n = int(df[col].value_counts(dropna=False).iloc[0])
-            kpis.append({"label": f"Top {col}",
-                         "value": f"{top} ({format_number(top_n, 'count')})"})
+        elif str(df[col].dtype) in ("object", "str"):
+            # Top values follow the shared whitespace-normalized
+            # counting rule (normalize_text_values): "Aarav Sharma "
+            # counts as "Aarav Sharma", so the Top value, the profile
+            # and a search for the name all agree.
+            _norm = normalize_text_values(df[col])
+            if 1 < _norm.nunique() <= 30:
+                _vc = _norm.value_counts()
+                top = _vc.index[0]
+                top_n = int(_vc.iloc[0])
+                kpis.append({"label": f"Top {col}",
+                             "value": f"{top} ({format_number(top_n, 'count')})"})
     date_cols = [c for c in df.columns if pd.api.types.is_datetime64_any_dtype(df[c])]
     if date_cols:
         d = df[date_cols[0]].dropna()
