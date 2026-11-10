@@ -297,10 +297,10 @@ def test_kpis_overview_refresh_and_custom_kpi(_tmp_env):
     find_button(at, "Add KPI", key="kpi_add").click().run()
     assert not at.exception, f"exception on Add KPI: {at.exception}"
     md = "\n".join(vals(at.markdown))
-    assert "Median of Quantity" in md, "custom KPI should render as a card"
-    assert "- **Median of Quantity:**" not in md, \
+    assert "Median of quantity" in md, "custom KPI should render as a card"
+    assert "- **Median of quantity:**" not in md, \
         "custom KPIs must not stay a text list"
-    print("kpis Refresh + custom KPI OK: Median of Quantity is a card")
+    print("kpis Refresh + custom KPI OK: Median of quantity is a card")
 
 
 def test_kpis_overview_custom_kpi_added_twice_renders_once(_tmp_env):
@@ -323,6 +323,133 @@ def test_kpis_overview_custom_kpi_added_twice_renders_once(_tmp_env):
     find_button(at, "Add KPI", key="kpi_add").click().run()
     assert not at.exception, f"exception on second Add KPI: {at.exception}"
     md = "\n".join(vals(at.markdown))
-    assert md.count("Median of Quantity") == 1, \
+    assert md.count("Median of quantity") == 1, \
         "the same custom KPI added twice must render one card"
-    print("kpis custom dedupe OK: Median of Quantity once")
+    print("kpis custom dedupe OK: Median of quantity once")
+
+
+# ---------------------------------------------------------------------------
+# 5. Custom KPI cards format exactly like built-ins (shared rule)
+# ---------------------------------------------------------------------------
+
+def test_kpi_value_kind_shared_rule():
+    """The one kind rule every KPI value goes through: money for
+    price-like columns; counts for Sum/Min/Max of a quantity-like
+    column; Average/Median never use "count" (a mean of quantity
+    is 2.7, not 3); Count is always a count; total_* columns do
+    not count as price/qty-like."""
+    assert engine.kpi_value_kind("quantity", "Sum") == "count"
+    assert engine.kpi_value_kind("unit_price", "Sum") == "money"
+    assert engine.kpi_value_kind("quantity", "Average") == "number"
+    assert engine.kpi_value_kind("unit_price", "Average") == "money"
+    assert engine.kpi_value_kind("quantity", "Count") == "count"
+    assert engine.kpi_value_kind("quantity", "Median") == "number"
+    assert engine.kpi_value_kind("unit_price", "Median") == "money"
+    assert engine.kpi_value_kind("quantity", "Min") == "count"
+    assert engine.kpi_value_kind("quantity", "Max") == "count"
+    assert engine.kpi_value_kind("score", "Sum") == "number"
+    assert engine.kpi_value_kind("total_amount", "Sum") == "number"
+    print("kpi_value_kind OK: shared rule")
+
+
+def _add_custom_kpi(at, col, fn):
+    col_sel = next(s for s in at.selectbox if s.key == "kpi_col")
+    col_sel.set_value(col).run()
+    fn_sel = next(s for s in at.selectbox if s.key == "kpi_fn")
+    fn_sel.set_value(fn).run()
+    find_button(at, "Add KPI", key="kpi_add").click().run()
+    assert not at.exception, f"exception on Add KPI {fn} of {col}: " \
+        f"{at.exception}"
+
+
+def _card_element(md_elements, label):
+    for e in md_elements:
+        if label in e:
+            return e
+    raise AssertionError(f"card {label!r} missing from the page")
+
+
+def test_kpis_custom_kpi_formats_like_builtin(_tmp_env):
+    """Every custom-KPI function formats like its built-in twin:
+    sentence-case label (the column name as-is, never Title
+    Case), whole numbers for counts, 1 decimal for other numbers,
+    money 2 decimals — all through the shared kpi_value_kind
+    rule. Median (no auto twin), Count and Average of unit_price
+    are checked against values computed from the cleaned frame."""
+    at = AppTest.from_file(APP)
+    at.run()
+    signup(at, "kpis7")
+    load_sample(at)
+    goto_section(at, "Clean")
+    clean_sample(at)
+    goto_section(at, "KPIs")
+    clean = at.session_state["clean"]
+    md_els = vals(at.markdown)
+
+    _add_custom_kpi(at, "quantity", "Median")
+    md_els = vals(at.markdown)
+    _med = float(clean["quantity"].median())
+    _med_fmt = engine.format_number(
+        _med, engine.kpi_value_kind("quantity", "Median"))
+    _med_card = _card_element(md_els, "Median of quantity")
+    assert "Median of Quantity" not in "\n".join(md_els), \
+        "custom labels must not Title-Case the column"
+    assert _med_fmt in _med_card, \
+        f"Median card should show {_med_fmt}, got: {_med_card[:200]}"
+    assert f"{_med:,.2f}" not in _med_card, \
+        "custom values must not force 2 decimals"
+
+    _add_custom_kpi(at, "quantity", "Count")
+    md_els = vals(at.markdown)
+    _cnt_fmt = engine.format_number(
+        int(clean["quantity"].count()),
+        engine.kpi_value_kind("quantity", "Count"))
+    _cnt_card = _card_element(md_els, "Count of quantity")
+    assert _cnt_fmt in _cnt_card, \
+        f"Count card should show {_cnt_fmt}, got: {_cnt_card[:200]}"
+    assert f"{int(clean['quantity'].count()):,.2f}" not in _cnt_card, \
+        "a Count card must show a whole number, never x.00"
+
+    _add_custom_kpi(at, "unit_price", "Average")
+    md_els = vals(at.markdown)
+    _avg = float(clean["unit_price"].mean())
+    _avg_fmt = engine.format_number(
+        _avg, engine.kpi_value_kind("unit_price", "Average"))
+    _avg_card = _card_element(md_els, "Average of unit_price")
+    assert _avg_fmt in _avg_card, \
+        f"Average of unit_price should show {_avg_fmt}, got: " \
+        f"{_avg_card[:200]}"
+    # The same number, the same format, as the built-in twin.
+    _auto_card = _card_element(md_els, "Average unit_price")
+    assert _avg_fmt in _auto_card, \
+        "custom Average of unit_price must match the built-in " \
+        "Average unit_price value exactly"
+    print("kpis custom formatting OK: Median/Count/Average match built-ins")
+
+
+def test_kpis_custom_sum_dedupes_and_sub_uses_shared_kind(_tmp_env):
+    """A custom Sum of quantity is the auto "Sum of quantity"
+    card — same sentence-case label, same number — so it dedupes
+    to one card instead of rendering a wrongly-formatted twin,
+    and the before→after sub-line uses the shared kind ("was 160",
+    never "was 160.0")."""
+    at = AppTest.from_file(APP)
+    at.run()
+    signup(at, "kpis8")
+    load_sample(at)
+    goto_section(at, "Clean")
+    clean_sample(at)
+    goto_section(at, "KPIs")
+    _add_custom_kpi(at, "quantity", "Sum")
+    md = "\n".join(vals(at.markdown))
+    assert md.count("Sum of quantity") == 1, \
+        "custom Sum of quantity must dedupe against the auto card"
+    assert "Sum of Quantity" not in md, \
+        "no Title-Case twin of the Sum card may survive"
+    assert "208.00" not in md, \
+        "no 2-decimal form of the Sum value may survive"
+    assert "was 160 in the loaded file" in md, \
+        "the Sum sub-line must use the shared kind (whole number)"
+    assert "was 160.0" not in md, \
+        "the Sum sub-line must not show 1 decimal for a count"
+    print("kpis custom Sum OK: dedupes, sub-line uses shared kind")

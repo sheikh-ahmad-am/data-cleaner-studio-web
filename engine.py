@@ -422,6 +422,24 @@ def clean(df: pd.DataFrame, options: dict | None = None) -> tuple:
 
 
 # ================================================================== KPIs =====
+def kpi_value_kind(col, agg: str) -> str:
+    """The ONE rule for which format_number kind a KPI value uses —
+    shared by auto_kpis, the custom-KPI builder and the KPIs
+    Overview sub-lines, so a custom card formats exactly like its
+    built-in twin. Money for price-like columns; counts for
+    Sum/Min/Max of a quantity-like column (whole numbers, never
+    208.00); Average/Median never use "count" — a mean of a
+    quantity column is 2.7, not 3 — they use "number" (1 decimal)
+    unless the column is price-like; Count is always a count."""
+    if agg == "Count":
+        return "count"
+    if _is_price_like(col):
+        return "money"
+    if agg in ("Sum", "Min", "Max") and _is_qty_like(col):
+        return "count"
+    return "number"
+
+
 def auto_kpis(df: pd.DataFrame) -> list:
     """KPIs the app can show without asking: rows, totals, averages, top values.
 
@@ -443,18 +461,18 @@ def auto_kpis(df: pd.DataFrame) -> list:
                 revenue = float((df[qty_col] * df[col]).sum())
                 kpis.append({"label": f"Revenue ({qty_col} x {col})",
                              "value": format_number(revenue, "money")})
-            elif _is_price_like(col):
-                kpis.append({"label": f"Sum of {col}",
-                             "value": format_number(df[col].sum(), "money")})
-            elif _is_qty_like(col):
-                kpis.append({"label": f"Sum of {col}",
-                             "value": format_number(df[col].sum(), "count")})
             else:
+                # Plain sum: the kind comes from the shared rule
+                # (kpi_value_kind) — the custom-KPI builder uses the
+                # same rule, so a custom Sum card reads identically.
                 kpis.append({"label": f"Sum of {col}",
-                             "value": format_number(df[col].sum(), "number")})
-            avg_kind = "money" if _is_price_like(col) else "number"
+                             "value": format_number(
+                                 df[col].sum(),
+                                 kpi_value_kind(col, "Sum"))})
             kpis.append({"label": f"Average {col}",
-                         "value": format_number(df[col].mean(), avg_kind)})
+                         "value": format_number(
+                             df[col].mean(),
+                             kpi_value_kind(col, "Average"))})
         elif str(df[col].dtype) in ("object", "str"):
             # Top values follow the shared whitespace-normalized
             # counting rule (normalize_text_values): "Aarav Sharma "

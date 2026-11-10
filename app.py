@@ -3241,14 +3241,15 @@ def _raw_agg_text(raw, col, agg):
         # converts them) — coerce, and skip when nothing is numeric.
         _s = pd.to_numeric(raw[_col], errors="coerce")
         if agg == "Sum":
-            _kind = ("money" if engine._is_price_like(_col) else
-                     "count" if engine._is_qty_like(_col) else "number")
             _v = _s.sum()
         elif agg == "Average":
-            _kind = "money" if engine._is_price_like(_col) else "number"
             _v = _s.mean()
         else:
             return None
+        # The kind comes from the shared rule (kpi_value_kind) —
+        # the same rule the built-in card and the custom-KPI
+        # sub-line use, so "was 160", never "was 160.0".
+        _kind = engine.kpi_value_kind(_col, agg)
         if pd.isna(_v):
             return None
         return engine.format_number(_v, _kind)
@@ -3371,7 +3372,7 @@ def _kpi_card_data(df, raw, saved=None):
     _auto_labels = {_c["label"] for _c in _cards}
     for _saved in (saved or []):
         _label = str(_saved.get("label", ""))
-        if not _label or _label in _auto_labels:
+        if not _label:
             continue
         _value = str(_saved.get("value", "—"))
         _definition = _label
@@ -3386,6 +3387,23 @@ def _kpi_card_data(df, raw, saved=None):
                 _col = _resolve_kpi_col(df, _label[len(_prefix):])
                 break
         if _fn is not None and _col is not None:
+            # Canonical form (the custom-KPI formatting fix): the
+            # label is rebuilt from the resolved column name —
+            # sentence case, the auto KPIs' style — and the value is
+            # recomputed from the current cleaned frame through the
+            # shared kind rule. A custom KPI saved before this fix
+            # ("Sum of Quantity" / "208.00", persisted in a saved
+            # .state file) therefore renders exactly like its
+            # built-in twin — and dedupes against it, by design.
+            # The stored string is only a fallback when the column
+            # no longer resolves.
+            _label = f"{_fn} of {_col}"
+            _kind = engine.kpi_value_kind(_col, _fn)
+            try:
+                _value = engine.format_number(
+                    engine.custom_kpi(df, _col, _fn), _kind)
+            except Exception:  # noqa: BLE001
+                pass
             _definition = f"Your custom KPI — {_fn.lower()} of {_col}."
             _bars = _kpi_hist_bars(df[_col])
             if raw is not None:
@@ -3393,10 +3411,15 @@ def _kpi_card_data(df, raw, saved=None):
                     _rcol = _resolve_kpi_col(raw, _col)
                     if _rcol is not None:
                         _raw_v = engine.custom_kpi(raw, _rcol, _fn)
-                        _sub = (f"was {engine.format_number(_raw_v, 'number')} "
+                        _sub = (f"was {engine.format_number(_raw_v, _kind)} "
                                 "in the loaded file")
                 except Exception:  # noqa: BLE001
                     pass
+        # Dedupe on the canonical label, so a pre-fix "Sum of
+        # Quantity" does not survive as a second card next to the
+        # auto "Sum of quantity".
+        if _label in _auto_labels:
+            continue
         _cards.append({"label": _label, "value": _value,
                        "definition": _definition, "bars": _bars,
                        "sub": _sub})
@@ -3594,9 +3617,16 @@ def _render_kpis_overview(st, clean, raw, filtered):
                             "Max", "Median"], key="kpi_fn")
         if c3.button("Add KPI", key="kpi_add"):
             value = engine.custom_kpi(_df, kcol, kfn)
+            # The label uses the column name as-is — the auto KPIs'
+            # sentence-case style ("Sum of quantity"). _pretty()
+            # title-cases it ("Sum of Quantity"), which is why custom
+            # cards read differently from their built-in twins. The
+            # value goes through the shared kind rule, so a Sum of a
+            # quantity column reads 208, never 208.00.
             st.session_state.kpis = (st.session_state.get("kpis") or []) + [
-                {"label": f"{kfn} of {engine._pretty(kcol)}",
-                 "value": f"{value:,.2f}"}]
+                {"label": f"{kfn} of {kcol}",
+                 "value": engine.format_number(
+                     value, engine.kpi_value_kind(kcol, kfn))}]
             # The cards render ABOVE the builder, so without a rerun
             # the new KPI would only appear one interaction later.
             st.rerun()
