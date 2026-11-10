@@ -532,3 +532,23 @@ def note_section_change(st, label):
         st.rerun()
     if label is not None:
         st.session_state["quickjump_last_section"] = label
+
+
+def note_rail_nav(st):
+    """Fix round (live check 2026-11-10, R3e B3) — the rail-path half
+    of the section-change clear.
+
+    Call this in app.py at the rail-click site (``ui_design.sidebar_nav``
+    in the sidebar), before the ``pending_tab`` write. The palette's
+    section tracking clears on a CROSS-section change, but a rail
+    click on the section the user is ALREADY on changes nothing —
+    so the query survived a same-section rail click, and the clear
+    flag (set only by a result-button click) never fired on that
+    path either. Setting the plain clear flag here makes EVERY rail
+    click clear the query on the next run, cross-section and
+    same-section alike; it also hardens the cross-section path, so
+    the clear no longer depends on the section comparison alone.
+    The rail click already reruns, so this costs no extra rerun,
+    and clearing an empty box is a no-op.
+    """
+    st.session_state[_QUICKJUMP_CLEAR_KEY] = True

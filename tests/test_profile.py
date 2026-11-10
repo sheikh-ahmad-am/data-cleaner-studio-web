@@ -344,10 +344,15 @@ def test_profile_reachable_without_data(_tmp_env):
     find_button(at, "Account", key="avatar_account_btn").click().run()
     assert not at.exception, f"exception opening Profile empty: {at.exception}"
     assert_profile_view(at)
-    # Back returns to the empty state.
+    # Back returns to the Dashboard tab (its strips render with no
+    # data, so the tab is reachable empty — the button is labelled
+    # "Back to dashboard", not "Back to the empty state").
     find_button(at, "← Back to dashboard").click().run()
     assert not at.exception, f"exception going back: {at.exception}"
-    assert any("Nothing loaded yet" in m.value for m in at.markdown), \
-        "Back should return to the empty state"
+    # section_heading() HTML-escapes the sub (html.escape), so the
+    # apostrophe reads &#x27; in the raw markdown value.
+    assert any("Your data&#x27;s health, at a glance." in m.value
+               for m in at.markdown), \
+        "Back should land on the Dashboard tab"
     assert not any("Profile information" in v for v in vals(at.markdown)), \
         "profile view should be gone after Back"

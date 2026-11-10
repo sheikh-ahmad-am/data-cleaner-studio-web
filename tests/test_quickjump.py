@@ -395,6 +395,39 @@ def test_note_section_change_called_by_app():
     print("note_section_change called by app OK")
 
 
+def test_note_rail_nav_clears_same_section():
+    # Fix round (live check 2026-11-10, R3e B3): a rail click on the
+    # section the user is ALREADY on changes nothing, so the
+    # palette's section tracking never fires — the query survived
+    # a same-section rail click, and the clear flag (set only by a
+    # result-button click) never fired on that path either. The
+    # rail-click site must set the clear flag, so every rail click
+    # clears on the next render, cross-section and same-section.
+    fake = FakeSt(presets={"quickjump_query": "clean"})
+    fake.session_state["quickjump_query"] = "clean"
+    fake.session_state["active_tab"] = "KPIs"
+    fake.session_state["quickjump_last_section"] = "KPIs"
+    fj.note_rail_nav(fake)
+    assert fake.session_state.get("quickjump_clear_after_jump") is True, \
+        "a rail click must set the clear flag"
+    # The next render pops the flag and clears before the input
+    # mounts — even though the section did not change.
+    assert fj.render_quick_jump(fake) is None
+    assert fake.session_state.get("quickjump_query") == "", \
+        "same-section rail nav must clear the query"
+    assert fake.session_state.get("quickjump_clear_after_jump") is None, \
+        "the flag must be consumed by the render"
+    print("rail nav clear OK")
+
+
+def test_note_rail_nav_called_by_app():
+    app_src = (Path(__file__).resolve().parent.parent / "app.py"
+               ).read_text(encoding="utf-8")
+    assert "note_rail_nav" in app_src, \
+        "app.py must note a rail click at the sidebar-nav site"
+    print("note_rail_nav called by app OK")
+
+
 def test_keyboard_bridge_freshness_gates():
     # Round 3e — the stale-highlight fix. Freshness is the input's
     # live value against its placeholder (the rendered query):
@@ -441,5 +474,7 @@ if __name__ == "__main__":
     test_render_section_change_clears_query()
     test_note_section_change_reruns_to_clear()
     test_note_section_change_called_by_app()
+    test_note_rail_nav_clears_same_section()
+    test_note_rail_nav_called_by_app()
     test_keyboard_bridge_freshness_gates()
     print("ALL QUICKJUMP TESTS PASSED")

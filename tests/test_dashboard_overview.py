@@ -389,3 +389,87 @@ def test_overview_no_issues(_tmp_env):
     assert "Free plan usage" not in md, \
         "no Free-plan usage panel on the Overview"
     print("overview no-issues Advisor OK")
+
+# ---------------------------------------------------------------------------
+# Fix round (live check 2026-11-10): Advisor after a clean + Back
+# ---------------------------------------------------------------------------
+
+def test_overview_advisor_after_clean(_tmp_env):
+    """After a real clean that fixed everything (80 -> 77 rows, the
+    3 duplicates dropped, the 52 missing cells filled), the Advisor
+    scores the CLEANED data and says it found no issues — it must
+    not keep scoring the raw file (the live-check failure: it still
+    said "Advisor found 136 issues" after the clean)."""
+    at = AppTest.from_file(APP)
+    at.run()
+    signup(at, "alice1")
+    load_sample(at)
+    goto_section(at, "Clean")
+    clean_sample(at)
+    goto_section(at, "Dashboard")
+    md = "\n".join(vals(at.markdown))
+    assert "Advisor found no issues" in md, \
+        "Advisor must score the cleaned data after a clean"
+    assert not any(b.label == "Go to Clean" for b in at.button), \
+        "no Go to Clean button once the clean fixed everything"
+    print("overview Advisor after clean OK")
+
+
+def test_profile_back_goes_to_dashboard_with_data(_tmp_env):
+    """With data loaded, Profile's "← Back to dashboard" lands on
+    the Dashboard tab — not on Preview (the live-check failure:
+    the button pointed at Preview in both branches)."""
+    at = AppTest.from_file(APP)
+    at.run()
+    signup(at, "alice1")
+    load_sample(at)
+    find_button(at, "Account", key="avatar_account_btn").click().run()
+    assert not at.exception, f"exception opening Profile: {at.exception}"
+    assert any("Profile information" in v for v in vals(at.markdown)), \
+        "Profile view must render"
+    find_button(at, "← Back to dashboard").click().run()
+    assert not at.exception, f"exception going back: {at.exception}"
+    # section_heading() HTML-escapes the sub (html.escape), so the
+    # apostrophe reads &#x27; in the raw markdown value.
+    assert any("Your data&#x27;s health, at a glance." in m.value
+               for m in at.markdown), \
+        "Back should land on the Dashboard tab, not Preview"
+    assert not any("Profile information" in v for v in vals(at.markdown)), \
+        "profile view should be gone after Back"
+    print("profile Back goes to Dashboard (with data) OK")
+
+
+def test_overview_reports_footer_every_state(_tmp_env):
+    """Fix round (live check 2026-11-10, Dashboard A7): the Reports
+    footer renders in every state — no data, loaded, cleaned — with
+    copy and destination following the real state. The live check
+    quoted a footer string ("You don't have any data loaded yet")
+    that does not exist anywhere in the app, so the footer was
+    misread, not missing; pin all three real copies here, and pin
+    the phantom string absent, so a future check cannot misread it.
+    (The footer is rendered unconditionally by the Dashboard strips
+    — no session flag suppresses it after the first render.)"""
+    at = AppTest.from_file(APP)
+    at.run()
+    signup(at, "alice1")
+    goto_nav(at, "Dashboard", "dcs_nav_dashboard")
+    md = "\n".join(vals(at.markdown))
+    assert "No data loaded yet — load a file to start." in md, \
+        "Reports footer must render with no data loaded"
+    goto_nav(at, "Preview", "dcs_nav_preview")
+    load_sample(at)
+    goto_section(at, "Dashboard")
+    md = "\n".join(vals(at.markdown))
+    assert "Data loaded — clean it to unlock the report." in md, \
+        "Reports footer must follow the loaded state"
+    goto_section(at, "Clean")
+    clean_sample(at)
+    goto_section(at, "Dashboard")
+    md = "\n".join(vals(at.markdown))
+    assert ("Your data is cleaned — your one-page report "
+            "is ready to build.") in md, \
+        "Reports footer must follow the cleaned state"
+    assert "You don't have any data loaded yet" not in md, \
+        "the live check's footer string must not exist anywhere"
+    print("overview Reports footer every state OK")
+

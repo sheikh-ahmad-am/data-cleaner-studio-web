@@ -2430,6 +2430,11 @@ with st.sidebar:
     _nav_clicked = ui_design.sidebar_nav(_nav_items, active=_nav_active,
                                          collapsed=_rail_collapsed)
     if _nav_clicked is not None:
+        # Fix round (live check 2026-11-10, R3e B3): a rail click
+        # must clear the Quick Jump query too — cross-section AND
+        # same-section (the palette's section tracking cannot see a
+        # same-section click, so it never fires on that path).
+        feat_quickjump.note_rail_nav(st)
         st.session_state["pending_tab"] = _nav_clicked
         st.rerun()
     # The rail toggle is NOT here: it renders once, in the main
@@ -2872,7 +2877,6 @@ def _render_dashboard_strips(st, clean, raw, storage_key):
                 "Duplicate rows", f"{_dups:,}",
                 warnings=0, errors=_dups,
                 sub="Exact duplicate rows in the file")
-        _issues = _missing_total + _dups
     else:
         _m1, _m2 = st.columns(2)
         with _m1:
@@ -2885,6 +2889,17 @@ def _render_dashboard_strips(st, clean, raw, storage_key):
                 "Duplicate rows", "—",
                 warnings=0, errors=0,
                 sub="Load a file to check data quality")
+    # Advisor scores the CLEANED data when it exists — a clean
+    # that fixed everything must read "no issues". With no clean
+    # yet it scores the loaded file; with no file there is nothing
+    # to score. (The service cards above keep scoring the loaded
+    # file: they describe the file's own quality.)
+    if clean is not None:
+        _issues = (int(clean.isna().sum().sum())
+                   + int(clean.duplicated().sum()))
+    elif raw is not None:
+        _issues = _missing_total + _dups
+    else:
         _issues = None
     # Advisor block (Supabase: "Advisor found no issues" + "Ask
     # Assistant"). The heading IS the verdict; the detail line says
@@ -3012,10 +3027,11 @@ if raw is None:
             _do_logout()
         if _profile_result == "back":
             # The sub-nav's "← Back to dashboard" — back to the
-            # empty state (Preview, no data loaded). The old
-            # "← Back to data" button below the content is gone:
-            # the sub-nav's Back is the one way back now.
-            st.session_state["pending_tab"] = "preview"
+            # Dashboard tab (its strips render with no data, so
+            # the tab is reachable empty). The old "← Back to
+            # data" button below the content is gone: the
+            # sub-nav's Back is the one way back now.
+            st.session_state["pending_tab"] = "dashboard"
             st.rerun()
         st.stop()
     # The Status tab needs no data either (it reports the app's own
@@ -4219,8 +4235,9 @@ if "profile" in tab:
         if _profile_result in ("deleted", "logout"):
             _do_logout()
         if _profile_result == "back":
-            # The sub-nav's "← Back to dashboard" — back to Preview.
-            st.session_state["pending_tab"] = "preview"
+            # The sub-nav's "← Back to dashboard" — back to the
+            # Dashboard tab (it used to point at Preview).
+            st.session_state["pending_tab"] = "dashboard"
             st.rerun()
 
 # --------------------------------------------------------------- status ---

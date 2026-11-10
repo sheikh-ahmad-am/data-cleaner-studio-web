@@ -217,7 +217,7 @@ def render_profile_view(st, user, storage_key, on_logout=None):
     the session and reruns), "logout" when the Log out button was
     pressed and no on_logout callback was given (the caller logs the
     user out), "back" when "← Back to dashboard" was pressed (the
-    caller opens Preview), and None otherwise. When on_logout is
+    caller opens the Dashboard tab), and None otherwise. When on_logout is
     given it is called directly for the Log out button (the app
     passes its own logout helper, so the button behaves exactly
     like the sidebar one). On a failed delete the error is shown
