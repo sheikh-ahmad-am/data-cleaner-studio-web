@@ -2972,8 +2972,29 @@ def _render_dashboard_strips(st, clean, raw, storage_key):
             st.session_state["pending_tab"] = _rep_go
             st.rerun()
     ui_design.card("Build a custom report",
-                   body="Keep track of your most important metrics.",
-                   footer=_rep_foot)
+                   body="Keep track of your most important metrics.")
+    # Reports footer row: the state copy (same muted .dcs-card-footer
+    # style as the card footer) with a "?" button beside it. The
+    # card's footer is plain HTML, so a real button cannot live
+    # inside it — the row sits directly under the card instead. The
+    # button follows the same state logic as Add block.
+    _rep_help = {
+        "preview": "Open Preview — load a file first.",
+        "clean": "Open Clean — clean the file to unlock the report.",
+        "report": "Open the Report tab — build your one-page report.",
+    }[_rep_go]
+    _ff, _fb = st.columns([10, 1])
+    with _ff:
+        st.markdown(
+            f'<div class="dcs-card-footer">{html.escape(_rep_foot)}</div>',
+            unsafe_allow_html=True)
+    with _fb:
+        if ui_design.icon_button(
+                "", "help", kind="secondary",
+                key="dashboard_reports_help",
+                help=_rep_help):
+            st.session_state["pending_tab"] = _rep_go
+            st.rerun()
     if ui_design.icon_button(
             "Add your first block", "add", kind="secondary",
             key="dashboard_reports_first",

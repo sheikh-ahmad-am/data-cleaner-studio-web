@@ -473,3 +473,44 @@ def test_overview_reports_footer_every_state(_tmp_env):
         "the live check's footer string must not exist anywhere"
     print("overview Reports footer every state OK")
 
+
+def test_overview_reports_help_button(_tmp_env):
+    """Reports footer "?" button (user's call, 2026-11-10): a "?"
+    icon button sits in the footer row beside the state copy in all
+    three states, with a tooltip naming its destination, and it
+    navigates by the same state logic as Add block — no data ->
+    Preview, data -> Clean, cleaned -> Report. The card's footer is
+    plain HTML, so the button lives in a columns row directly under
+    the card, not inside the card's border."""
+    at = AppTest.from_file(APP)
+    at.run()
+    signup(at, "alice2")
+    goto_nav(at, "Dashboard", "dcs_nav_dashboard")
+    b = find_button(at, "", key="dashboard_reports_help")
+    assert "Preview" in (b.help or ""), \
+        "no-data tooltip must name Preview"
+    b.click().run()
+    assert not at.exception, f"exception on ? (no data): {at.exception}"
+    assert any("Nothing loaded yet" in v for v in vals(at.markdown)), \
+        "? with no data must land on the Preview empty state"
+    load_sample(at)
+    goto_section(at, "Dashboard")
+    b = find_button(at, "", key="dashboard_reports_help")
+    assert "Clean" in (b.help or ""), \
+        "loaded tooltip must name Clean"
+    b.click().run()
+    assert not at.exception, f"exception on ? (loaded): {at.exception}"
+    assert any(x.label == "Clean my data" for x in at.button), \
+        "? with data loaded must land on the Clean tab"
+    clean_sample(at)
+    goto_section(at, "Dashboard")
+    b = find_button(at, "", key="dashboard_reports_help")
+    assert "Report" in (b.help or ""), \
+        "cleaned tooltip must name Report"
+    b.click().run()
+    assert not at.exception, f"exception on ? (cleaned): {at.exception}"
+    assert any("Download PDF report" in x.label
+               for x in at.download_button), \
+        "? with cleaned data must land on the Report tab"
+    print("overview Reports footer ? button OK")
+
