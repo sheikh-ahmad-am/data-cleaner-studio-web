@@ -2,13 +2,15 @@
 
 The Settings tab renders Supabase's Project Settings, mapped to
 this app's own settings: a left sub-nav (Back to dashboard, group
-labels General / Connections / Automation / Setup, anchor links to
-each section) and the sections as bordered cards in the Profile
-page's row shape — Account (read-only, no Save/Cancel), Your brand
-(rows + Save brand / Cancel), AI keys (row + Save API keys /
-Cancel), Scheduled refresh jobs (list + add form with Add / Cancel),
-Shared dashboard links (read-only list), Still needs your details
-(read-only info).
+labels General / Connections / Automation / Setup, buttons that
+focus one section — plain anchor links cannot scroll in stock
+Streamlit, so the rows switch the visible section via state + a
+`settings` query param) and the sections as bordered cards in the
+Profile page's row shape — Account (read-only, no Save/Cancel),
+Your brand (rows + Save brand / Cancel), AI keys (row + Save API
+keys / Cancel), Scheduled refresh jobs (list + add form with Add /
+Cancel), Shared dashboard links (read-only list), Still needs your
+details (read-only info).
 
 Self-contained: auth.DB_PATH, storage.BASE_DIR and the scheduler
 jobs file are pointed at a temp dir, so the real data/ folder is
@@ -126,13 +128,28 @@ def goto_settings(at):
 
 
 # ---------------------------------------------------------------------------
-# 1. Sub-nav: groups, anchor links, Back button
+# 1. Sub-nav: groups, focus buttons, Back button, section order
 # ---------------------------------------------------------------------------
+
+def section_order(at):
+    """The section headings' anchor ids in render order (from the h3
+    id attributes in the markdown)."""
+    md = "\n".join(vals(at.markdown))
+    found = []
+    for anchor in ("settings-account", "settings-brand", "settings-ai-keys",
+                   "settings-shares", "settings-jobs", "settings-setup"):
+        pos = md.find(f'id="{anchor}"')
+        if pos >= 0:
+            found.append((pos, anchor))
+    return [a for _, a in sorted(found)]
+
 
 def test_settings_subnav_groups_and_links(_tmp_env):
     """The left sub-nav groups the sections (General / Connections /
-    Automation / Setup), each row an anchor link to its section
-    heading, with a Back to dashboard button on top."""
+    Automation / Setup), each row a button that focuses its section
+    (no dead `#anchor` hrefs — anchor links cannot scroll in stock
+    Streamlit), the sections render in sub-nav order, with a Back to
+    dashboard button on top."""
     at = AppTest.from_file(APP)
     at.run()
     signup(at, "set1")
@@ -140,15 +157,49 @@ def test_settings_subnav_groups_and_links(_tmp_env):
     md = all_text(at)
     for group in ("General", "Connections", "Automation", "Setup"):
         assert group in md, f"sub-nav group {group!r} missing"
-    for anchor in ("settings-account", "settings-brand", "settings-ai-keys",
-                   "settings-shares", "settings-jobs", "settings-setup"):
-        assert f"#{anchor}" in md, f"sub-nav anchor #{anchor} missing"
-    for section in ("Account", "Your brand", "AI keys",
-                    "Shared dashboard links", "Scheduled refresh jobs",
-                    "Still needs your details"):
-        assert section in md, f"section {section!r} missing"
+    for anchor, label in (("settings-account", "Account"),
+                          ("settings-brand", "Your brand"),
+                          ("settings-ai-keys", "AI keys"),
+                          ("settings-shares", "Shared dashboard links"),
+                          ("settings-jobs", "Scheduled refresh jobs"),
+                          ("settings-setup", "Still needs your details")):
+        assert f"#{anchor}" not in md, f"dead anchor href #{anchor} remains"
+        find_button(at, label, key=f"settings_nav_{anchor[9:]}")
+    find_button(at, "Settings", key="settings_nav_all")
+    assert section_order(at) == ["settings-account", "settings-brand",
+                                 "settings-ai-keys", "settings-shares",
+                                 "settings-jobs", "settings-setup"], \
+        f"sections out of sub-nav order: {section_order(at)}"
     find_button(at, "← Back to dashboard", key="settings_back_dashboard")
-    print("settings sub-nav OK: 4 groups, 6 anchors, Back button")
+    print("settings sub-nav OK: 4 groups, 6 focus buttons + All, "
+          "sections in sub-nav order")
+
+
+def test_settings_subnav_focus_switches_section(_tmp_env):
+    """Clicking a sub-nav row focuses its section (only that section
+    renders); the focused row is disabled (the active pill); clicking
+    Settings returns to the stacked page (all six sections)."""
+    at = AppTest.from_file(APP)
+    at.run()
+    signup(at, "set10")
+    goto_settings(at)
+    all_six = ["settings-account", "settings-brand", "settings-ai-keys",
+               "settings-shares", "settings-jobs", "settings-setup"]
+    assert section_order(at) == all_six
+    find_button(at, "AI keys", key="settings_nav_ai-keys").click().run()
+    assert not at.exception, f"exception focusing AI keys: {at.exception}"
+    assert at.session_state.get("settings_section") == "settings-ai-keys"
+    assert section_order(at) == ["settings-ai-keys"], \
+        f"focus should show only AI keys: {section_order(at)}"
+    assert find_button(at, "AI keys",
+                        key="settings_nav_ai-keys").disabled, \
+        "the focused row is disabled (the active pill)"
+    find_button(at, "Settings", key="settings_nav_all").click().run()
+    assert not at.exception, f"exception clearing focus: {at.exception}"
+    assert at.session_state.get("settings_section") is None
+    assert section_order(at) == all_six, \
+        "Settings (all) should restore the stacked page"
+    print("settings focus OK: row focuses its section, Settings restores all")
 
 
 def test_settings_back_goes_to_dashboard(_tmp_env):
@@ -209,6 +260,68 @@ def test_settings_sections_render(_tmp_env):
 # ---------------------------------------------------------------------------
 # 3. Save/Cancel behaviour
 # ---------------------------------------------------------------------------
+
+def test_settings_brand_single_heading(_tmp_env):
+    """Exactly one 'Your brand' section: the old feat_brand heading
+    'Your brand (white-label)' must not render (the live check saw
+    it from a stale feat_brand.py — the code must not produce it),
+    and the section has both Save brand and Cancel."""
+    at = AppTest.from_file(APP)
+    at.run()
+    signup(at, "set11")
+    goto_settings(at)
+    md = all_text(at)
+    assert "white-label" not in md, \
+        "stale brand heading must not render"
+    assert "\n".join(vals(at.markdown)).count('id="settings-brand"') == 1, \
+        "exactly one brand section heading"
+    find_button(at, "Save brand", key="brand_save")
+    find_button(at, "Cancel", key="brand_cancel")
+    print("settings brand OK: single heading, Save + Cancel present")
+
+
+def test_settings_keys_save_merges_stored_keys(_tmp_env):
+    """Save merges with the stored settings: a Gemini key already in
+    the store survives saving a Groq key (the old merge started from
+    the local file and could drop stored keys)."""
+    at = AppTest.from_file(APP)
+    at.run()
+    signup(at, "set8")
+    skey = at.session_state["storage_key"]
+    storage.save_json(skey, "views", "settings.json",
+                      {"gemini_api_key": "gem_stored_key"})
+    goto_settings(at)
+    assert "Gemini key: set" in all_text(at), \
+        "stored Gemini key should read as set"
+    find_text_input(at, "Groq API key").set_value("gsk_test_key_123").run()
+    find_button(at, "Save API keys", key="settings_keys_save").click().run()
+    assert not at.exception, f"exception saving keys: {at.exception}"
+    assert "Groq key: set" in all_text(at), "Groq status should read set"
+    assert "Gemini key: set" in all_text(at), "Gemini status must survive"
+    stored = storage.load_json(skey, "views", "settings.json")
+    assert stored.get("groq_api_key") == "gsk_test_key_123"
+    assert stored.get("gemini_api_key") == "gem_stored_key", \
+        "save must not drop the stored Gemini key"
+    print("settings keys merge OK: stored keys survive a save")
+
+
+def test_settings_keys_status_reads_local_file(_tmp_env):
+    """The status line counts a key stored in the local settings file
+    (the legacy sidebar expander's store, and the store
+    get_api_key()/ask_ai() read) — a key is 'set' when either store
+    has it. In local mode both stores are one file, so the cloud
+    split itself is live-check territory; this pins the
+    either-store read."""
+    at = AppTest.from_file(APP)
+    at.run()
+    signup(at, "set9")
+    import ai_settings  # noqa: E402 - repointed at login, same module object
+    ai_settings.save_settings({"groq_api_key": "gsk_local_only"})
+    goto_settings(at)
+    assert "Groq key: set" in all_text(at), \
+        "a key in the local file should read as set"
+    print("settings keys status OK: local-file key reads as set")
+
 
 def test_settings_keys_save_persists(_tmp_env, tmp_path):
     """Save API keys writes the typed key to the user's settings.json
@@ -298,7 +411,13 @@ def test_settings_job_add_and_cancel(_tmp_env, tmp_path):
                for j in payload.get("jobs", [])), "job missing from registry"
     assert "https://example.com/sheet" in all_text(at), \
         "added job should show in the list"
-    print("settings jobs OK: Cancel clears, Add persists + lists")
+    assert find_text_input(
+        at, "Source (sheet link, or saved connection name)").value == "", \
+        "job Add must clear the source field (same remount idiom as Cancel)"
+    assert find_text_input(
+        at, "Save refreshed data to (inside your folder)").value == \
+        "uploads/refreshed.csv", "job Add must restore the target default"
+    print("settings jobs OK: Cancel clears, Add persists + lists + clears")
 
 
 # ---------------------------------------------------------------------------
@@ -312,7 +431,7 @@ def test_settings_css_in_both_themes_no_has():
     for name, css in (("light", ui_design.DESIGN_SYSTEM_CSS),
                       ("dark", ui_design.DARK_CSS)):
         for cls in ("dcs-settings-section", "dcs-settings-subnav-link",
-                    "dcs-settings-subnav-active"):
+                    "dcs-settings-subnav-active", "st-key-settings_nav"):
             assert cls in css, f"{cls} missing from {name} stylesheet"
         block = css[css.find(".stApp .dcs-settings-section"):]
         block = block[:block.find("/* ---- avatar menu")]

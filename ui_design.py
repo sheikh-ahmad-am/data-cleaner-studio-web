@@ -1028,6 +1028,22 @@ div:has(> .dcs-profile-page) ~ div[data-testid="stHorizontalBlock"] > div[data-t
   color: #0e7e4e; text-decoration: none; }
 .dcs-settings-subnav-link.dcs-settings-subnav-active {
   background-color: #f3f3f3; font-weight: 600; }
+/* ---- Settings sub-nav rows are real buttons, not anchor links: a
+   fragment link cannot scroll in stock Streamlit (the fragment
+   scrolls the window, not Streamlit's inner scroll container) and
+   a reload with a hash does not restore the tab — so the rows
+   switch the visible section via state + a `settings` query param
+   instead. The buttons keep the link look (transparent, left
+   aligned, hover tint); the focused row is a disabled button and
+   renders as the active pill — the sidebar nav's own idiom. ---- */
+.stApp div[class*="st-key-settings_nav"] button { display: block; width: 100%;
+  text-align: left; padding: 0.35rem 0.75rem; border-radius: 6px;
+  font-size: 13px; color: #030303; background: transparent;
+  border: none; box-shadow: none; }
+.stApp div[class*="st-key-settings_nav"] button:hover { background-color: #f8f8f8;
+  color: #0e7e4e; }
+.stApp div[class*="st-key-settings_nav"] button:disabled { background-color: #f3f3f3;
+  font-weight: 600; color: #030303; opacity: 1; }
 /* ---- avatar menu rows: bold email, micro section label, timezone row ---- */
 .dcs-menu-email { font-size: 14px; font-weight: 700; color: #030303;
   padding: 0.35rem 0.75rem; overflow-wrap: anywhere; }
@@ -1699,6 +1715,14 @@ div:has(> .dcs-profile-page) ~ div[data-testid="stHorizontalBlock"] > div[data-t
   color: #4acd8b; text-decoration: none; }
 .dcs-settings-subnav-link.dcs-settings-subnav-active {
   background-color: #2a2d2c; font-weight: 600; }
+.stApp div[class*="st-key-settings_nav"] button { display: block; width: 100%;
+  text-align: left; padding: 0.35rem 0.75rem; border-radius: 6px;
+  font-size: 13px; color: #edefee; background: transparent;
+  border: none; box-shadow: none; }
+.stApp div[class*="st-key-settings_nav"] button:hover { background-color: #2a2d2c;
+  color: #4acd8b; }
+.stApp div[class*="st-key-settings_nav"] button:disabled { background-color: #2a2d2c;
+  font-weight: 600; color: #edefee; opacity: 1; }
 /* ---- avatar menu rows: bold email, micro section label, timezone row ---- */
 .dcs-menu-email { font-size: 14px; font-weight: 700; color: #edefee;
   padding: 0.35rem 0.75rem; overflow-wrap: anywhere; }
