@@ -89,6 +89,33 @@ class FakeSt:
         self._rec("button", label, key)
         return self.values.get(key, False)
 
+    def rerun(self):
+        self._rec("rerun")
+
+    def container(self, border=None):
+        self._rec("container")
+
+        class _Ctx:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+        return _Ctx()
+
+    def columns(self, spec):
+        self._rec("columns")
+
+        class _Ctx:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+        return [_Ctx() for _ in spec]
+
     def download_button(self, label, data, file_name=None, mime=None,
                         key=None, help=None):
         self._rec("download_button", label)
@@ -198,16 +225,21 @@ def test_render_brand_section():
         out = feat_brand.render_brand_section(st, tmp)
         assert out == {"name": "Data Cleaner Studio", "accent": "#117f50",
                        "logo": None}, out
-        assert any("brand" in m.lower() for m in st.messages("subheader"))
+        # The section title is a settings row now (the Settings page's
+        # section heading above the card carries "Your brand"); the
+        # rows are "Brand name" / "Accent colour" / "Logo".
+        assert any("Brand name" in m for m in st.messages("markdown")), \
+            "brand name row missing"
         assert all(k.startswith("brand_") for k in st.keys_used()), st.calls
-        assert "brand_name" in st.keys_used() and "brand_accent" in st.keys_used()
-        assert "brand_logo" in st.keys_used() and "brand_save" in st.keys_used()
+        assert "brand_name_0" in st.keys_used() and "brand_accent_0" in st.keys_used()
+        assert "brand_logo_0" in st.keys_used() and "brand_save" in st.keys_used()
+        assert "brand_cancel" in st.keys_used(), "Cancel button missing"
         assert any("#117f50" in m for m in st.messages("markdown")), \
             "current brand CSS must be injected"
         # Save pressed with a new name, colour and logo upload.
-        st = FakeSt(values={"brand_name": "Acmecorp Analytics",
-                            "brand_accent": "#ff8800",
-                            "brand_logo": FakeUpload(PNG_BYTES),
+        st = FakeSt(values={"brand_name_0": "Acmecorp Analytics",
+                            "brand_accent_0": "#ff8800",
+                            "brand_logo_0": FakeUpload(PNG_BYTES),
                             "brand_save": True})
         out = feat_brand.render_brand_section(st, tmp)
         assert out["name"] == "Acmecorp Analytics"
@@ -215,7 +247,40 @@ def test_render_brand_section():
         assert feat_brand.load_brand(tmp) == out
         assert (Path(tmp) / "logo.png").exists()
         assert any("Acmecorp" in m for m in st.messages("success"))
-    print("render brand OK: brand_* keys only, save writes brand.json + logo.png")
+        # Cancel pressed with changed inputs: nothing is saved; the
+        # press bumps the generation counter and reruns, and the NEXT
+        # render remounts the inputs under fresh keys, so they come
+        # back from the saved brand. Two renders, the way Streamlit
+        # runs it: a plain pop of the widget keys does not clear a
+        # text input's displayed text in a live browser (probe50 +
+        # the minimal clear-repro proved it); only a key change
+        # remounts the input.
+        feat_brand.save_brand(BRAND, tmp)
+        st = FakeSt(values={"brand_name_0": "Changed Name",
+                            "brand_accent_0": "#000000",
+                            "brand_cancel": True})
+        st.session_state.update({"brand_name_0": "Changed Name",
+                                 "brand_accent_0": "#000000"})
+        out = feat_brand.render_brand_section(st, tmp)
+        assert out == BRAND, out
+        assert feat_brand.load_brand(tmp) == BRAND, \
+            "Cancel must not write brand.json"
+        assert st.session_state.get("brand_gen") == 1, \
+            "Cancel must bump the generation counter"
+        assert any(c[0] == "rerun" for c in st.calls), \
+            "Cancel must rerun so the inputs come back from the saved brand"
+        # The rerun: inputs remount under fresh keys and render from
+        # the saved brand; the old keys are dropped.
+        st2 = FakeSt(values={})
+        st2.session_state.update(st.session_state)
+        out2 = feat_brand.render_brand_section(st2, tmp)
+        assert out2 == BRAND, out2
+        assert "brand_name_0" not in st2.session_state, \
+            "the rerun must drop the old input keys"
+        assert "brand_accent_0" not in st2.session_state
+        assert "brand_name_1" in st2.keys_used(), \
+            "the rerun must mount the inputs under the new generation"
+    print("render brand OK: brand_* keys only, save writes brand.json + logo.png, cancel discards")
 
 
 # ------------------------------------------------------- branded exports

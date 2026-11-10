@@ -710,6 +710,24 @@ div:has(> .dcs-profile-page) ~ div[data-testid="stHorizontalBlock"] > div[data-t
   color: #0e7e4e; text-decoration: none; }
 .dcs-profile-subnav-link.dcs-profile-subnav-active {
   background-color: #f3f3f3; font-weight: 600; }
+/* ---- Settings page: same sub-nav + section shape as the Profile
+   page (Supabase's Project Settings: left sub-nav groups, bordered
+   cards, per-section Save/Cancel). The nav column is the [1, 4]
+   columns layout, so no :has() rule is needed — and none is used:
+   :has() selectors do not take effect live (proven in rounds 8–9),
+   so the Profile page's :has() divider rule is deliberately NOT
+   copied here; the column gap separates nav from content. ---- */
+.stApp .dcs-settings-section { font-size: 15px; font-weight: 600;
+  color: #030303; margin: 1.25rem 0 0.25rem; }
+.stApp .dcs-settings-section-sub { font-size: 13px; color: #696969;
+  margin-bottom: 0.5rem; }
+.stApp .dcs-settings-subnav-link { display: block; padding: 0.35rem 0.75rem;
+  border-radius: 6px; font-size: 13px; color: #030303; }
+.stApp a.dcs-settings-subnav-link { text-decoration: none; }
+.stApp a.dcs-settings-subnav-link:hover { background-color: #f8f8f8;
+  color: #0e7e4e; text-decoration: none; }
+.dcs-settings-subnav-link.dcs-settings-subnav-active {
+  background-color: #f3f3f3; font-weight: 600; }
 /* ---- avatar menu rows: bold email, micro section label, timezone row ---- */
 .dcs-menu-email { font-size: 14px; font-weight: 700; color: #030303;
   padding: 0.35rem 0.75rem; overflow-wrap: anywhere; }
@@ -3663,6 +3681,416 @@ ui_design.render_rail_behavior_menu()
 # below, so it runs on every logged-in run, empty or data-loaded.
 _ensure_pref_cookies()
 
+def _settings_section(st, anchor, title, sub=None):
+    """A section heading above a bordered card (Supabase's settings
+    pages, the Profile page's shape): the title carries an ``id`` so
+    the sub-nav's anchor links can scroll to it. The page is one
+    stacked page, not separate pages — Supabase's sub-nav lists
+    separate pages; this app has one Settings page, so the rows
+    scroll to the card."""
+    sub_html = (f'<div class="dcs-settings-section-sub">'
+                f"{html.escape(sub)}</div>" if sub else "")
+    st.markdown(
+        f'<h3 id="{anchor}" class="dcs-settings-section">'
+        f"{html.escape(title)}</h3>{sub_html}",
+        unsafe_allow_html=True)
+
+
+def _settings_row(st, label, sub=None):
+    """One Supabase settings row inside a bordered card: the label +
+    muted sub-line at the left, an empty controls column at the
+    right for the caller to fill. Returns the right column. The
+    label classes are the settings card's own
+    (``.dcs-settings-title`` / ``.dcs-settings-desc``)."""
+    _left, _right = st.columns([1.1, 1])
+    with _left:
+        st.markdown(
+            f'<div class="dcs-settings-title">{html.escape(label)}</div>',
+            unsafe_allow_html=True)
+        if sub:
+            st.markdown(
+                f'<div class="dcs-settings-desc">{html.escape(sub)}</div>',
+                unsafe_allow_html=True)
+    return _right
+
+
+def _settings_subnav_link(st, anchor, label):
+    """One sub-nav row: an anchor link to the section heading."""
+    st.markdown(
+        f'<a class="dcs-settings-subnav-link" href="#{anchor}">'
+        f"{html.escape(label)}</a>",
+        unsafe_allow_html=True)
+
+
+def _render_settings_page(st, user, skey, user_root):
+    """The Settings page as Supabase's Project Settings, mapped to
+    this app's own settings: a left sub-nav (Back to dashboard,
+    group labels General / Connections / Automation / Setup, anchor
+    links to each section) and the sections as bordered cards in
+    the Profile page's row shape — Account (read-only, no
+    Save/Cancel), Your brand (rows + Save brand / Cancel), AI keys
+    (row + Save API keys / Cancel), Scheduled refresh jobs (list +
+    add form with Add / Cancel), Shared dashboard links (read-only
+    list), Still needs your details (read-only info). Pure
+    presentation + the app's own saves — nothing invented.
+
+    Defined up here (before the `if raw is None:` empty-state block
+    below): the Settings tab needs no data, so its no-data branch
+    calls this before the old definition point — otherwise the tab
+    is unreachable until a file is loaded (the KPIs round fixed
+    the same reachability gap for the KPIs tab)."""
+    _set_nav, _set_main = st.columns([1, 4])
+    with _set_nav:
+        if st.button("← Back to dashboard",
+                     key="settings_back_dashboard",
+                     use_container_width=True):
+            st.session_state["pending_tab"] = "dashboard"
+            st.rerun()
+        st.markdown('<div class="dcs-micro-label">Project settings</div>',
+                    unsafe_allow_html=True)
+        st.markdown(
+            '<span class="dcs-settings-subnav-link '
+            'dcs-settings-subnav-active">Settings</span>',
+            unsafe_allow_html=True)
+        st.markdown('<div class="dcs-micro-label">General</div>',
+                    unsafe_allow_html=True)
+        _settings_subnav_link(st, "settings-account", "Account")
+        _settings_subnav_link(st, "settings-brand", "Your brand")
+        st.markdown('<div class="dcs-micro-label">Connections</div>',
+                    unsafe_allow_html=True)
+        _settings_subnav_link(st, "settings-ai-keys", "AI keys")
+        _settings_subnav_link(st, "settings-shares",
+                              "Shared dashboard links")
+        st.markdown('<div class="dcs-micro-label">Automation</div>',
+                    unsafe_allow_html=True)
+        _settings_subnav_link(st, "settings-jobs",
+                              "Scheduled refresh jobs")
+        st.markdown('<div class="dcs-micro-label">Setup</div>',
+                    unsafe_allow_html=True)
+        _settings_subnav_link(st, "settings-setup",
+                              "Still needs your details")
+    with _set_main:
+        ui_design.section_heading(
+            "Settings",
+            sub="Your account, keys, brand, and automations.")
+
+        # Account — a section heading + one bordered card, the
+        # Profile page's shape: the "Signed in" row (account +
+        # Open Profile action right), the backend detail underneath
+        # inside the same card. Read-only — nothing to save, so no
+        # Save/Cancel (Supabase's General Save stays disabled until
+        # an edit, and there is nothing editable here).
+        # Supabase connection status (Phase 2, wired in): backend from
+        # auth.get_auth_backend(), problem text from
+        # auth.get_backend_warning() — shown verbatim, so a paused
+        # free project reads exactly "Project paused — restore it in
+        # the Supabase dashboard".
+        _backend = auth.get_auth_backend()
+        _backend_label = ("Local (this server)" if _backend == "local"
+                          else "Cloud (Supabase)")
+        _settings_section(st, "settings-account", "Account",
+                          "Who is signed in, and which backend holds the account.")
+        with st.container(border=True):
+            _acct_right = _settings_row(st, "Signed in")
+            with _acct_right:
+                st.write(f"Signed in as **{user.get('display_name') or user.get('username') or user.get('email') or '?'}** "
+                         f"(account backend: **{_backend_label}**).")
+                if ui_design.icon_button(
+                        "Open Profile", "profile",
+                        key="settings_open_profile",
+                        help="Open the Profile tab."):
+                    st.session_state["pending_tab"] = "profile"
+                    st.rerun()
+            _config_exists = auth.SUPABASE_CONFIG_PATH.is_file()
+            _env_configured = bool((os.environ.get("SUPABASE_URL") or "").strip()
+                                   and (os.environ.get("SUPABASE_ANON_KEY") or "").strip())
+            _cloud_ready = _config_exists or _env_configured
+            st.write("Cloud setup: "
+                     f"{'connected ✓' if _cloud_ready else 'not set up yet'}")
+            _warn = auth.get_backend_warning()
+            if _warn:
+                st.warning(_warn)
+            if _backend == "local":
+                st.info("Local mode — accounts live in a file on this "
+                        "server, and your files live in your folder on this "
+                        "server. That means: your data leaves your computer — "
+                        "it lives on the server. Cloud accounts (including "
+                        "Google sign-in) need a Supabase project: create the "
+                        "free project, add its URL and anon key to the app's "
+                        "secrets, and run the setup SQL in the Supabase SQL "
+                        "editor. Full steps: "
+                        "[README.md — Auth: Supabase](README.md) and "
+                        "[DEPLOY.md — section 0](DEPLOY.md). "
+                        "Local accounts and Supabase accounts are different "
+                        "users — switching backends means re-registering.")
+            else:
+                st.success("Cloud accounts are active (Supabase). Sign in "
+                           "with your email and password, or with Google if "
+                           "it is enabled in the Supabase dashboard. Your "
+                           "local-mode account (if you had one) is a "
+                           "different user — it does not carry over.")
+
+        # AI keys — a section heading + one bordered card: the "API
+        # keys" row (status + the two key inputs right), Save +
+        # Cancel at the card's bottom-right. Cancel discards what
+        # was typed (the key widget keys are dropped from session
+        # state and the page reruns).
+        _settings_section(st, "settings-ai-keys", "AI keys",
+                          "Your own keys, stored per user. AI insights and "
+                          "natural-language questions use them; they are saved in "
+                          "your folder only, never baked into the code or the repo. "
+                          "Leave a field empty to turn that provider off.")
+        _cur_settings = ai_settings.load_settings()
+        _groq_set = bool((_cur_settings.get("groq_api_key") or "").strip())
+        _gemini_saved = ""
+        try:
+            _stored_settings = storage.load_json(skey, "views", "settings.json")
+            if isinstance(_stored_settings, dict):
+                _gemini_saved = str(_stored_settings.get("gemini_api_key") or "")
+        except Exception:  # noqa: BLE001
+            _stored_settings = None
+        with st.container(border=True):
+            # A flash left by the Save below (its rerun would swallow
+            # a toast): show it once, then pop it — the preview_flash
+            # idiom.
+            _keys_flash = st.session_state.pop("settings_keys_flash", None)
+            if _keys_flash:
+                st.success(_keys_flash)
+            # Generation counter for the key inputs: Save/Cancel bump
+            # it (see the handlers below) so the inputs remount under
+            # fresh keys. That remount is the ONLY mechanism that
+            # actually clears a text_input's displayed text in a live
+            # browser — popping the widget keys (inline, via a
+            # pending-clear flag, or in an on_click callback) clears
+            # the backend value but the frontend keeps showing the
+            # typed text, and a second rerun does not fix it either
+            # (probe50 + the minimal clear-repro proved all four fail
+            # in Streamlit 1.66.1; only a key change remounts the
+            # input). The old keys are also dropped so the typed
+            # secrets do not linger in session state.
+            _keys_gen = st.session_state.get("settings_keys_gen", 0)
+            _keys_right = _settings_row(st, "API keys")
+            with _keys_right:
+                st.write(f"Groq key: {'set ✓' if _groq_set else 'not set'}  ·  "
+                         f"Gemini key: {'set ✓' if _gemini_saved.strip() else 'not set'}")
+                _new_groq = st.text_input("Groq API key", type="password",
+                                          key=f"settings_groq_key_{_keys_gen}",
+                                          help="Starts with gsk_ — get one free at console.groq.com. "
+                                               "Leave empty to keep the saved key.")
+                _new_gemini = st.text_input("Gemini API key", type="password",
+                                            key=f"settings_gemini_key_{_keys_gen}",
+                                            help="Google AI Studio key. The app stores it; "
+                                                 "the Groq endpoint is used first when both are set. "
+                                                 "Leave empty to keep the saved key.")
+            _sp, _cancel_col, _save_col = st.columns([2, 1, 1])
+            with _cancel_col:
+                if ui_design.icon_button(
+                        "Cancel", "close",
+                        key="settings_keys_cancel", use_container_width=True,
+                        help="Discard the keys you typed."):
+                    # Bump the generation so the inputs remount empty
+                    # on the next run (see above); drop the old keys
+                    # so the typed secrets do not linger.
+                    for _k in (f"settings_groq_key_{_keys_gen}",
+                               f"settings_gemini_key_{_keys_gen}"):
+                        st.session_state.pop(_k, None)
+                    st.session_state["settings_keys_gen"] = _keys_gen + 1
+                    st.rerun()
+            with _save_col:
+                if ui_design.icon_button(
+                        "Save API keys", "check", kind="primary",
+                        key="settings_keys_save", use_container_width=True,
+                        help="Save the keys you typed."):
+                    _merged = dict(ai_settings.load_settings())
+                    if isinstance(_stored_settings, dict):
+                        for _k, _v in _stored_settings.items():
+                            if _k not in _merged:
+                                _merged[_k] = _v
+                    if _new_groq.strip():
+                        _merged["groq_api_key"] = _new_groq.strip()
+                    if _new_gemini.strip():
+                        _merged["gemini_api_key"] = _new_gemini.strip()
+                    try:
+                        storage.save_json(skey, "views", "settings.json", _merged)
+                        # Bump the generation so the fields remount
+                        # empty on the next run (see above): the status
+                        # line now carries the set state, and the fields
+                        # stay empty until a new key is pasted ("Leave
+                        # empty to keep the saved key"). Drop the old
+                        # keys so the typed secrets do not linger.
+                        for _k in (f"settings_groq_key_{_keys_gen}",
+                                   f"settings_gemini_key_{_keys_gen}"):
+                            st.session_state.pop(_k, None)
+                        st.session_state["settings_keys_gen"] = _keys_gen + 1
+                        # Flash + rerun: without the rerun the status
+                        # line above still reads the pre-save values
+                        # for one render (the KPIs Add-KPI one-render
+                        # lag, same family); without the flash the
+                        # rerun would swallow the confirmation.
+                        st.session_state["settings_keys_flash"] = (
+                            "API keys saved in your folder.")
+                        st.rerun()
+                    except Exception as e:  # noqa: BLE001
+                        st.error(f"Could not save the keys: {e}")
+
+        _settings_section(st, "settings-brand", "Your brand",
+                          "Put your own name, colour and logo on the app and on the "
+                          "reports you download — so a report you send to a client "
+                          "looks like yours, not ours. Saved on this computer only "
+                          "(brand.json next to the app).")
+        feat_brand.render_brand_section(st, base_dir=user_root)
+
+        _settings_section(st, "settings-jobs", "Scheduled refresh jobs")
+        with st.container(border=True):
+            # A flash left by the Add below (its rerun would swallow
+            # a toast): show it once, then pop it — the preview_flash
+            # idiom.
+            _jobs_flash = st.session_state.pop("settings_jobs_flash", None)
+            if _jobs_flash:
+                st.success(_jobs_flash)
+            st.write("Jobs refresh a Google Sheet or a database table into "
+                     "your folder on a schedule. The app only manages the "
+                     "list below — the refresh itself is done by the separate "
+                     "scheduler process (`python scheduler.py --daemon`), "
+                     "which is not running inside this app. On Streamlit "
+                     "Community Cloud the daemon cannot run at all.")
+            st.write("The default interval below is 3 days — a regular job "
+                     "keeps your data fresh without refreshing every hour.")
+            _jobs_file = scheduler.DEFAULT_JOBS_FILE
+            _payload, _jobs_err = scheduler.load_registry(_jobs_file)
+            if _jobs_err:
+                st.error(f"Could not read the job registry: {_jobs_err}")
+                _payload = {"version": 1, "jobs": []}
+            _all_jobs = _payload.get("jobs", []) if isinstance(_payload, dict) else []
+            _my_idx = [i for i, j in enumerate(_all_jobs)
+                       if isinstance(j, dict) and j.get("user") == skey]
+            if not _my_idx:
+                st.info("No scheduled jobs yet.")
+            for _pos, _ji in enumerate(_my_idx):
+                _job = _all_jobs[_ji]
+                _c1, _c2, _c3 = st.columns([3, 1, 1])
+                _c1.write(f"**{_job.get('source_type', '?')}** — "
+                          f"{_job.get('source', '')} → {_job.get('target', '')} "
+                          f"· every {_job.get('interval_minutes', 60)} min · "
+                          f"{'enabled' if _job.get('enabled', True) else 'disabled'}"
+                          f"{' · last: ' + str(_job.get('last_status')) if _job.get('last_status') else ''}"
+                          f"{' · ' + str(_job.get('last_error')) if _job.get('last_error') else ''}")
+                if _c2.button("Enable" if not _job.get("enabled", True) else "Disable",
+                              key=f"sched_toggle_{_pos}"):
+                    _all_jobs[_ji]["enabled"] = not _job.get("enabled", True)
+                    try:
+                        scheduler.save_registry(_jobs_file, _payload)
+                        st.rerun()
+                    except Exception as e:  # noqa: BLE001
+                        st.error(f"Could not save the job list: {e}")
+                if _c3.button("Delete", key=f"sched_delete_{_pos}",
+                               type="secondary"):
+                    del _all_jobs[_ji]
+                    try:
+                        scheduler.save_registry(_jobs_file, _payload)
+                        st.rerun()
+                    except Exception as e:  # noqa: BLE001
+                        st.error(f"Could not save the job list: {e}")
+            st.write("Add a job:")
+            # Generation counter for the form inputs (same remount
+            # reason as the AI keys card above): Cancel bumps it so
+            # the form remounts with its defaults on the next run.
+            _sched_gen = st.session_state.get("sched_gen", 0)
+            _nj_type = st.selectbox("Source type", ["sheets", "db"],
+                                    key=f"sched_new_type_{_sched_gen}",
+                                    help="'sheets' = a public Google Sheet link. "
+                                         "'db' = a saved connection name (create it "
+                                         "in the Tools tab first).")
+            _nj_source = st.text_input("Source (sheet link, or saved connection name)",
+                                       key=f"sched_new_source_{_sched_gen}")
+            _nj_target = st.text_input("Save refreshed data to (inside your folder)",
+                                       value="uploads/refreshed.csv",
+                                       key=f"sched_new_target_{_sched_gen}")
+            _nj_interval = st.number_input("Every (minutes)", min_value=5,
+                                           max_value=10080, value=4320,
+                                           key=f"sched_new_interval_{_sched_gen}",
+                                           help="Defaults to 3 days (4320 minutes). "
+                                                "Set it shorter if you want fresher data.")
+            _jsp, _jcancel, _jadd = st.columns([2, 1, 1])
+            with _jcancel:
+                if st.button("Cancel", key="sched_new_cancel",
+                             type="secondary", use_container_width=True):
+                    # Bump the generation so the form remounts with
+                    # its defaults on the next run (see above); drop
+                    # the old keys.
+                    for _k in (f"sched_new_type_{_sched_gen}",
+                               f"sched_new_source_{_sched_gen}",
+                               f"sched_new_target_{_sched_gen}",
+                               f"sched_new_interval_{_sched_gen}"):
+                        st.session_state.pop(_k, None)
+                    st.session_state["sched_gen"] = _sched_gen + 1
+                    st.rerun()
+            with _jadd:
+                if st.button("Add scheduled job", key="sched_new_add",
+                             type="primary", use_container_width=True):
+                    if not _nj_source.strip() or not _nj_target.strip():
+                        st.error("Fill in the source and the target file first.")
+                    else:
+                        _all_jobs.append({
+                            "user": skey, "source_type": _nj_type,
+                            "source": _nj_source.strip(),
+                            "target": _nj_target.strip(),
+                            "interval_minutes": int(_nj_interval),
+                            "last_run": None, "next_run": None, "enabled": True,
+                        })
+                        try:
+                            scheduler.save_registry(_jobs_file, _payload)
+                            st.session_state["settings_jobs_flash"] = (
+                                "Job added.")
+                            st.rerun()
+                        except Exception as e:  # noqa: BLE001
+                            st.error(f"Could not save the job list: {e}")
+
+        _settings_section(st, "settings-shares", "Shared dashboard links")
+        with st.container(border=True):
+            try:
+                _shares = storage.load_json(skey, "views", _SHARES_FILENAME)
+            except Exception:  # noqa: BLE001 - no share links without storage
+                _shares = None
+            if not isinstance(_shares, dict) or not _shares:
+                st.info("No share links yet — create one from the Dashboard tab.")
+            else:
+                for _pos, (_tok, _snap) in enumerate(sorted(_shares.items())):
+                    _c1, _c2 = st.columns([3, 1])
+                    _c1.write(f"`?share={_tok[:12]}…` — "
+                              f"created {_snap.get('created_at', '?')} — "
+                              f"{'REVOKED' if _snap.get('revoked') else 'active'}")
+                    if not _snap.get("revoked"):
+                        if _c2.button("Revoke", key=f"share_revoke_{_pos}",
+                                       type="secondary"):
+                            _shares[_tok]["revoked"] = True
+                            try:
+                                storage.save_json(skey, "views", _SHARES_FILENAME,
+                                                  _shares)
+                                st.success("Link revoked — it now shows "
+                                           "'revoked or does not exist'.")
+                                st.rerun()
+                            except Exception as e:  # noqa: BLE001
+                                st.error(f"Could not revoke the link: {e}")
+                    else:
+                        _c2.write("—")
+
+        _settings_section(st, "settings-setup", "Still needs your details")
+        with st.container(border=True):
+            st.write("- **Email reports (SMTP):** the Report tab asks for your "
+                     "SMTP server, port, username, app password and recipient. "
+                     "Nothing is sent until you fill those in and press send.")
+            st.write("- **Export to Google Sheets:** needs your Google "
+                     "credentials and the Sheets API — not connected yet.")
+            st.write("- **Live databases:** need your server details and the "
+                     "right driver installed on the server (see the Tools tab).")
+            st.write("- **Hosting:** "
+                     + ("cloud (Streamlit Cloud)" if _backend != "local"
+                        else "this computer")
+                     + ". The app is deployed and running here — see DEPLOY.md "
+                       "for the hosting notes.")
+
+
 if raw is None:
     # The Profile view needs no data: when the user asked for it
     # (sidebar Profile button, or already on the Profile tab), render
@@ -3722,6 +4150,15 @@ if raw is None:
     # Overview strips).
     if _top_active == _nav_labels["kpis"]:
         _render_kpis_overview(st, None, None, None)
+        st.stop()
+    # The Settings tab needs no data either: its sections are the
+    # app's own account, keys, brand and automations — otherwise the
+    # tab is unreachable until a file is loaded, and the user lands
+    # on the generic Preview empty state instead of the Settings
+    # page (the KPIs round fixed the same reachability gap for the
+    # KPIs tab).
+    if _top_active == _nav_labels["settings"]:
+        _render_settings_page(st, _user, _skey, _user_root)
         st.stop()
     # Guided empty state: what to do first, plus a one-click way to try
     # the sample — the same loader the sidebar "Try the messy sample"
@@ -4761,237 +5198,10 @@ if "tutorial" in tab:
     if _active_tab == "tutorial":
         feat_tutorial.render_tutorial_page(st, settings_path=_settings_path)
 
+
+
+
 # -------------------------------------------------------------- settings ---
-if "settings" in tab:
-    if _active_tab == "settings":
-        ui_design.section_heading("Settings")
-
-        # Account — one bordered card: label + description left, the
-        # account + Open Profile action right, the backend detail
-        # underneath inside the same card.
-        # Supabase connection status (Phase 2, wired in): backend from
-        # auth.get_auth_backend(), problem text from
-        # auth.get_backend_warning() — shown verbatim, so a paused
-        # free project reads exactly "Project paused — restore it in
-        # the Supabase dashboard".
-        _backend = auth.get_auth_backend()
-        _backend_label = ("Local (this server)" if _backend == "local"
-                          else "Cloud (Supabase)")
-        _acct_left, _acct_right, _acct_card = ui_design.settings_card(
-            "Account",
-            "Who is signed in, and which backend holds the account.")
-        with _acct_right:
-            st.write(f"Signed in as **{_user.get('display_name') or _user.get('username') or _user.get('email') or '?'}** "
-                     f"(account backend: **{_backend_label}**).")
-            if ui_design.icon_button(
-                    "Open Profile", "profile",
-                    key="settings_open_profile",
-                    help="Open the Profile tab."):
-                st.session_state["pending_tab"] = "profile"
-                st.rerun()
-        with _acct_card:
-            _config_exists = auth.SUPABASE_CONFIG_PATH.is_file()
-            _env_configured = bool((os.environ.get("SUPABASE_URL") or "").strip()
-                                   and (os.environ.get("SUPABASE_ANON_KEY") or "").strip())
-            _cloud_ready = _config_exists or _env_configured
-            st.write("Cloud setup: "
-                     f"{'connected ✓' if _cloud_ready else 'not set up yet'}")
-            _warn = auth.get_backend_warning()
-            if _warn:
-                st.warning(_warn)
-            if _backend == "local":
-                st.info("Local mode — accounts live in a file on this "
-                        "server, and your files live in your folder on this "
-                        "server. That means: your data leaves your computer — "
-                        "it lives on the server. Cloud accounts (including "
-                        "Google sign-in) need a Supabase project: create the "
-                        "free project, add its URL and anon key to the app's "
-                        "secrets, and run the setup SQL in the Supabase SQL "
-                        "editor. Full steps: "
-                        "[README.md — Auth: Supabase](README.md) and "
-                        "[DEPLOY.md — section 0](DEPLOY.md). "
-                        "Local accounts and Supabase accounts are different "
-                        "users — switching backends means re-registering.")
-            else:
-                st.success("Cloud accounts are active (Supabase). Sign in "
-                           "with your email and password, or with Google if "
-                           "it is enabled in the Supabase dashboard. Your "
-                           "local-mode account (if you had one) is a "
-                           "different user — it does not carry over.")
-
-        # AI keys — one bordered card: label + description left, the
-        # two key inputs right, Save at the card's bottom-right.
-        _keys_left, _keys_right, _keys_card = ui_design.settings_card(
-            "AI keys",
-            "Your own keys, stored per user. AI insights and "
-            "natural-language questions use them; they are saved in "
-            "your folder only, never baked into the code or the repo. "
-            "Leave a field empty to turn that provider off.")
-        _cur_settings = ai_settings.load_settings()
-        _groq_set = bool((_cur_settings.get("groq_api_key") or "").strip())
-        _gemini_saved = ""
-        try:
-            _stored_settings = storage.load_json(_skey, "views", "settings.json")
-            if isinstance(_stored_settings, dict):
-                _gemini_saved = str(_stored_settings.get("gemini_api_key") or "")
-        except Exception:  # noqa: BLE001
-            _stored_settings = None
-        with _keys_right:
-            st.write(f"Groq key: {'set ✓' if _groq_set else 'not set'}  ·  "
-                     f"Gemini key: {'set ✓' if _gemini_saved.strip() else 'not set'}")
-            _new_groq = st.text_input("Groq API key", type="password",
-                                      key="settings_groq_key",
-                                      help="Starts with gsk_ — get one free at console.groq.com. "
-                                           "Leave empty to keep the saved key.")
-            _new_gemini = st.text_input("Gemini API key", type="password",
-                                        key="settings_gemini_key",
-                                        help="Google AI Studio key. The app stores it; "
-                                             "the Groq endpoint is used first when both are set. "
-                                             "Leave empty to keep the saved key.")
-        with _keys_card:
-            _sp, _save_col = st.columns([3, 1])
-            with _save_col:
-                if ui_design.icon_button(
-                        "Save API keys", "check", kind="primary",
-                        key="settings_keys_save", use_container_width=True,
-                        help="Save the keys you typed."):
-                    _merged = dict(ai_settings.load_settings())
-                    if isinstance(_stored_settings, dict):
-                        for _k, _v in _stored_settings.items():
-                            if _k not in _merged:
-                                _merged[_k] = _v
-                    if _new_groq.strip():
-                        _merged["groq_api_key"] = _new_groq.strip()
-                    if _new_gemini.strip():
-                        _merged["gemini_api_key"] = _new_gemini.strip()
-                    try:
-                        storage.save_json(_skey, "views", "settings.json", _merged)
-                        st.success("API keys saved in your folder.")
-                    except Exception as e:  # noqa: BLE001
-                        st.error(f"Could not save the keys: {e}")
-
-        # One "Your brand" heading only: render_brand_section prints its own.
-        feat_brand.render_brand_section(st, base_dir=_user_root)
-
-        with st.expander("Scheduled refresh jobs"):
-            st.write("Jobs refresh a Google Sheet or a database table into "
-                     "your folder on a schedule. The app only manages the "
-                     "list below — the refresh itself is done by the separate "
-                     "scheduler process (`python scheduler.py --daemon`), "
-                     "which is not running inside this app. On Streamlit "
-                     "Community Cloud the daemon cannot run at all.")
-            st.write("The default interval below is 3 days — a regular job "
-                     "keeps your data fresh without refreshing every hour.")
-            _jobs_file = scheduler.DEFAULT_JOBS_FILE
-            _payload, _jobs_err = scheduler.load_registry(_jobs_file)
-            if _jobs_err:
-                st.error(f"Could not read the job registry: {_jobs_err}")
-                _payload = {"version": 1, "jobs": []}
-            _all_jobs = _payload.get("jobs", []) if isinstance(_payload, dict) else []
-            _my_idx = [i for i, j in enumerate(_all_jobs)
-                       if isinstance(j, dict) and j.get("user") == _skey]
-            if not _my_idx:
-                st.info("No scheduled jobs yet.")
-            for _pos, _ji in enumerate(_my_idx):
-                _job = _all_jobs[_ji]
-                _c1, _c2, _c3 = st.columns([3, 1, 1])
-                _c1.write(f"**{_job.get('source_type', '?')}** — "
-                          f"{_job.get('source', '')} → {_job.get('target', '')} "
-                          f"· every {_job.get('interval_minutes', 60)} min · "
-                          f"{'enabled' if _job.get('enabled', True) else 'disabled'}"
-                          f"{' · last: ' + str(_job.get('last_status')) if _job.get('last_status') else ''}"
-                          f"{' · ' + str(_job.get('last_error')) if _job.get('last_error') else ''}")
-                if _c2.button("Enable" if not _job.get("enabled", True) else "Disable",
-                              key=f"sched_toggle_{_pos}"):
-                    _all_jobs[_ji]["enabled"] = not _job.get("enabled", True)
-                    try:
-                        scheduler.save_registry(_jobs_file, _payload)
-                        st.rerun()
-                    except Exception as e:  # noqa: BLE001
-                        st.error(f"Could not save the job list: {e}")
-                if _c3.button("Delete", key=f"sched_delete_{_pos}",
-                               type="secondary"):
-                    del _all_jobs[_ji]
-                    try:
-                        scheduler.save_registry(_jobs_file, _payload)
-                        st.rerun()
-                    except Exception as e:  # noqa: BLE001
-                        st.error(f"Could not save the job list: {e}")
-            st.write("Add a job:")
-            _nj_type = st.selectbox("Source type", ["sheets", "db"],
-                                    key="sched_new_type",
-                                    help="'sheets' = a public Google Sheet link. "
-                                         "'db' = a saved connection name (create it "
-                                         "in the Tools tab first).")
-            _nj_source = st.text_input("Source (sheet link, or saved connection name)",
-                                       key="sched_new_source")
-            _nj_target = st.text_input("Save refreshed data to (inside your folder)",
-                                       value="uploads/refreshed.csv",
-                                       key="sched_new_target")
-            _nj_interval = st.number_input("Every (minutes)", min_value=5,
-                                           max_value=10080, value=4320,
-                                           key="sched_new_interval",
-                                           help="Defaults to 3 days (4320 minutes). "
-                                                "Set it shorter if you want fresher data.")
-            if st.button("Add scheduled job", key="sched_new_add"):
-                if not _nj_source.strip() or not _nj_target.strip():
-                    st.error("Fill in the source and the target file first.")
-                else:
-                    _all_jobs.append({
-                        "user": _skey, "source_type": _nj_type,
-                        "source": _nj_source.strip(),
-                        "target": _nj_target.strip(),
-                        "interval_minutes": int(_nj_interval),
-                        "last_run": None, "next_run": None, "enabled": True,
-                    })
-                    try:
-                        scheduler.save_registry(_jobs_file, _payload)
-                        st.success("Job added.")
-                        st.rerun()
-                    except Exception as e:  # noqa: BLE001
-                        st.error(f"Could not save the job list: {e}")
-
-        with st.expander("Shared dashboard links"):
-            try:
-                _shares = storage.load_json(_skey, "views", _SHARES_FILENAME)
-            except Exception:  # noqa: BLE001 - no share links without storage
-                _shares = None
-            if not isinstance(_shares, dict) or not _shares:
-                st.info("No share links yet — create one from the Dashboard tab.")
-            else:
-                for _pos, (_tok, _snap) in enumerate(sorted(_shares.items())):
-                    _c1, _c2 = st.columns([3, 1])
-                    _c1.write(f"`?share={_tok[:12]}…` — "
-                              f"created {_snap.get('created_at', '?')} — "
-                              f"{'REVOKED' if _snap.get('revoked') else 'active'}")
-                    if not _snap.get("revoked"):
-                        if _c2.button("Revoke", key=f"share_revoke_{_pos}",
-                                       type="secondary"):
-                            _shares[_tok]["revoked"] = True
-                            try:
-                                storage.save_json(_skey, "views", _SHARES_FILENAME,
-                                                  _shares)
-                                st.success("Link revoked — it now shows "
-                                           "'revoked or does not exist'.")
-                                st.rerun()
-                            except Exception as e:  # noqa: BLE001
-                                st.error(f"Could not revoke the link: {e}")
-                    else:
-                        _c2.write("—")
-
-        with st.expander("Still needs your details"):
-            st.write("- **Email reports (SMTP):** the Report tab asks for your "
-                     "SMTP server, port, username, app password and recipient. "
-                     "Nothing is sent until you fill those in and press send.")
-            st.write("- **Export to Google Sheets:** needs your Google "
-                     "credentials and the Sheets API — not connected yet.")
-            st.write("- **Live databases:** need your server details and the "
-                     "right driver installed on the server (see the Tools tab).")
-            st.write("- **Hosting:** "
-                     + ("cloud (Streamlit Cloud)" if _backend != "local"
-                        else "this computer")
-                     + ". The app is deployed and running here — see DEPLOY.md "
-                       "for the hosting notes.")
 
 # -------------------------------------------------------------- profile ---
 if "profile" in tab:
@@ -5010,3 +5220,7 @@ if "profile" in tab:
 if "status" in tab:
     if _active_tab == "status":
         feat_status.render_status_section(st)
+
+if "settings" in tab:
+    if _active_tab == "settings":
+        _render_settings_page(st, _user, _skey, _user_root)

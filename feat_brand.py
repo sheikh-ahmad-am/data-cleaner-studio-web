@@ -183,47 +183,104 @@ def brand_for_exports(base_dir=None) -> dict:
 # --------------------------------------------------------------------------
 
 def render_brand_section(st, base_dir=None) -> dict:
-    """Brand settings: name, accent colour and logo.
+    """Brand settings: name, accent colour and logo — as Supabase
+    settings rows inside one bordered card. The Settings page's
+    "Your brand" section heading + sub-line above this card carry
+    the title and description (the way the Profile page's sections
+    do), so this function renders the rows only, not its own
+    heading.
 
     All widget keys start with "brand_". Saves to brand.json (and
     logo.png) on this computer only. Returns the current brand dict.
     The coordinator can call brand_css() / brand_for_exports() with the
-    result to recolour the app and the exports."""
-    st.subheader("Your brand (white-label)")
-    st.write("Put your own name, colour and logo on the app and on the "
-             "reports you download — so a report you send to a client "
-             "looks like yours, not ours. Saved on this computer only "
-             "(brand.json next to the app).")
+    result to recolour the app and the exports. Cancel discards what
+    was typed: it bumps a generation counter (``brand_gen``) so the
+    inputs remount under fresh keys on the next run and render from
+    the saved brand. The remount is the only mechanism that actually
+    clears a text input's displayed text in a live browser — popping
+    the widget keys (inline, via a pending-clear flag, or in an
+    on_click callback) clears the backend value but the frontend keeps
+    showing the typed text (probe50 + the minimal clear-repro proved
+    all four fail in Streamlit 1.66.1; only a key change remounts the
+    input).
+    """
     current = load_brand(base_dir)
+    # Generation counter for the brand inputs (see the docstring):
+    # Cancel bumps it; the inputs then remount from the saved brand.
+    _brand_gen = st.session_state.get("brand_gen", 0)
     st.markdown(brand_css(current["accent"]), unsafe_allow_html=True)
-    name = st.text_input("Brand name", value=current["name"],
-                         key="brand_name",
-                         help="Shown in report and dashboard titles instead "
-                              "of 'Data Cleaner Studio'.")
-    accent = st.color_picker("Accent colour", value=current["accent"],
-                             key="brand_accent",
-                             help="Recolours buttons, links and headings. "
-                                  "Pick any colour you like.")
-    logo_file = st.file_uploader("Logo (PNG or JPG, optional)",
-                                 type=["png", "jpg", "jpeg"],
-                                 key="brand_logo",
-                                 help="Saved as logo.png next to the app. "
-                                      "Leave it empty to keep the current logo.")
-    if current.get("logo"):
-        st.write(f"Current logo: {current['logo']}")
-    if st.button("Save brand", key="brand_save", type="primary"):
-        try:
-            brand = {"name": (name or "").strip() or DEFAULT_NAME,
-                     "accent": accent,
-                     "logo": current.get("logo")}
-            if logo_file is not None:
-                save_logo(logo_file, base_dir)
-                brand["logo"] = LOGO_FILE
-            saved = save_brand(brand, base_dir)
-            st.success(f"Brand saved — reports will now say "
-                       f"'{saved['name']}'.")
-            return saved
-        except Exception as e:  # noqa: BLE001 - show the error, don't crash
-            st.error(f"Could not save the brand: {e}")
-            return current
+    with st.container(border=True):
+        _nl, _nr = st.columns([1.1, 1])
+        with _nl:
+            st.markdown('<div class="dcs-settings-title">Brand name</div>',
+                        unsafe_allow_html=True)
+            st.markdown('<div class="dcs-settings-desc">Shown in report '
+                        'and dashboard titles instead of '
+                        '\'Data Cleaner Studio\'.</div>',
+                        unsafe_allow_html=True)
+        with _nr:
+            name = st.text_input("Brand name", value=current["name"],
+                                 key=f"brand_name_{_brand_gen}",
+                                 help="Shown in report and dashboard titles "
+                                      "instead of 'Data Cleaner Studio'.")
+        _al, _ar = st.columns([1.1, 1])
+        with _al:
+            st.markdown('<div class="dcs-settings-title">Accent colour'
+                        '</div>', unsafe_allow_html=True)
+            st.markdown('<div class="dcs-settings-desc">Recolours buttons, '
+                        'links and headings. Pick any colour you like.'
+                        '</div>', unsafe_allow_html=True)
+        with _ar:
+            accent = st.color_picker("Accent colour", value=current["accent"],
+                                     key=f"brand_accent_{_brand_gen}",
+                                     help="Recolours buttons, links and "
+                                          "headings. Pick any colour you "
+                                          "like.")
+        _ll, _lr = st.columns([1.1, 1])
+        with _ll:
+            st.markdown('<div class="dcs-settings-title">Logo</div>',
+                        unsafe_allow_html=True)
+            st.markdown('<div class="dcs-settings-desc">PNG or JPG, '
+                        'optional. Saved as logo.png next to the app. '
+                        'Leave it empty to keep the current logo.</div>',
+                        unsafe_allow_html=True)
+        with _lr:
+            logo_file = st.file_uploader("Logo (PNG or JPG, optional)",
+                                         type=["png", "jpg", "jpeg"],
+                                         key=f"brand_logo_{_brand_gen}",
+                                         help="Saved as logo.png next to the "
+                                              "app. Leave it empty to keep "
+                                              "the current logo.")
+            if current.get("logo"):
+                st.write(f"Current logo: {current['logo']}")
+        _sp, _cancel_col, _save_col = st.columns([2, 1, 1])
+        with _cancel_col:
+            if st.button("Cancel", key="brand_cancel", type="secondary",
+                         use_container_width=True):
+                # Bump the generation so the inputs remount from the
+                # saved brand on the next run (see the docstring);
+                # drop the old keys.
+                for _k in (f"brand_name_{_brand_gen}",
+                           f"brand_accent_{_brand_gen}",
+                           f"brand_logo_{_brand_gen}"):
+                    st.session_state.pop(_k, None)
+                st.session_state["brand_gen"] = _brand_gen + 1
+                st.rerun()
+        with _save_col:
+            if st.button("Save brand", key="brand_save", type="primary",
+                         use_container_width=True):
+                try:
+                    brand = {"name": (name or "").strip() or DEFAULT_NAME,
+                             "accent": accent,
+                             "logo": current.get("logo")}
+                    if logo_file is not None:
+                        save_logo(logo_file, base_dir)
+                        brand["logo"] = LOGO_FILE
+                    saved = save_brand(brand, base_dir)
+                    st.success(f"Brand saved — reports will now say "
+                               f"'{saved['name']}'.")
+                    return saved
+                except Exception as e:  # noqa: BLE001 - show the error, don't crash
+                    st.error(f"Could not save the brand: {e}")
+                    return current
     return current

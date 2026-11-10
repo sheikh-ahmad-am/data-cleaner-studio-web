@@ -1010,6 +1010,24 @@ div:has(> .dcs-profile-page) ~ div[data-testid="stHorizontalBlock"] > div[data-t
   color: #0e7e4e; text-decoration: none; }
 .dcs-profile-subnav-link.dcs-profile-subnav-active {
   background-color: #f3f3f3; font-weight: 600; }
+/* ---- Settings page: same sub-nav + section shape as the Profile
+   page (Supabase's Project Settings: left sub-nav groups, bordered
+   cards, per-section Save/Cancel). The nav column is the [1, 4]
+   columns layout, so no :has() rule is needed — and none is used:
+   :has() selectors do not take effect live (proven in rounds 8–9),
+   so the Profile page's :has() divider rule is deliberately NOT
+   copied here; the column gap separates nav from content. ---- */
+.stApp .dcs-settings-section { font-size: 15px; font-weight: 600;
+  color: #030303; margin: 1.25rem 0 0.25rem; }
+.stApp .dcs-settings-section-sub { font-size: 13px; color: #696969;
+  margin-bottom: 0.5rem; }
+.stApp .dcs-settings-subnav-link { display: block; padding: 0.35rem 0.75rem;
+  border-radius: 6px; font-size: 13px; color: #030303; }
+.stApp a.dcs-settings-subnav-link { text-decoration: none; }
+.stApp a.dcs-settings-subnav-link:hover { background-color: #f8f8f8;
+  color: #0e7e4e; text-decoration: none; }
+.dcs-settings-subnav-link.dcs-settings-subnav-active {
+  background-color: #f3f3f3; font-weight: 600; }
 /* ---- avatar menu rows: bold email, micro section label, timezone row ---- */
 .dcs-menu-email { font-size: 14px; font-weight: 700; color: #030303;
   padding: 0.35rem 0.75rem; overflow-wrap: anywhere; }
@@ -1666,6 +1684,20 @@ div:has(> .dcs-profile-page) ~ div[data-testid="stHorizontalBlock"] > div[data-t
 .stApp a.dcs-profile-subnav-link:hover { background-color: #2a2d2c;
   color: #4acd8b; text-decoration: none; }
 .dcs-profile-subnav-link.dcs-profile-subnav-active {
+  background-color: #2a2d2c; font-weight: 600; }
+/* ---- Settings page: same sub-nav + section shape as the Profile
+   page (dark twin of the light block above; no :has() rule — see
+   the light block's note). ---- */
+.stApp .dcs-settings-section { font-size: 15px; font-weight: 600;
+  color: #edefee; margin: 1.25rem 0 0.25rem; }
+.stApp .dcs-settings-section-sub { font-size: 13px; color: #989a99;
+  margin-bottom: 0.5rem; }
+.stApp .dcs-settings-subnav-link { display: block; padding: 0.35rem 0.75rem;
+  border-radius: 6px; font-size: 13px; color: #edefee; }
+.stApp a.dcs-settings-subnav-link { text-decoration: none; }
+.stApp a.dcs-settings-subnav-link:hover { background-color: #2a2d2c;
+  color: #4acd8b; text-decoration: none; }
+.dcs-settings-subnav-link.dcs-settings-subnav-active {
   background-color: #2a2d2c; font-weight: 600; }
 /* ---- avatar menu rows: bold email, micro section label, timezone row ---- */
 .dcs-menu-email { font-size: 14px; font-weight: 700; color: #edefee;
