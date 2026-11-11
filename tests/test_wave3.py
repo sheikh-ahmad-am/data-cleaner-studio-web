@@ -72,9 +72,9 @@ def _all_text(at):
     return out
 
 
-def _find_button(at, label):
+def _find_button(at, label, key=None):
     for b in at.button:
-        if b.label == label:
+        if b.label == label and (key is None or b.key == key):
             return b
     raise AssertionError(f"button {label!r} missing; have "
                          f"{[b.label for b in at.button]}")
@@ -533,7 +533,10 @@ def test_tab_persists_across_reruns():
 
 def test_backup_flow_no_crash_no_path_leak():
     """#17 + #20: back up, switch tabs, come back — no crash, and the
-    backup message shows only the file name, never a server path."""
+    backup message shows only the file name, never a server path.
+    (Tools pattern round: the Tools tab is the Integrations grid
+    now, so the backup list lives in the Backups card's detail —
+    one Open click in — not on the tab itself.)"""
     _fresh_backend()
     at = AppTest.from_file(APP)
     at.run()
@@ -548,8 +551,10 @@ def test_backup_flow_no_crash_no_path_leak():
                for v in backed), f"server path leaked: {backed}"
     _goto_section(at, "Tools")
     assert not at.exception, f"exception on Tools tab: {at.exception}"
+    _find_button(at, "Open", key="tools_open_backups").click().run()
+    assert not at.exception, f"exception opening Backups: {at.exception}"
     assert any(b.label == "Restore" for b in at.button), \
-        "Tools tab must list the backup with a Restore button"
+        "Backups detail must list the backup with a Restore button"
     _goto_section(at, "Clean")
     assert not at.exception, f"exception back on Clean tab: {at.exception}"
     print("backup flow OK: no crash across tabs, file name only, no path")
@@ -608,7 +613,10 @@ def test_scheduled_job_empty_source():
 
 def test_schedule_notice_once_and_setup_disabled():
     """#22: the non-Windows notice appears exactly once, and 'Set up
-    auto-clean' is disabled instead of stacking another copy."""
+    auto-clean' is disabled instead of stacking another copy.
+    (Tools pattern round: the Tools tab is the Integrations grid
+    now, so the schedule section lives in the Morning auto-clean
+    card's detail — the card itself already says "Not set up".)"""
     _fresh_backend()
     at = AppTest.from_file(APP)
     at.run()
@@ -616,6 +624,9 @@ def test_schedule_notice_once_and_setup_disabled():
     _load_sample(at)
     _goto_section(at, "Tools")
     assert not at.exception, f"exception on Tools tab: {at.exception}"
+    _find_button(at, "Open", key="tools_open_morning-clean").click().run()
+    assert not at.exception, \
+        f"exception opening Morning auto-clean: {at.exception}"
     notices = [v for v in _all_text(at) if "not Windows" in v]
     assert len(notices) == 1, f"notice must appear once, got {notices}"
     setup = _find_button(at, "Set up auto-clean")

@@ -88,6 +88,7 @@ import feat_quickjump
 import feat_schedule
 import feat_share
 import feat_status
+import feat_tools
 import feat_tutorial
 import scheduler
 import storage
@@ -4326,6 +4327,25 @@ if raw is None:
     if _top_active == _nav_labels["settings"]:
         _render_settings_page(st, _user, _skey, _user_root)
         st.stop()
+    # The Tools tab needs no data either: its cards are the app's
+    # own automations, connections, and exports — otherwise the tab
+    # is unreachable until a file is loaded, and the user lands on
+    # the generic Preview empty state instead of the Tools page
+    # (the Settings round fixed the same reachability gap for the
+    # Settings tab). Same render call as the data-loaded Tools
+    # block below, including the restore / database-load handoff.
+    if _top_active == _nav_labels["tools"]:
+        _tools_df, _tools_name, _tools_kind = feat_tools.render_tools_page(
+            st, base_dir=_user_root, storage_key=_skey, app_dir=_APP_DIR,
+            raw=None, clean=None, kpis=None, actions=None)
+        if _tools_df is not None:
+            _set_raw(_tools_df, _tools_name, kind=_tools_kind)
+            if _tools_kind == "database":
+                _audit("Database load",
+                       f"{len(_tools_df):,} rows from {_tools_name}")
+                st.success(f"Loaded {_tools_name} — clean it in the "
+                           "Clean tab.")
+        st.stop()
     # Guided empty state: what to do first, plus a one-click way to try
     # the sample — the same loader the sidebar "Try the messy sample"
     # button uses, not a second mechanism. On the Preview tab the
@@ -5323,41 +5343,27 @@ if _active_tab == "report":
             feat_quality.render_audit(st)
 
 # ----------------------------------------------------------------- tools ---
+# The Tools tab is Supabase's Integrations page, mapped to this app's
+# own tools (feat_tools): search + Category/Type/Source filters +
+# Featured row + 3-col card grid with badges; a card opens its detail
+# (breadcrumb, badges, the tool's own section, TYPE / BUILT BY /
+# STATUS rail). The sections themselves are unchanged — only their
+# chrome moved into feat_tools.
 if "tools" in tab:
     if _active_tab == "tools":
-        ui_design.section_heading(
-            "Watch folder (automatic cleaning)",
-            sub="The app cleans files while it is open. For hands-free "
-                "cleaning, run this small script: drop a messy file into a "
-                "folder and the cleaned version appears in the output folder "
-                "by itself.")
-        watch_path = _APP_DIR / "watch_folder.py"
-        if watch_path.exists():
-            st.download_button("Download watch_folder.py",
-                               watch_path.read_bytes(),
-                               file_name="watch_folder.py", key="tools_watch_dl")
-        st.code("python watch_folder.py --watch incoming --out cleaned "
-                "--recipe my_recipe.json", language="bash")
-        st.write("Save a recipe from the Clean tab first, then point the "
-                 "script at it. It also works with `--once` to clean the files "
-                 "already waiting in the folder and stop.")
-        feat_schedule.render_schedule_section(st)
-        with st.expander("Shortcuts & morning run"):
-            feat_analyse.render_morning_run(st)
-            feat_analyse.render_shortcuts_panel(st)
-        with st.expander("Backups & live databases"):
-            _restored_tools = feat_share.render_backups(
-                st, base_dir=_user_root, storage_key=_skey,
-                key_prefix="s_backup_tools")
-            if _restored_tools is not None:
-                _set_raw(_restored_tools,
-                         st.session_state.source_name + " (restored from backup)")
-            ui_design.section_heading("Live database connections")
-            _db_df, _db_name = feat_export.render_db_connect(st)
-            if _db_df is not None:
-                _set_raw(_db_df, _db_name, kind="database")
-                _audit("Database load", f"{len(_db_df):,} rows from {_db_name}")
-                st.success(f"Loaded {_db_name} — clean it in the Clean tab.")
+        _tools_df, _tools_name, _tools_kind = feat_tools.render_tools_page(
+            st, base_dir=_user_root, storage_key=_skey, app_dir=_APP_DIR,
+            raw=st.session_state.get("raw"),
+            clean=st.session_state.get("clean"),
+            kpis=st.session_state.get("kpis"),
+            actions=st.session_state.get("actions"))
+        if _tools_df is not None:
+            _set_raw(_tools_df, _tools_name, kind=_tools_kind)
+            if _tools_kind == "database":
+                _audit("Database load",
+                       f"{len(_tools_df):,} rows from {_tools_name}")
+                st.success(f"Loaded {_tools_name} — clean it in the "
+                           "Clean tab.")
 
 # ------------------------------------------------------------- tutorial ---
 if "tutorial" in tab:
