@@ -380,6 +380,58 @@ def test_filter_rules_errors_and_csv():
     print("filter errors + CSV bytes OK")
 
 
+def test_filter_equals_collapses_internal_whitespace():
+    # The shared whitespace rule (engine.normalize_text_values): strip
+    # surrounding whitespace AND collapse internal runs, on both the
+    # rule value and the cell values. Case stays insensitive, as before.
+    df = pd.DataFrame({
+        "customer": ["Aarav Sharma", "Aarav  Sharma", "  Aarav Sharma ",
+                     "Ananya Rao", None],
+        "amount": [10, 20, 30, 40, 50],
+    })
+    # Rule with single spaces matches all three spellings of the name.
+    out = fe.apply_filter_rules(df, [{"column": "customer",
+                                      "condition": "equals",
+                                      "value": "Aarav Sharma"}])
+    assert out["amount"].tolist() == [10, 20, 30], out
+    # Doubled internal spaces in the RULE match too (rule normalized).
+    out = fe.apply_filter_rules(df, [{"column": "customer",
+                                      "condition": "equals",
+                                      "value": "Aarav  Sharma"}])
+    assert out["amount"].tolist() == [10, 20, 30], out
+    # Leading/trailing spaces in the rule match too.
+    out = fe.apply_filter_rules(df, [{"column": "customer",
+                                      "condition": "equals",
+                                      "value": "  Aarav Sharma "}])
+    assert out["amount"].tolist() == [10, 20, 30], out
+    # Case stays insensitive, as before — pin, don't change.
+    out = fe.apply_filter_rules(df, [{"column": "customer",
+                                      "condition": "equals",
+                                      "value": "aarav sharma"}])
+    assert out["amount"].tolist() == [10, 20, 30], out
+    # A genuinely different value still does not match.
+    out = fe.apply_filter_rules(df, [{"column": "customer",
+                                      "condition": "equals",
+                                      "value": "Aarav Gupta"}])
+    assert len(out) == 0, out
+    # "not equals" uses the same normalized comparison.
+    out = fe.apply_filter_rules(df, [{"column": "customer",
+                                      "condition": "not equals",
+                                      "value": "Aarav  Sharma"}])
+    assert out["amount"].tolist() == [40], out
+    # Missing cells never match a comparison rule, even an empty one.
+    out = fe.apply_filter_rules(df, [{"column": "customer",
+                                      "condition": "equals",
+                                      "value": ""}])
+    assert len(out) == 0, out
+    # "contains" shares the same rule: doubled spaces in the query match.
+    out = fe.apply_filter_rules(df, [{"column": "customer",
+                                      "condition": "contains",
+                                      "value": "Aarav  Sharma"}])
+    assert out["amount"].tolist() == [10, 20, 30], out
+    print("filter equals whitespace OK")
+
+
 # --------------------------------------------------------------------------
 # 7. sampling
 # --------------------------------------------------------------------------

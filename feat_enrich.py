@@ -449,9 +449,12 @@ def apply_filter_rules(df: pd.DataFrame, rules: list) -> pd.DataFrame:
     """Keep only the rows matching EVERY rule (AND). A rule is
     {"column", "condition", "value"} with condition one of
     FILTER_CONDITIONS. Numbers compare as numbers when both sides parse;
-    everything else compares as case-insensitive text. Missing cells never
-    match a comparison rule — "is empty" is the rule for those. An empty
-    rule list returns the frame unchanged."""
+    everything else compares as case-insensitive text, whitespace-
+    normalized with the shared rule (engine.normalize_text_values):
+    surrounding whitespace stripped and internal runs collapsed, so
+    "Aarav  Sharma" matches "Aarav Sharma" on either side. Missing
+    cells never match a comparison rule — "is empty" is the rule for
+    those. An empty rule list returns the frame unchanged."""
     if not rules:
         return df.copy()
     mask = pd.Series(True, index=df.index)
@@ -473,9 +476,16 @@ def apply_filter_rules(df: pd.DataFrame, rules: list) -> pd.DataFrame:
             mask &= bad
             continue
         if cond == "contains":
-            text = s.where(s.isna(), s.astype(object).astype(str)).str.lower()
-            mask &= s.notna() & text.str.contains(str(value).lower(),
-                                                  regex=False)
+            # Same shared whitespace rule as the text comparisons below:
+            # "Aarav  Sharma" contains "Aarav Sharma". Missing cells are
+            # swapped to "" first so normalize's dropna drops nothing and
+            # the index stays aligned; s.notna() still guards them out.
+            text = (engine.normalize_text_values(
+                        s.where(s.notna(), "").astype(object).astype(str))
+                    .str.lower())
+            mask &= s.notna() & text.str.contains(
+                re.sub(r"\s+", " ", str(value).strip()).lower(),
+                regex=False)
             continue
         num_s = pd.to_numeric(s, errors="coerce")
         try:
@@ -498,8 +508,19 @@ def apply_filter_rules(df: pd.DataFrame, rules: list) -> pd.DataFrame:
             elif cond == "less than or equal":
                 mask &= comparable & (num_s <= num_v)
         else:
-            text = s.where(s.isna(), s.astype(object).astype(str)).str.strip().str.lower()
-            want = str(value).strip().lower()
+            # Shared whitespace rule (engine.normalize_text_values, as in
+            # search_rows): strip surrounding whitespace AND collapse
+            # internal runs to one space, on both the cell values and the
+            # rule value, so "Aarav  Sharma" matches "Aarav Sharma"
+            # whichever side carries the doubled space. Case stays
+            # insensitive (both sides lowered), as before. Missing cells
+            # are swapped to "" first so normalize's dropna drops nothing
+            # and the index stays aligned; s.notna() still guards them
+            # out of every comparison below.
+            text = (engine.normalize_text_values(
+                        s.where(s.notna(), "").astype(object).astype(str))
+                    .str.lower())
+            want = re.sub(r"\s+", " ", str(value).strip()).lower()
             if cond == "equals":
                 mask &= s.notna() & (text == want)
             elif cond == "not equals":
