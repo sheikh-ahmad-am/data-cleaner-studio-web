@@ -435,11 +435,13 @@ def _render_rail(st, tool, status) -> None:
 # --------------------------------------------------------------------------
 
 def _badges_html(tool, status) -> str:
-    """The card's badge row: BUILT-IN for built-ins, then the live
-    status badge."""
+    """The card's badge row: the live status badge, plus a BUILT-IN
+    chip for built-ins — but never the same chip twice. A built-in
+    tool's status badge already reads BUILT-IN, so adding the source
+    chip too rendered "BUILT-IN BUILT-IN" (live-check find)."""
     text, kind = status["badge"]
     parts = []
-    if tool["source"] == "Built-in":
+    if tool["source"] == "Built-in" and text != "BUILT-IN":
         parts.append(ui_design.pill("BUILT-IN", "mint"))
     parts.append(ui_design.pill(text, kind))
     return " ".join(parts)
@@ -466,12 +468,24 @@ def _render_card(st, tool, status, key_suffix="") -> None:
             st.rerun()
 
 
+def _index_of(value, options) -> int:
+    """The selectbox index for a saved filter value: its position in
+    the options, or 0 ("All" / "Grid") when the value is missing or
+    stale. The caller passes this as index= so the dropdown's
+    displayed value always follows the saved filter."""
+    return options.index(value) if value in options else 0
+
+
 def _render_featured(st, tools, statuses) -> None:
     """The Featured row: the three featured tools as wide cards, the
-    same tools the grid below lists (Supabase does the same)."""
+    same tools the grid below lists (Supabase does the same). The
+    "Featured" label is the row's heading — without it the row reads
+    as three unexplained cards (live-check find)."""
     featured = [t for t in tools if t["featured"]]
     if not featured:
         return
+    st.markdown('<div class="dcs-micro-label">Featured</div>',
+                unsafe_allow_html=True)
     cols = st.columns(len(featured))
     for col, tool in zip(cols, featured):
         with col:
@@ -606,17 +620,35 @@ def render_tools_page(st, base_dir=None, storage_key=None, app_dir=None,
                            placeholder="Search tools")
         _fc, _ft, _fs, _fv = st.columns([2, 2, 2, 1])
         with _fc:
-            _cat = st.selectbox("Category", categories(), key="tools_cat")
+            # index= is the single source of truth for the dropdown's
+            # DISPLAYED value: a selectbox that was absent for a run
+            # (the detail page renders no filters) remounts from its
+            # proto default, so the index must be derived from the
+            # saved filter every render — otherwise the dropdown shows
+            # "All" while the grid still filters by the saved value
+            # (live-check find). Same for Type, Source, View.
+            _cat_opts = categories()
+            _cat = st.selectbox(
+                "Category", _cat_opts, key="tools_cat",
+                index=_index_of(session.get("tools_cat"), _cat_opts))
         with _ft:
-            _typ = st.selectbox("Type", types(), key="tools_type")
+            _typ_opts = types()
+            _typ = st.selectbox(
+                "Type", _typ_opts, key="tools_type",
+                index=_index_of(session.get("tools_type"), _typ_opts))
         with _fs:
-            _src = st.selectbox("Source", sources(), key="tools_source")
+            _src_opts = sources()
+            _src = st.selectbox(
+                "Source", _src_opts, key="tools_source",
+                index=_index_of(session.get("tools_source"), _src_opts))
         with _fv:
             # A selectbox, not two small buttons: the 1-wide column
             # would cut a button label off (the old Tools tab had a
             # cut-off label already — see the E2E notes).
-            _view = st.selectbox("View", ["Grid", "List"],
-                                 key="tools_view")
+            _view_opts = ["Grid", "List"]
+            _view = st.selectbox(
+                "View", _view_opts, key="tools_view",
+                index=_index_of(session.get("tools_view"), _view_opts))
         shown = filter_tools(TOOLS, _q, _cat, _typ, _src)
         st.caption(f"{len(shown)} of {len(TOOLS)} tools")
         _no_filter = (not (_q or "").strip() and _cat == "All"

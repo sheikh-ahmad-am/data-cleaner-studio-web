@@ -370,6 +370,66 @@ def test_tools_open_live_db_detail_shows_driver_state(_tmp_env):
     assert "SQL Server driver: installed." in text
 
 
+def test_badges_builtin_shows_once():
+    """#fix54: a built-in tool's card must show BUILT-IN exactly once
+    — the live check found it twice (source chip + status badge)."""
+    for key in ("watch-folder", "shortcuts", "backups"):
+        tool = next(t for t in feat_tools.TOOLS if t["key"] == key)
+        html = feat_tools._badges_html(tool, feat_tools.tool_status(tool))
+        assert html.count("BUILT-IN") == 1, \
+            f"{key}: BUILT-IN appears {html.count('BUILT-IN')} times: {html}"
+    # A non-built-in keeps its own single status badge, no BUILT-IN.
+    tool = next(t for t in feat_tools.TOOLS if t["key"] == "live-db")
+    html = feat_tools._badges_html(tool, feat_tools.tool_status(tool))
+    assert "BUILT-IN" not in html
+    assert html.count("INSTALLED") == 1
+
+
+def test_tools_featured_row_has_label(_tmp_env):
+    """#fix54: the Featured row must carry a visible "Featured" label
+    — the live check found three bare cards with no heading."""
+    at = AppTest.from_file(APP)
+    at.run()
+    signup(at, "toolsuser12")
+    text = goto_tools(at)
+    assert text.count("Featured") == 1, \
+        "Featured row label missing (or rendered more than once)"
+
+
+def test_tools_category_survives_detail_return(_tmp_env):
+    """#fix54: the Category dropdown must still show the applied
+    filter after a detail return — the live check found it reading
+    "All" while the grid still showed the Storage filter."""
+    at = AppTest.from_file(APP)
+    at.run()
+    signup(at, "toolsuser13")
+    goto_tools(at)
+    # Route A: filter set via the dropdown itself.
+    find_selectbox(at, "Category").set_value("Storage").run()
+    assert not at.exception, f"exception on filter: {at.exception}"
+    assert "2 of 8 tools" in all_text(at)
+    find_button(at, "Open", key="tools_open_backups").click().run()
+    assert not at.exception, f"exception opening detail: {at.exception}"
+    assert "Tools &gt; Backups" in all_text(at)
+    find_button(at, "← All tools").click().run()
+    assert not at.exception, f"exception going back: {at.exception}"
+    assert find_selectbox(at, "Category").value == "Storage", \
+        "Category dropdown must still show Storage after a detail return"
+    assert "2 of 8 tools" in all_text(at)
+    # Route B: filter set via the sidebar Browse button.
+    find_button(at, "All tools", key="tools_nav_all").click().run()
+    assert "8 of 8 tools" in all_text(at)
+    find_button(at, "Storage", key="tools_nav_cat_Storage").click().run()
+    assert not at.exception, f"exception on browse nav: {at.exception}"
+    assert "2 of 8 tools" in all_text(at)
+    find_button(at, "Open", key="tools_open_backups").click().run()
+    find_button(at, "← All tools").click().run()
+    assert not at.exception, f"exception going back: {at.exception}"
+    assert find_selectbox(at, "Category").value == "Storage", \
+        "sidebar-set filter must still show in the dropdown after return"
+    assert "2 of 8 tools" in all_text(at)
+
+
 def test_tools_open_supabase_detail_local(_tmp_env):
     at = AppTest.from_file(APP)
     at.run()
