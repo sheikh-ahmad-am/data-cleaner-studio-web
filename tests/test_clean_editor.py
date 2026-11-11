@@ -305,6 +305,41 @@ def test_clean_run_80_to_77(_tmp_env):
     print("clean run 80 -> 77 OK")
 
 
+def test_clean_row_limit_survives_navigation(_tmp_env):
+    """The Row limit survives leaving the Clean section and coming
+    back (live-check find, 2026-11-11): pick 50, nav Dashboard ->
+    Preview -> Clean, and the selectbox still reads 50 with the
+    grid caption "Showing first 50 of 77 rows". Without
+    persist_state="session" on the selectbox the value fell back
+    to 100 on the return (Streamlit drops a widget's value when it
+    stops rendering), so this test fails on the old code and passes
+    with the fix — AppTest reproduces the prune, the probe pins it
+    in the real DOM too (probe56 R1)."""
+    at = AppTest.from_file(APP).run()
+    assert not at.exception, f"exception on first run: {at.exception}"
+    signup(at, "clean_rowlimit")
+    load_sample(at)
+    goto_clean(at)
+    find_button(at, "Clean my data", key="clean_btn").click().run()
+    assert not at.exception, f"exception cleaning: {at.exception}"
+    assert "Showing first 77 of 77 rows" in all_text(at), \
+        "Results grid caption missing after the run"
+    find_selectbox(at, "Row limit").set_value(50).run()
+    assert not at.exception, f"exception picking 50: {at.exception}"
+    assert find_selectbox(at, "Row limit").value == 50, \
+        "Row limit did not take 50"
+    assert "Showing first 50 of 77 rows" in all_text(at), \
+        "grid caption should follow the picked limit"
+    goto_section(at, "Dashboard")
+    goto_section(at, "Preview")
+    goto_clean(at)
+    assert find_selectbox(at, "Row limit").value == 50, \
+        "Row limit fell back to 100 after navigating away and back"
+    assert "Showing first 50 of 77 rows" in all_text(at), \
+        "grid caption should still show the picked limit after navs"
+    print("clean row limit survives navigation OK")
+
+
 def test_clean_save_creates_recipe(_tmp_env):
     """Save stores the active tab's fixes as a recipe under the tab's
     name, and the flash names it."""

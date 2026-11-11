@@ -430,6 +430,56 @@ def test_tools_category_survives_detail_return(_tmp_env):
     assert "2 of 8 tools" in all_text(at)
 
 
+def test_tools_category_survives_detail_return_after_settled_session(_tmp_env):
+    """#fix56: the Category filter must survive a detail return in a
+    SETTLED session too, not just a fresh one. In the real DOM the
+    filter reset to "All" once the session had done other work
+    (probe56 T5: after the Clean flow the detail return read All,
+    while a fresh session survived — the index= derivation only
+    works while the saved value is still there, and Streamlit drops
+    a widget's value when it stops rendering once runs complete
+    normally). persist_state="session" on the four filter dropdowns
+    is what keeps the value. This test mirrors probe56 T5c: do the
+    Clean flow first (sample + run + a navigation round-trip), then
+    the Tools detail return. If AppTest cannot reproduce the
+    settled reset, this test passes either way and the probe is the
+    pin (same lesson as the Settings key-bump round)."""
+    at = AppTest.from_file(APP)
+    at.run()
+    signup(at, "toolsuser_settled")
+    # Settle the session with the Clean flow (probe56 R1).
+    find_button(at, "Try the messy sample").click().run()
+    assert not at.exception, f"exception loading sample: {at.exception}"
+    assert at.session_state["raw"] is not None, "sample did not load"
+    assert len(at.session_state["raw"]) == 80, "sample should have 80 rows"
+    goto_nav(at, "Clean", key="dcs_nav_clean")
+    find_button(at, "Clean my data", key="clean_btn").click().run()
+    assert not at.exception, f"exception cleaning: {at.exception}"
+    assert at.session_state["clean"] is not None, "clean did not run"
+    find_selectbox(at, "Row limit").set_value(50).run()
+    assert not at.exception, f"exception picking 50: {at.exception}"
+    goto_nav(at, "Dashboard", key="dcs_nav_dashboard")
+    goto_nav(at, "Preview", key="dcs_nav_preview")
+    goto_nav(at, "Clean", key="dcs_nav_clean")
+    assert find_selectbox(at, "Row limit").value == 50, \
+        "row limit must still be 50 after the navigation round-trip"
+    # Then the Tools detail return.
+    goto_tools(at)
+    find_selectbox(at, "Category").set_value("Storage").run()
+    assert not at.exception, f"exception on filter: {at.exception}"
+    assert "2 of 8 tools" in all_text(at)
+    find_button(at, "Open", key="tools_open_backups").click().run()
+    assert not at.exception, f"exception opening detail: {at.exception}"
+    assert "Tools &gt; Backups" in all_text(at)
+    find_button(at, "← All tools").click().run()
+    assert not at.exception, f"exception going back: {at.exception}"
+    assert find_selectbox(at, "Category").value == "Storage", \
+        "Category dropdown must still show Storage after a detail " \
+        "return in a settled session"
+    assert "2 of 8 tools" in all_text(at)
+    print("tools category survives detail return after settled session OK")
+
+
 def test_tools_open_supabase_detail_local(_tmp_env):
     at = AppTest.from_file(APP)
     at.run()

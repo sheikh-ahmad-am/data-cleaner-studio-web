@@ -1863,6 +1863,23 @@ THEME_PREF_KEY = "dcs_theme_pref"
 THEME_PREFS = ("system", "dark", "light")
 THEME_PREF_LABELS = {"system": "System", "dark": "Dark", "light": "Light"}
 
+#: Session flag marking that the theme preference was picked by the
+#: user in this session (avatar-menu radio, sidebar selectbox or
+#: Profile radio — all three write it via set_theme / _on_theme).
+#: The cookie restore (app.py) must never overwrite a picked
+#: preference with a stale cookie snapshot: the snapshot only
+#: becomes visible after the cookie component mounts, so on a
+#: session whose seed has not happened yet a pick made before the
+#: snapshot arrives would otherwise be overwritten by the old
+#: saved value on the next run — the Light that had to be
+#: re-selected per page (live-check find, 2026-11-11; the
+#: deterministic reset never reproduced in the probe, this is the
+#: one real race that can produce it). A seed is not a pick: the
+#: flag is only set by the user controls, never by the restore,
+#: so a late snapshot still seeds a session that only holds
+#: defaults (the Round 3 late-arrival behaviour, unchanged).
+THEME_PREF_USER_SET_KEY = "_theme_pref_user_set"
+
 #: Cookie names for the persisted preferences (Round 3 — the
 #: browser cookies the choices survive a reload in). The cookie
 #: name matches the session key on purpose: one name per choice,
@@ -1956,11 +1973,15 @@ def set_theme(st_module, theme) -> str:
     """Set the theme AND the preference together, so the resolved
     theme and the account menu's radio row agree on the same run.
     ``theme`` is light/dark (the controls that only offer those two);
-    the preference follows it. Returns the resolved theme."""
+    the preference follows it. Returns the resolved theme.
+    Also marks the preference as user-picked in this session, so
+    the cookie restore never overwrites it with a stale snapshot
+    (see THEME_PREF_USER_SET_KEY)."""
     st_mod = st_module or st
     _theme = normalize_theme(theme)
     st_mod.session_state["dcs_theme"] = _theme
     st_mod.session_state[THEME_PREF_KEY] = _theme
+    st_mod.session_state[THEME_PREF_USER_SET_KEY] = True
     return _theme
 
 
@@ -3406,6 +3427,10 @@ def render_avatar_menu(st_module=None, user=None, container=None):
             st_mod.session_state["dcs_theme"] = resolve_theme_pref(
                 _pref,
                 os_dark=bool(st_mod.session_state.get(OS_DARK_KEY)))
+            # A user pick: mark it, so the cookie restore never
+            # overwrites it with a stale snapshot (see
+            # THEME_PREF_USER_SET_KEY).
+            st_mod.session_state[THEME_PREF_USER_SET_KEY] = True
             # The sidebar selectbox is created later in the run (it
             # lives below the top bar), so its key can be written
             # here — it then shows the new theme on this very run

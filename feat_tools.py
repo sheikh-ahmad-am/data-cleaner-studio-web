@@ -620,27 +620,35 @@ def render_tools_page(st, base_dir=None, storage_key=None, app_dir=None,
                            placeholder="Search tools")
         _fc, _ft, _fs, _fv = st.columns([2, 2, 2, 1])
         with _fc:
-            # index= is the single source of truth for the dropdown's
-            # DISPLAYED value: a selectbox that was absent for a run
-            # (the detail page renders no filters) remounts from its
-            # proto default, so the index must be derived from the
-            # saved filter every render — otherwise the dropdown shows
-            # "All" while the grid still filters by the saved value
-            # (live-check find). Same for Type, Source, View.
+            # index= derives the dropdown's DISPLAYED value from the
+            # saved filter every render — but on its own it does NOT
+            # preserve the value: a selectbox that was absent for a
+            # run (the detail page renders no filters) loses its
+            # session value when the run completes (Streamlit drops
+            # a widget's value when it stops rendering), so in a
+            # settled session the detail return reset the filter to
+            # "All" — it only ever survived while runs were still
+            # interrupted by pending cookie writes (probe56 T5,
+            # 2026-11-12). persist_state="session" is what keeps the
+            # value for the whole session; index= then reads it back
+            # on remount. Same for Type, Source, View.
             _cat_opts = categories()
             _cat = st.selectbox(
                 "Category", _cat_opts, key="tools_cat",
-                index=_index_of(session.get("tools_cat"), _cat_opts))
+                index=_index_of(session.get("tools_cat"), _cat_opts),
+                persist_state="session")
         with _ft:
             _typ_opts = types()
             _typ = st.selectbox(
                 "Type", _typ_opts, key="tools_type",
-                index=_index_of(session.get("tools_type"), _typ_opts))
+                index=_index_of(session.get("tools_type"), _typ_opts),
+                persist_state="session")
         with _fs:
             _src_opts = sources()
             _src = st.selectbox(
                 "Source", _src_opts, key="tools_source",
-                index=_index_of(session.get("tools_source"), _src_opts))
+                index=_index_of(session.get("tools_source"), _src_opts),
+                persist_state="session")
         with _fv:
             # A selectbox, not two small buttons: the 1-wide column
             # would cut a button label off (the old Tools tab had a
@@ -648,7 +656,8 @@ def render_tools_page(st, base_dir=None, storage_key=None, app_dir=None,
             _view_opts = ["Grid", "List"]
             _view = st.selectbox(
                 "View", _view_opts, key="tools_view",
-                index=_index_of(session.get("tools_view"), _view_opts))
+                index=_index_of(session.get("tools_view"), _view_opts),
+                persist_state="session")
         shown = filter_tools(TOOLS, _q, _cat, _typ, _src)
         st.caption(f"{len(shown)} of {len(TOOLS)} tools")
         _no_filter = (not (_q or "").strip() and _cat == "All"

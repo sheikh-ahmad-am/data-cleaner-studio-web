@@ -938,8 +938,16 @@ def _restore_prefs_from_cookies():
     _from_cookies = bool(st.session_state.get("_prefs_from_cookies"))
     _seeded_now = False
     if "theme_pref" in _restored:
+        # A preference the user picked in this session is never
+        # overwritten by a cookie snapshot: the snapshot only
+        # becomes visible after the cookie component mounts, so a
+        # pick made before the seed would otherwise be reverted by
+        # the stale saved value on the next run (live-check find,
+        # 2026-11-11). A session that only holds defaults still
+        # seeds from the late snapshot (Round 3 behaviour).
         if (ui_design.THEME_PREF_KEY not in st.session_state
-                or not _from_cookies):
+                or not _from_cookies) and not st.session_state.get(
+                    ui_design.THEME_PREF_USER_SET_KEY):
             st.session_state[ui_design.THEME_PREF_KEY] = (
                 _restored["theme_pref"])
             _seeded_now = True

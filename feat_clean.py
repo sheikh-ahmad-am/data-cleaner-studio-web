@@ -482,8 +482,18 @@ def _render_run_bar(st, ctx):
         _now = session.get("clean_row_limit", 100)
         if _now not in ROW_LIMITS:
             _now = 100
+        # persist_state="session": the selectbox unmounts whenever the
+        # user leaves the Clean section, and Streamlit drops a widget's
+        # value when it stops rendering (the default) — so without
+        # this the limit fell back to 100 on every return (live-check
+        # find, 2026-11-11; the Tools filters happen to survive their
+        # detail return, this one did not). "session" keeps the value
+        # for the whole session, so the limit returns when the user
+        # navigates back; index= still derives the displayed value
+        # from the saved limit each render.
         st.selectbox("Row limit", ROW_LIMITS, key="clean_row_limit",
                      index=ROW_LIMITS.index(_now),
+                     persist_state="session",
                      help="How many rows the Results grid shows.")
     _row_limit = session.get("clean_row_limit", 100)
     with _save:

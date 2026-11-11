@@ -153,6 +153,60 @@ def test_r3_sync_theme_widgets_uses_os_dark():
     print("r3 sync theme widgets uses OS dark OK")
 
 
+def test_r3_set_theme_marks_user_pick():
+    """set_theme (sidebar selectbox + Profile radio) marks the
+    preference as user-picked in this session, so the cookie
+    restore never overwrites it with a stale snapshot."""
+    script = (
+        "import streamlit as st\n"
+        "import ui_design\n"
+        "ui_design.set_theme(st, 'dark')\n")
+    at = AppTest.from_string(script)
+    at.run()
+    assert not at.exception, f"set_theme exception: {at.exception}"
+    assert at.session_state.get("dcs_theme") == "dark"
+    assert at.session_state.get("dcs_theme_pref") == "dark"
+    assert at.session_state.get(
+        ui_design.THEME_PREF_USER_SET_KEY) is True, \
+        "set_theme must mark the preference user-picked"
+    print("r3 set_theme marks user pick OK")
+
+
+def test_r3_avatar_radio_marks_user_pick():
+    """The avatar menu's Theme radio (the control the live check
+    used) marks the preference user-picked too: picking Dark in
+    the menu must set the flag as well as the preference (and a
+    later Light pick keeps it marked). The sync first, as in the
+    real app's top-of-run order, so the radio starts on Light and
+    the Dark pick is a real change (picking the value it already
+    holds fires no callback)."""
+    script = (
+        "import streamlit as st\n"
+        "import ui_design\n"
+        "st.session_state.setdefault('dcs_theme', 'light')\n"
+        "ui_design.sync_theme_widgets()\n"
+        "ui_design.render_avatar_menu(user={'email': 't@example.com'})\n")
+    at = AppTest.from_string(script)
+    at.run()
+    assert not at.exception, f"avatar menu exception: {at.exception}"
+    radio = next((r for r in at.radio
+                  if r.key == "avatar_theme_radio"), None)
+    assert radio is not None, "avatar Theme radio missing"
+    assert radio.value == "light", "radio must start on Light"
+    radio.set_value("dark").run()
+    assert not at.exception, f"avatar pick exception: {at.exception}"
+    assert at.session_state.get("dcs_theme_pref") == "dark"
+    assert at.session_state.get(
+        ui_design.THEME_PREF_USER_SET_KEY) is True, \
+        "avatar radio pick must mark the preference user-picked"
+    at.radio(key="avatar_theme_radio").set_value("light").run()
+    assert at.session_state.get("dcs_theme_pref") == "light"
+    assert at.session_state.get(
+        ui_design.THEME_PREF_USER_SET_KEY) is True, \
+        "the flag must stay set after a later pick"
+    print("r3 avatar radio marks user pick OK")
+
+
 # ---------------------------------------------------------------------------
 # 5-6. Full-app restore from the cookie snapshot
 # ---------------------------------------------------------------------------
@@ -268,6 +322,41 @@ def test_r3_app_restores_when_snapshot_arrives_late():
     print("r3 app restores when snapshot arrives late OK")
 
 
+def test_r3_late_snapshot_never_overwrites_user_pick():
+    """The guard for the live-check theme reset (2026-11-11): when
+    the user picks a theme BEFORE the cookie snapshot arrives (the
+    component mounts after the restore on run 1), the late snapshot
+    must not overwrite the pick with the stale saved value. Run 1
+    holds defaults; the pick is made (preference + user-picked
+    flag, the way set_theme / the avatar radio write them); the
+    snapshot then arrives late carrying the old Dark — the theme
+    stays Light. The rail has no such pick, so it still seeds from
+    the snapshot (Collapsed), proving the snapshot was read and
+    only the picked preference was protected."""
+    at = AppTest.from_file(APP)
+    at.run(timeout=30)
+    assert not at.exception, f"app exception: {at.exception}"
+    assert at.session_state.get("dcs_theme") == "light", \
+        "run 1 with no cookies visible must default to light"
+    # The user picks Light before any snapshot arrives.
+    at.session_state["dcs_theme_pref"] = "light"
+    at.session_state[ui_design.THEME_PREF_USER_SET_KEY] = True
+    # The stale snapshot arrives late (saved Dark from before).
+    at.session_state["cookies"] = {
+        "dcs_theme_pref": "dark", "dcs_rail_mode": "collapsed"}
+    at.run(timeout=30)
+    assert not at.exception, f"app exception: {at.exception}"
+    assert at.session_state.get("dcs_theme") == "light", \
+        "a user-picked Light must not be reverted by a late Dark snapshot"
+    assert at.session_state.get("dcs_theme_pref") == "light"
+    assert at.session_state.get("dcs_rail_mode") == "collapsed", \
+        "the unpicked rail must still seed from the late snapshot"
+    at.run(timeout=30)
+    assert at.session_state.get("dcs_theme") == "light", \
+        "the picked theme must stay Light on later runs too"
+    print("r3 late snapshot never overwrites user pick OK")
+
+
 def test_r3_app_defaults_without_cookies():
     """No cookies at all: light theme, hover rail, no exception —
     a fresh install behaves exactly as before Round 3."""
@@ -286,11 +375,14 @@ if __name__ == "__main__":
     test_r3_restore_pref_values()
     test_r3_os_bridge_snippet()
     test_r3_sync_theme_widgets_uses_os_dark()
+    test_r3_set_theme_marks_user_pick()
+    test_r3_avatar_radio_marks_user_pick()
     test_r3_app_restores_dark_and_collapsed()
     test_r3_app_restores_system_from_os_cookie()
     test_r3_app_restores_system_from_int_os_cookie()
     test_r3_app_restores_light_and_expanded()
     test_r3_app_ignores_invalid_cookies()
     test_r3_app_restores_when_snapshot_arrives_late()
+    test_r3_late_snapshot_never_overwrites_user_pick()
     test_r3_app_defaults_without_cookies()
     print("ALL R3 PERSISTENCE TESTS PASSED")
