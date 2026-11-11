@@ -416,8 +416,9 @@ def test_round2_spinner_default_is_point_seven_seconds():
         "spinner default minimum must be 0.7s"
     assert 'with branded_spinner("Loading the sample file…")' in source, \
         "the sample-load path must go through branded_spinner"
-    assert source.count('with branded_spinner("Loading the sample file…")') == 2, \
-        "both sample-load sites (sidebar + empty-state CTA) must use it"
+    assert source.count('with branded_spinner("Loading the sample file…")') == 3, \
+        ("all three sample-load sites (sidebar + Preview empty-state CTA + "
+         "Clean module's loader _load_messy_sample) must use it")
     print("round 2 spinner default + sample-load wiring OK")
 
 

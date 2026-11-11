@@ -78,6 +78,7 @@ import engine
 import feat_analyse
 import feat_automate
 import feat_brand
+import feat_clean
 import feat_combine
 import feat_enrich
 import feat_export
@@ -2355,6 +2356,31 @@ def _set_raw(df, name, kind="upload", url=None):
     st.session_state.a_snaps = []
 
 
+def _load_messy_sample():
+    """Load the messy sales sample file — the same loader the Preview
+    empty state's "Try the sample data" button uses. The Clean
+    module calls it from its Results empty state and its Reference
+    section."""
+    _sample_path = _APP_DIR / "sample_data" / "messy_sales.csv"
+    with branded_spinner("Loading the sample file…"):
+        _set_raw(engine.load_file("messy_sales.csv",
+                                  _sample_path.read_bytes()),
+                 "messy_sales.csv (sample)", kind="sample")
+    st.session_state["last_upload"] = None
+    st.rerun()
+
+
+def _persist_recipes():
+    """Persist the session's saved recipes (recipes/recipes.json) —
+    best-effort, never stops the app. The Recipes & templates
+    expander used to inline this; the Clean module calls it."""
+    try:
+        storage.save_json(_skey, "recipes", "recipes.json",
+                          list(st.session_state.get("a_recipes") or []))
+    except Exception:  # noqa: BLE001 - recipe save must never stop the app
+        pass
+
+
 def _audit(step, detail):
     feat_quality.record_audit(st.session_state, step, detail)
 
@@ -4346,6 +4372,31 @@ if raw is None:
                 st.success(f"Loaded {_tools_name} — clean it in the "
                            "Clean tab.")
         st.stop()
+    # The Clean tab needs no data either: its editor is the run
+    # definition, and the Results tab names the next step — otherwise
+    # the tab is unreachable until a file is loaded, and the user
+    # lands on the generic Preview empty state instead of the Clean
+    # page (the Tools round fixed the same reachability gap for the
+    # Tools tab). Same render call as the data-loaded Clean block
+    # below.
+    if _top_active == _nav_labels["clean"]:
+        feat_clean.render_clean_page(
+            st, {
+                "raw": None, "clean": None,
+                "source_name": st.session_state.get("source_name"),
+                "uploaded": uploaded,
+                "base_dir": _user_root, "storage_key": _skey,
+                "app_dir": _APP_DIR,
+                "run_label": _t("clean_my_data"),
+                "apply_new_clean": _apply_new_clean,
+                "audit": _audit,
+                "save_copy": _save_cleaned_copy,
+                "set_raw": _set_raw,
+                "spinner": branded_spinner,
+                "load_sample": _load_messy_sample,
+                "persist_recipes": _persist_recipes,
+            })
+        st.stop()
     # Guided empty state: what to do first, plus a one-click way to try
     # the sample — the same loader the sidebar "Try the messy sample"
     # button uses, not a second mechanism. On the Preview tab the
@@ -4820,205 +4871,22 @@ if _active_tab == "clean":
     # the clean, until the next navigation). The rerun at the end
     # of the section (below) fixes it when the tick flips.
     _clean_had = st.session_state.clean is not None
-    feat_automate.render_undo(st)
-    restored = feat_share.render_backups(
-        st, df=raw, source_name=st.session_state.source_name,
-        base_dir=_user_root, storage_key=_skey,
-        key_prefix="s_backup_clean")
-    if restored is not None:
-        _set_raw(restored,
-                 st.session_state.source_name + " (restored from backup)")
-        raw = restored
-        clean = None
-        filtered = None
-    ui_design.section_heading(
-        "Clean my data",
-        sub="Tick what to fix, then press the button. Every fix is listed "
-            "in the log below, so you can check the work.")
-    opts = {
-        "tidy_names": st.checkbox("Tidy column names", value=True),
-        "strip": st.checkbox("Strip extra spaces from text", value=True),
-        "drop_empty": st.checkbox("Drop empty columns and rows", value=True),
-        "fix_numbers": st.checkbox("Fix numbers stored as text (₹, $, %, commas)",
-                                   value=True),
-        "parse_dates": st.checkbox("Parse dates", value=True),
-        "fix_categories": st.checkbox("Set categories to one case", value=True),
-        "drop_dupes": st.checkbox("Drop duplicate rows", value=True),
-        "fill_missing": st.checkbox("Fill missing values", value=True),
-    }
-    if ui_design.icon_button(_t("clean_my_data"), "clean", kind="primary",
-                             key="clean_btn"):
-        feat_automate.push_snapshot(st.session_state, "Before cleaning")
-        _opts = feat_automate.to_engine_opts(opts)
-        with branded_spinner("Cleaning your data…"):
-            if (len(raw) > 100_000 and uploaded is not None
-                    and uploaded.name.lower().endswith(".csv")):
-                # Big file: clean in chunks (same result, less memory).
-                cleaned, actions = engine.clean_csv_chunked(
-                    uploaded.getvalue(), _opts)
-            else:
-                cleaned, actions = engine.clean(raw, _opts)
-        st.session_state.clean = cleaned
-        st.session_state.actions = actions
-        st.session_state.kpis = engine.auto_kpis(cleaned)
-        st.session_state.clean_opts = opts
-        _audit("Clean", f"{len(raw):,} -> {len(cleaned):,} rows")
-        _save_cleaned_copy(cleaned, st.session_state.source_name)
-        clean = cleaned
-        filtered = cleaned
-    _samp = feat_enrich.render_sampling(
-        st, raw,
-        clean_opts=feat_automate.to_engine_opts(opts))
-    if _samp is not None:
-        _full_clean, _full_actions = engine.clean(raw, _samp["clean_opts"])
-        feat_automate.push_snapshot(st.session_state, "Before sampling apply")
-        st.session_state.clean = _full_clean
-        st.session_state.actions = _full_actions
-        st.session_state.kpis = engine.auto_kpis(_full_clean)
-        _audit("Sampling applied to full file", f"{len(raw):,} rows")
-        _save_cleaned_copy(_full_clean, st.session_state.source_name)
-        clean = _full_clean
-        filtered = _full_clean
-    if clean is not None:
-        st.success(f"Done: {len(raw):,} rows -> {len(clean):,} rows, "
-                   f"{len(raw.columns)} -> {len(clean.columns)} columns.")
-        ui_design.section_heading("What was fixed")
-        for step, detail in st.session_state.actions:
-            st.write(f"- **{step}:** {detail}")
-        st.dataframe(clean.head(100), width="stretch")
-
-        ui_design.section_heading(
-            "Fix similar names (fuzzy matching)",
-            sub="Finds misspellings like Aarav / Arav and Delhi / Dehli "
-                "and merges them into one spelling. You review the groups "
-                "first — nothing merges without your word.")
-        text_cols = [c for c in clean.columns
-                     if str(clean[c].dtype) in ("object", "str")
-                     and 1 < clean[c].nunique() <= 500]
-        if text_cols:
-            fcol = st.selectbox("Column", text_cols, key="fuzzy_col")
-            fthr = st.slider("How similar must names be? (higher = stricter)",
-                             0.70, 0.95, 0.85, 0.01, key="fuzzy_thr")
-            if st.button("Find similar names", key="fuzzy_find"):
-                st.session_state["fuzzy_groups"] = engine.fuzzy_groups(
-                    clean[fcol], fthr)
-                st.session_state["fuzzy_col_used"] = fcol
-            groups = st.session_state.get("fuzzy_groups")
-            if groups is not None:
-                if len(groups) == 0:
-                    st.info("No similar names found in that column.")
-                else:
-                    for g in groups:
-                        members = ", ".join(f"{v} ({n:,})"
-                                            for v, n in g["members"])
-                        st.write(f"→ **{g['canonical']}**: {members}")
-                    if st.button("Merge these names",
-                                 key="fuzzy_apply"):
-                        mapping = {}
-                        for g in groups:
-                            for v, _ in g["members"][1:]:
-                                mapping[v] = g["canonical"]
-                        feat_automate.push_snapshot(
-                            st.session_state, "Before fuzzy merge")
-                        new_clean = engine.apply_fuzzy(
-                            clean, st.session_state["fuzzy_col_used"], mapping)
-                        st.session_state["clean"] = new_clean
-                        st.session_state["actions"] = (
-                            st.session_state["actions"]
-                            + [(f"Fuzzy merge: {st.session_state['fuzzy_col_used']}",
-                              f"{len(mapping)} spelling(s) merged")])
-                        st.session_state["kpis"] = engine.auto_kpis(new_clean)
-                        st.session_state["fuzzy_groups"] = None
-                        _audit("Fuzzy merge",
-                               f"{len(mapping)} spelling(s) merged")
-                        clean = new_clean
-                        filtered = new_clean
-                        st.success(f"Merged {len(mapping)} spelling(s) into "
-                                   "their main form.")
-        else:
-            st.info("No text column with a manageable number of values "
-                    "in this file.")
-
-        with st.expander("More fixes (column type, phones, special characters)"):
-            _ov = feat_share.render_type_override(st, clean)
-            if _ov is not None:
-                _ov_col = st.session_state.get("s_type_col", "?")
-                _ov_kind = st.session_state.get("s_type_kind", "?")
-                clean = _apply_new_clean(
-                    _ov, [("Column type override",
-                           f"{_ov_col} forced to {_ov_kind}")],
-                    "Column type override")
-                filtered = clean
-            _nd, _na = feat_share.render_standardize_phones(st, clean)
-            if _nd is not None:
-                clean = _apply_new_clean(_nd, _na, "Standardize phones")
-                filtered = clean
-            _nd, _na = feat_share.render_strip_specials(st, clean)
-            if _nd is not None:
-                clean = _apply_new_clean(_nd, _na, "Strip special characters")
-                filtered = clean
-
-        with st.expander("Recipes & templates"):
-            new_df, new_actions = feat_automate.render_recipes(st, raw)
-            if new_df is not None:
-                clean = _apply_new_clean(new_df, new_actions, "Recipe applied",
-                                         replace_actions=True)
-                filtered = clean
-            new_df, new_actions = feat_automate.render_templates(st)
-            if new_df is not None:
-                clean = _apply_new_clean(new_df, new_actions, "Template applied",
-                                         replace_actions=True)
-                filtered = clean
-            _recipes = st.session_state.get("a_recipes") or []
-            _picked_name = st.session_state.get("a_recipe_select")
-            _recipe = (next((r for r in _recipes if r["name"] == _picked_name),
-                            None) if _picked_name else None)
-            _imported = feat_analyse.render_share_recipe(st, _recipe)
-            if _imported is not None:
-                _recipes[:] = [r for r in _recipes
-                               if r["name"] != _imported["name"]]
-                _recipes.append(_imported)
-            # Persist recipes per user (recipes/recipes.json).
-            try:
-                storage.save_json(_skey, "recipes", "recipes.json",
-                                  list(st.session_state.get("a_recipes") or []))
-            except Exception:  # noqa: BLE001 - recipe save must never stop the app
-                pass
-
-        with st.expander("Fix values"):
-            new_df, new_actions = feat_automate.render_find_replace(st, clean)
-            if new_df is not None:
-                clean = _apply_new_clean(new_df, new_actions, "Find and replace")
-                filtered = clean
-            new_df, new_actions = feat_combine.render_calculated(st, clean)
-            if new_df is not None:
-                clean = _apply_new_clean(new_df, new_actions, "Calculated column")
-                filtered = clean
-            new_df, new_actions = feat_quality.render_outliers(st, clean)
-            if new_df is not None:
-                clean = _apply_new_clean(new_df, new_actions, "Outliers")
-                filtered = clean
-            new_df, new_actions = feat_quality.render_near_dupes(st, clean)
-            if new_df is not None:
-                clean = _apply_new_clean(new_df, new_actions, "Near-duplicates merged")
-                filtered = clean
-            feat_quality.render_validation(st, clean)
-            _nd, _na = feat_enrich.render_split_merge(st, clean)
-            if _nd is not None:
-                clean = _apply_new_clean(_nd, _na, "Split / merge columns")
-                filtered = clean
-            _nd, _na = feat_enrich.render_date_intelligence(st, clean)
-            if _nd is not None:
-                clean = _apply_new_clean(_nd, _na, "Date intelligence")
-                filtered = clean
-            _nd, _na = feat_enrich.render_currency(st, clean)
-            if _nd is not None:
-                clean = _apply_new_clean(_nd, _na, "Currency conversion")
-                filtered = clean
-            feat_enrich.render_masking(st, clean)
-
-        with st.expander("Clean many files at once"):
-            feat_automate.render_bulk(st)
+    clean, filtered = feat_clean.render_clean_page(
+        st, {
+            "raw": raw, "clean": clean,
+            "source_name": st.session_state.source_name,
+            "uploaded": uploaded,
+            "base_dir": _user_root, "storage_key": _skey,
+            "app_dir": _APP_DIR,
+            "run_label": _t("clean_my_data"),
+            "apply_new_clean": _apply_new_clean,
+            "audit": _audit,
+            "save_copy": _save_cleaned_copy,
+            "set_raw": _set_raw,
+            "spinner": branded_spinner,
+            "load_sample": _load_messy_sample,
+            "persist_recipes": _persist_recipes,
+        })
     # Round 3d: if this section flipped the Clean tick (data
     # cleaned for the first time, or a restore/undo cleared it),
     # rerun now so the strip — rendered at the top of the run,
