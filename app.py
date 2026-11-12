@@ -82,6 +82,7 @@ import feat_clean
 import feat_combine
 import feat_enrich
 import feat_export
+import feat_join
 import feat_mobile
 import feat_profile
 import feat_quality
@@ -4420,6 +4421,18 @@ if raw is None:
                 "persist_recipes": _persist_recipes,
             })
         st.stop()
+    # The Join tab opens with no data loaded too: the sub-nav and the
+    # empty state with its "Try the sample data" CTA — the same
+    # reachability fix as Tools and Clean. The tables, the visualizer
+    # and the join form all need a loaded file, so they stay behind
+    # the empty state until one exists.
+    if _top_active == _nav_labels["join"]:
+        feat_join.render_join_page(
+            st, raw=None, clean=None,
+            source_name=st.session_state.get("source_name"),
+            load_sample=_load_messy_sample,
+            set_raw=_set_raw, audit=_audit)
+        st.stop()
     # Guided empty state: what to do first, plus a one-click way to try
     # the sample — the same loader the sidebar "Try the messy sample"
     # button uses, not a second mechanism. On the Preview tab the
@@ -4830,59 +4843,17 @@ if _active_tab == "preview":
     raw, clean, filtered = _render_preview_editor(st, raw, clean, filtered)
 
 # ------------------------------------------------------------------ join ---
+# Join tab as Supabase's Database page (feat_join): Tables list,
+# table detail, Schema Visualizer, and the join-two-files form —
+# moved verbatim into feat_join (same labels, keys, join_frames
+# call, preview lines, "Use joined data" behaviour).
 if "join" in tab:
     if _active_tab == "join":
-        ui_design.section_heading(
-            "Join two files",
-            sub="Combine this file with a second one on a shared column — "
-                "like a customer ID or order ID. Nothing changes until you "
-                "press 'Use joined data'.")
-        joined_file = st.file_uploader(
-            "Second file (CSV, Excel or JSON)", type=["csv", "xlsx", "xls", "json"],
-            key="join_upload")
-        if joined_file is not None:
-            try:
-                right = engine.load_file(joined_file.name, joined_file.getvalue())
-            except Exception as e:  # noqa: BLE001
-                st.error(f"Could not read {joined_file.name}: {e}")
-                right = None
-            if right is not None:
-                c1, c2, c3 = st.columns(3)
-                left_key = c1.selectbox("Key in this file", list(raw.columns),
-                                        key="join_left_key")
-                right_key = c2.selectbox("Key in second file", list(right.columns),
-                                         key="join_right_key")
-                how_label = c3.selectbox(
-                    "How to join",
-                    ["Left (keep all rows from this file)",
-                     "Inner (only matching rows)",
-                     "Outer (keep everything)"],
-                    key="join_how")
-                how = {"Left (keep all rows from this file)": "left",
-                       "Inner (only matching rows)": "inner",
-                       "Outer (keep everything)": "outer"}[how_label]
-                if st.button("Preview join", key="join_preview_btn"):
-                    try:
-                        st.session_state["join_result"] = engine.join_frames(
-                            raw, right, left_key, right_key, how)
-                    except Exception as e:  # noqa: BLE001
-                        st.error(str(e))
-                preview = st.session_state.get("join_result")
-                if preview:
-                    joined, info = preview
-                    st.write(f"Left: {info['left_rows']:,} rows  ·  "
-                             f"Right: {info['right_rows']:,} rows  →  "
-                             f"Joined: {info['joined_rows']:,} rows")
-                    st.write(f"Matched keys: {info['matched_keys']:,}  ·  "
-                             f"Only in this file: {info['left_only']:,}  ·  "
-                             f"Only in second file: {info['right_only']:,}")
-                    st.dataframe(joined.head(100), width="stretch")
-                    if st.button("Use joined data", type="primary", key="join_use"):
-                        _set_raw(joined,
-                                 f"{st.session_state['source_name']} + {joined_file.name}")
-                        st.session_state["join_result"] = None
-                        _audit("Join", f"{info['joined_rows']:,} rows")
-                        st.success("Joined — now clean it in the Clean tab.")
+        feat_join.render_join_page(
+            st, raw=raw, clean=clean,
+            source_name=st.session_state.source_name,
+            load_sample=_load_messy_sample,
+            set_raw=_set_raw, audit=_audit)
 
 # ----------------------------------------------------------------- clean ---
 if _active_tab == "clean":
