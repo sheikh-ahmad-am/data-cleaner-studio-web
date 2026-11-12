@@ -54,7 +54,10 @@ Public API (presentation only — no behaviour changes):
     inline-SVG twin for HTML the widgets cannot reach.
   * ``THEME_SELECT_KEY`` / ``THEME_RADIO_KEY`` — the theme controls'
     widget keys (never ``"dcs_theme"`` itself, which is the plain
-    session key the stylesheet follows); ``sync_theme_widgets`` syncs
+    session key the stylesheet follows); the radio's live key is
+    ``theme_radio_key(pref)`` (``THEME_RADIO_KEY`` namespaced by the
+    preference, fix round 57 — it remounts on a flip so no stale
+    frontend value survives). ``sync_theme_widgets`` syncs
     them to the theme in effect before any theme widget is created,
     so the sidebar dropdown can never show "Light" while the page is
     dark.
@@ -1839,6 +1842,26 @@ THEME_SELECT_KEY = "dcs_theme_select"
 THEME_RADIO_KEY = "avatar_theme_radio"
 PROFILE_THEME_RADIO_KEY = "profile_theme_radio"
 
+
+def theme_radio_key(pref) -> str:
+    """The avatar menu radio's widget key for a preference (fix
+    round 57): the key is namespaced by the preference in effect,
+    so when the preference changes via another control the radio
+    REMOUNTS under a new key instead of keeping the frontend value
+    it held inside the closed popover. That stale value reverted
+    the pick on the next user-triggered rerun (live-check find,
+    2026-11-12: the radio reported 'light' after a sidebar Dark
+    pick and overwrote the preference on navigation). A fresh key
+    has no stale frontend state, so the menu always shows the
+    preference in effect and no stale echo can fire. The old key
+    is orphaned in session state (at most three exist, one per
+    preference) and is re-written with the right value if the
+    preference ever returns to it. The sidebar selectbox needs no
+    such key: it does not render while the rail is collapsed, so
+    it is either visible (and follows sync writes) or freshly
+    created on expand."""
+    return f"{THEME_RADIO_KEY}_{normalize_theme_pref(pref)}"
+
 #: The resolved theme the sync last wrote into the resolved-theme
 #: controls (sidebar selectbox, Profile radio) — Round 3. Those two
 #: controls own only the RESOLVED theme, and their ``on_change``
@@ -2019,7 +2042,7 @@ def sync_theme_widgets(st_module=None) -> None:
         _pref, os_dark=bool(st_mod.session_state.get(OS_DARK_KEY)))
     st_mod.session_state["dcs_theme"] = current
     st_mod.session_state[THEME_SELECT_KEY] = current
-    st_mod.session_state[THEME_RADIO_KEY] = _pref
+    st_mod.session_state[theme_radio_key(_pref)] = _pref
     st_mod.session_state[PROFILE_THEME_RADIO_KEY] = current
     # The resolved value just written into the resolved-theme
     # controls — their on_change callbacks ignore a pick that
@@ -2100,7 +2123,7 @@ def render_login_theme_toggle(st_module=None) -> None:
         # widget exists on the login screen, so writing their keys
         # here is safe).
         st_mod.session_state[THEME_SELECT_KEY] = _new
-        st_mod.session_state[THEME_RADIO_KEY] = _new
+        st_mod.session_state[theme_radio_key(_new)] = _new
         st_mod.rerun()
 
 
@@ -3415,6 +3438,10 @@ def render_avatar_menu(st_module=None, user=None, container=None):
         # defined, so the callback's default is the pref in effect.
         _pref_current = normalize_theme_pref(
             st_mod.session_state.get(THEME_PREF_KEY, current))
+        # Namespaced by the preference in effect (fix round 57):
+        # the radio remounts when the preference changes via
+        # another control, so no stale frontend value survives.
+        _radio_key = theme_radio_key(_pref_current)
 
         def _on_theme():
             # The radio owns the PREFERENCE (system / dark / light);
@@ -3422,7 +3449,7 @@ def render_avatar_menu(st_module=None, user=None, container=None):
             # follows ("System" follows the OS reading when one
             # exists, Light without one).
             _pref = normalize_theme_pref(
-                st_mod.session_state.get(THEME_RADIO_KEY, _pref_current))
+                st_mod.session_state.get(_radio_key, _pref_current))
             st_mod.session_state[THEME_PREF_KEY] = _pref
             st_mod.session_state["dcs_theme"] = resolve_theme_pref(
                 _pref,
@@ -3443,11 +3470,13 @@ def render_avatar_menu(st_module=None, user=None, container=None):
         # same reason as the selectbox re-sync in
         # render_theme_toggle: the theme may have flipped earlier in
         # this run, and the top-of-run sync predates that flip.
-        st_mod.session_state[THEME_RADIO_KEY] = _pref_current
+        # Written under the namespaced key (fix round 57), so the
+        # fresh widget takes the preference in effect.
+        st_mod.session_state[_radio_key] = _pref_current
         st_mod.radio(
             "Theme", options=list(THEME_PREFS),
             format_func=lambda t: THEME_PREF_LABELS.get(t, t),
-            key=THEME_RADIO_KEY, on_change=_on_theme,
+            key=_radio_key, on_change=_on_theme,
             label_visibility="collapsed")
         st_mod.markdown('<div class="dcs-menu-divider"></div>',
                         unsafe_allow_html=True)

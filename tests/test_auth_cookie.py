@@ -333,7 +333,11 @@ def _run_flow() -> None:
         find_button(bob, "Create account").click().run()
         assert not bob.exception, f"exception on bob signup: {bob.exception}"
         assert logged_in(bob), "signup must log bob straight in"
-        bob.radio(key="avatar_theme_radio").set_value("dark").run()
+        theme_radio = next(
+            (r for r in bob.radio
+             if r.key.startswith("avatar_theme_radio")), None)
+        assert theme_radio is not None, "avatar Theme radio missing"
+        theme_radio.set_value("dark").run()
         assert not bob.exception, f"exception on theme pick: {bob.exception}"
         assert bob.session_state.get("dcs_theme") == "dark"
         assert bob.session_state.get("dcs_theme_pref") == "dark"

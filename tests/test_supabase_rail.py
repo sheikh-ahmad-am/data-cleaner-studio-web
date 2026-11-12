@@ -426,7 +426,9 @@ def test_theme_sync_login_toggle_writes_both_widget_keys():
         "ui_design.render_avatar_menu(user={'username': 'alice1'})\n"
         "st.write(f\"theme={st.session_state.get('dcs_theme')} \"\n"
         "         f\"select={st.session_state.get('dcs_theme_select')} \"\n"
-        "         f\"radio={st.session_state.get('avatar_theme_radio')}\")\n")
+        "         f\"radio={st.session_state.get(\n"
+        "             ui_design.theme_radio_key(\n"
+        "                 st.session_state.get('dcs_theme_pref', 'light')))}\")\n")
     at = AppTest.from_string(script)
     at.run()
     assert not at.exception, f"login toggle exception: {at.exception}"
@@ -440,7 +442,8 @@ def test_theme_sync_login_toggle_writes_both_widget_keys():
         "login toggle must flip dcs_theme to dark"
     assert at.session_state.get("dcs_theme_select") == "dark", \
         "login toggle must write the selectbox key too"
-    assert at.session_state.get("avatar_theme_radio") == "dark", \
+    assert at.session_state.get(
+        ui_design.theme_radio_key("dark")) == "dark", \
         "login toggle must write the radio key too"
     assert any("theme=dark select=dark radio=dark" in v
                for v in vals(at.markdown)), \

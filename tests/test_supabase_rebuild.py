@@ -219,14 +219,16 @@ def test_avatar_menu_theme_radio_flips_theme():
     assert not any("<a " in v and "a@example.com" in v
                    for v in vals(at.markdown)), \
         "avatar menu email must not be a link"
-    theme = next(r for r in at.radio if r.key == "avatar_theme_radio")
+    theme = next(r for r in at.radio
+                 if r.key.startswith("avatar_theme_radio"))
     assert theme.value == "light", \
         f"theme radio should start light, got {theme.value!r}"
     theme.set_value("dark").run()
     assert not at.exception, f"exception flipping theme: {at.exception}"
     assert at.session_state.get("dcs_theme") == "dark", \
         "avatar theme radio must flip dcs_theme to dark"
-    theme = next(r for r in at.radio if r.key == "avatar_theme_radio")
+    theme = next(r for r in at.radio
+                 if r.key.startswith("avatar_theme_radio"))
     assert theme.value == "dark", "radio must follow the flip to dark"
     theme.set_value("light").run()
     assert at.session_state.get("dcs_theme") == "light", \
@@ -251,7 +253,8 @@ def test_theme_sync_both_directions():
         "ui_design.render_theme_toggle()\n"
         "ui_design.render_avatar_menu(user={'username': 'alice1'})\n"
         "sel = st.session_state.get('dcs_theme_select')\n"
-        "rad = st.session_state.get('avatar_theme_radio')\n"
+        "rad = st.session_state.get(ui_design.theme_radio_key(\n"
+        "    st.session_state.get('dcs_theme_pref', 'light')))\n"
         "st.write(f\"theme={st.session_state.get('dcs_theme')} \"\n"
         "         f\"select={sel} radio={rad}\")\n")
     # Start dark: both widgets must read dark.
@@ -271,7 +274,8 @@ def test_theme_sync_both_directions():
                for v in vals(at.markdown)), \
         "selectbox flip must sync the radio too"
     # Flip the radio to dark: dcs_theme AND the selectbox follow.
-    rad = next(r for r in at.radio if r.key == "avatar_theme_radio")
+    rad = next(r for r in at.radio
+               if r.key.startswith("avatar_theme_radio"))
     rad.set_value("dark").run()
     assert at.session_state.get("dcs_theme") == "dark", \
         "radio flip must write dcs_theme"

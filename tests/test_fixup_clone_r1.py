@@ -328,7 +328,8 @@ def test_clone_r1_avatar_menu_theme_radio_has_system():
     at = AppTest.from_string(script)
     at.run()
     assert not at.exception, f"avatar menu exception: {at.exception}"
-    radio = next(r for r in at.radio if r.key == "avatar_theme_radio")
+    radio = next(r for r in at.radio
+                 if r.key.startswith("avatar_theme_radio"))
     assert list(radio.options) == ["System", "Dark", "Light"], \
         f"avatar theme radio must offer System/Dark/Light, got {list(radio.options)!r}"
     assert radio.value == "light"
@@ -337,7 +338,9 @@ def test_clone_r1_avatar_menu_theme_radio_has_system():
     assert at.session_state.get("dcs_theme") == "dark"
     assert at.session_state.get("dcs_theme_pref") == "dark"
     # Pick System: theme light, pref system.
-    at.radio(key="avatar_theme_radio").set_value("system").run()
+    radio = next(r for r in at.radio
+                 if r.key.startswith("avatar_theme_radio"))
+    radio.set_value("system").run()
     assert at.session_state.get("dcs_theme") == "light", \
         "System with no OS reading must resolve the theme to Light"
     assert at.session_state.get("dcs_theme_pref") == "system"
@@ -356,13 +359,15 @@ def test_clone_r1_sync_theme_widgets_resolves_pref():
         "ui_design.sync_theme_widgets()\n")
     at.run()
     assert at.session_state.get("dcs_theme") == "light"
-    assert at.session_state.get("avatar_theme_radio") == "system"
+    assert at.session_state.get(
+        ui_design.theme_radio_key("system")) == "system"
     assert at.session_state.get("dcs_theme_select") == "light"
     assert at.session_state.get("profile_theme_radio") == "light"
     at.session_state["dcs_theme_pref"] = "dark"
     at.run()
     assert at.session_state.get("dcs_theme") == "dark"
-    assert at.session_state.get("avatar_theme_radio") == "dark"
+    assert at.session_state.get(
+        ui_design.theme_radio_key("dark")) == "dark"
     assert at.session_state.get("dcs_theme_select") == "dark"
     print("clone r1 sync theme widgets resolves pref OK")
 
@@ -480,7 +485,7 @@ def test_clone_r1_full_app_top_bar_renders(_tmp_env):
     # by key, not by label.
     _r6.find_button(at, "", key="topbar_help")
     # The avatar menu renders (its Theme radio is in the tree).
-    assert any(r.key == "avatar_theme_radio" for r in at.radio), \
+    assert any(r.key.startswith("avatar_theme_radio") for r in at.radio), \
         "the avatar menu must render"
     print("clone r1 full app top bar renders OK")
 

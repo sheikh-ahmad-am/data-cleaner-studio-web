@@ -1244,13 +1244,28 @@ def _controller_cookie_get(name):
 def _cookie_get(name):
     """Cookie value, or None when cookies are unavailable/empty.
 
-    The request cookies come first: they are present on the very
-    first run after a page load/refresh, when the controller's
-    snapshot is still empty (its iframe has not answered yet)."""
+    The controller's snapshot comes first: it is the freshest read
+    (it picks up cookies written during this session after a
+    refresh), while the request cookies are the session-start
+    snapshot — a cookie written mid-session does NOT appear there
+    until the next page load. Reading the request cookies first
+    made the preference verify cycle spin on a stale value and,
+    worse, made ``_ensure_one_pref_cookie`` skip a write as
+    "already equal" when the browser still held the old value
+    (live-check find, 2026-11-12: a sidebar Dark pick never
+    reached the browser cookie, so a reload reverted it). The
+    request cookies remain the fallback for the first run, when
+    the component's snapshot is still empty (its iframe has not
+    answered yet). This matches ``_all_browser_cookies`` (the
+    snapshot wins on conflict) and the login-cookie verify, which
+    already reads the controller snapshot directly."""
+    snapshot_value = _controller_cookie_get(name)
+    if isinstance(snapshot_value, str) and snapshot_value:
+        return snapshot_value
     request_value = _request_cookies().get(name)
     if isinstance(request_value, str) and request_value:
         return request_value
-    return _controller_cookie_get(name)
+    return None
 
 
 def _cookie_read_resolved():

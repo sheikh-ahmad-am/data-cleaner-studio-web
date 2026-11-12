@@ -149,7 +149,8 @@ def test_r3_sync_theme_widgets_uses_os_dark():
         assert not at.exception, f"os_dark={os_dark}: {at.exception}"
         assert at.session_state.get("dcs_theme") == expected, \
             f"os_dark={os_dark} must resolve System to {expected}"
-        assert at.session_state.get("avatar_theme_radio") == "system"
+        assert at.session_state.get(
+            ui_design.theme_radio_key("system")) == "system"
     print("r3 sync theme widgets uses OS dark OK")
 
 
@@ -190,7 +191,7 @@ def test_r3_avatar_radio_marks_user_pick():
     at.run()
     assert not at.exception, f"avatar menu exception: {at.exception}"
     radio = next((r for r in at.radio
-                  if r.key == "avatar_theme_radio"), None)
+                  if r.key.startswith("avatar_theme_radio")), None)
     assert radio is not None, "avatar Theme radio missing"
     assert radio.value == "light", "radio must start on Light"
     radio.set_value("dark").run()
@@ -199,7 +200,9 @@ def test_r3_avatar_radio_marks_user_pick():
     assert at.session_state.get(
         ui_design.THEME_PREF_USER_SET_KEY) is True, \
         "avatar radio pick must mark the preference user-picked"
-    at.radio(key="avatar_theme_radio").set_value("light").run()
+    radio = next(r for r in at.radio
+                 if r.key.startswith("avatar_theme_radio"))
+    radio.set_value("light").run()
     assert at.session_state.get("dcs_theme_pref") == "light"
     assert at.session_state.get(
         ui_design.THEME_PREF_USER_SET_KEY) is True, \
