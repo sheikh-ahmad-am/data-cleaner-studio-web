@@ -391,7 +391,7 @@ def _render_join_files(st, raw, set_raw, audit) -> None:
                              key="join_use"):
                     set_raw(joined,
                             f"{st.session_state['source_name']} + "
-                            f"{joined_file.name}")
+                            f"{joined_file.name}", log=False)
                     st.session_state["join_result"] = None
                     audit("Join", f"{info['joined_rows']:,} rows")
                     st.success("Joined — now clean it in the Clean tab.")

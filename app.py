@@ -80,6 +80,7 @@ import feat_automate
 import feat_brand
 import feat_clean
 import feat_combine
+import feat_compare
 import feat_enrich
 import feat_export
 import feat_join
@@ -2365,7 +2366,7 @@ if st.session_state.raw is None and _ws_marker.exists():
         st.session_state.source_kind = "workspace"
 
 
-def _set_raw(df, name, kind="upload", url=None):
+def _set_raw(df, name, kind="upload", url=None, log=True):
     st.session_state.raw = df
     st.session_state.clean = None
     st.session_state.actions = None
@@ -2378,6 +2379,14 @@ def _set_raw(df, name, kind="upload", url=None):
     st.session_state.join_result = None
     st.session_state.q_audit = []
     st.session_state.a_snaps = []
+    # The load itself is the first entry of the fresh log (the
+    # Compare tab's Logs view reads this trail). Callers that
+    # record the same action themselves pass log=False so the
+    # action is not logged twice ("Database load", "Suggestion
+    # applied", "Join").
+    if log and kind != "database":
+        _audit("Sample loaded" if kind == "sample" else "File loaded",
+               f"{name} · {len(df):,} rows")
 
 
 def _load_messy_sample():
@@ -2407,6 +2416,18 @@ def _persist_recipes():
 
 def _audit(step, detail):
     feat_quality.record_audit(st.session_state, step, detail)
+
+
+def _audit_once(step, detail):
+    """Record an audit entry unless the most recent entry is
+    identical. The upload handler re-runs on every rerun while a
+    bad file sits in the uploader, so a failed load would
+    otherwise log once per rerun."""
+    _trail = st.session_state.get("q_audit") or []
+    if (_trail and _trail[-1].get("step") == step
+            and _trail[-1].get("detail") == detail):
+        return
+    _audit(step, detail)
 
 
 def _apply_new_clean(new_df, new_actions, audit_step=None, replace_actions=False):
@@ -2773,6 +2794,7 @@ if uploaded is not None and st.session_state.get("last_upload") != uploaded.name
                      uploaded.name)
             st.session_state["last_upload"] = uploaded.name
         except Exception as e:  # noqa: BLE001 - show the error, don't crash
+            _audit_once("File load failed", f"{uploaded.name}: {e}")
             st.sidebar.error(f"Could not read {uploaded.name} as Parquet: {e}")
     else:
         try:
@@ -2780,6 +2802,7 @@ if uploaded is not None and st.session_state.get("last_upload") != uploaded.name
                      uploaded.name)
             st.session_state["last_upload"] = uploaded.name
         except Exception as e:  # noqa: BLE001 - show the error, don't crash
+            _audit_once("File load failed", f"{uploaded.name}: {e}")
             st.sidebar.error(f"Could not read {uploaded.name}: {e}")
 
 if st.session_state.get("pending_excel") and not _rail_collapsed:
@@ -2806,6 +2829,8 @@ if st.session_state.get("pending_excel") and not _rail_collapsed:
                                  f"{ex_name} : {ex_choice}")
                 st.session_state["pending_excel"] = None
             except Exception as e:  # noqa: BLE001
+                _audit_once("File load failed",
+                       f"{ex_name} (sheet '{ex_choice}'): {e}")
                 st.sidebar.error(f"Could not load the '{ex_choice}' sheet "
                                  f"from {ex_name}: {e}")
 
@@ -4389,7 +4414,8 @@ if raw is None:
             st, base_dir=_user_root, storage_key=_skey, app_dir=_APP_DIR,
             raw=None, clean=None, kpis=None, actions=None)
         if _tools_df is not None:
-            _set_raw(_tools_df, _tools_name, kind=_tools_kind)
+            _set_raw(_tools_df, _tools_name, kind=_tools_kind,
+                     log=False)
             if _tools_kind == "database":
                 _audit("Database load",
                        f"{len(_tools_df):,} rows from {_tools_name}")
@@ -4432,6 +4458,17 @@ if raw is None:
             source_name=st.session_state.get("source_name"),
             load_sample=_load_messy_sample,
             set_raw=_set_raw, audit=_audit)
+        st.stop()
+    # The Compare tab opens with no data loaded too: the sub-nav and
+    # the empty state with its "Try the sample data" CTA — the same
+    # reachability fix as Tools, Clean and Join. The views need a
+    # loaded file (or at least one recorded entry — a failed load,
+    # for example), so they stay behind the empty state until one
+    # exists.
+    if _top_active == _nav_labels["compare"]:
+        feat_compare.render_compare_tab(
+            st, raw=None, clean=None,
+            load_sample=_load_messy_sample)
         st.stop()
     # Guided empty state: what to do first, plus a one-click way to try
     # the sample — the same loader the sidebar "Try the messy sample"
@@ -4804,7 +4841,8 @@ def _render_preview_editor(st, raw, clean, filtered):
                 feat_enrich.render_filter_builder(st, raw)
                 sugg_df, sugg_actions = feat_share.render_suggestions(st, raw)
                 if sugg_df is not None:
-                    _set_raw(sugg_df, st.session_state.source_name)
+                    _set_raw(sugg_df, st.session_state.source_name,
+                             log=False)
                     _audit("Suggestion applied",
                            sugg_actions[0][1] if sugg_actions
                            else "Fix applied")
@@ -5092,18 +5130,15 @@ if _active_tab == "dashboard":
             feat_analyse.render_ask(st, df)
 
 # --------------------------------------------------------------- compare ---
+# Compare tab as Supabase's Logs page (feat_compare): the app's own
+# activity log (the audit trail), a Compare runs view over the
+# Clean entries and KPI snapshots, and the old file-comparison
+# feature moved verbatim under "Compare files".
 if "compare" in tab:
     if _active_tab == "compare":
-        ui_design.section_heading(
-            "Compare & combine",
-            sub="See what changed between two files, stack files together, "
-                "or check whether this month's numbers jumped.")
-        feat_combine.render_compare(st)
-        with st.expander("Combine & check (stack files, anomalies, multi-KPI)"):
-            feat_combine.render_append(st)
-            if clean is not None:
-                feat_combine.render_anomaly(st, clean)
-            feat_analyse.render_multi_kpi(st)
+        feat_compare.render_compare_tab(
+            st, raw=raw, clean=clean,
+            load_sample=_load_messy_sample)
 
 # ---------------------------------------------------------------- report ---
 if _active_tab == "report":
@@ -5220,7 +5255,8 @@ if "tools" in tab:
             kpis=st.session_state.get("kpis"),
             actions=st.session_state.get("actions"))
         if _tools_df is not None:
-            _set_raw(_tools_df, _tools_name, kind=_tools_kind)
+            _set_raw(_tools_df, _tools_name, kind=_tools_kind,
+                     log=False)
             if _tools_kind == "database":
                 _audit("Database load",
                        f"{len(_tools_df):,} rows from {_tools_name}")
