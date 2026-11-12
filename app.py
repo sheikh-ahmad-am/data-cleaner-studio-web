@@ -84,6 +84,7 @@ import feat_compare
 import feat_enrich
 import feat_export
 import feat_join
+import feat_report
 import feat_mobile
 import feat_profile
 import feat_quality
@@ -2188,6 +2189,7 @@ for key, default in [
     ("clean_opts", None), ("fuzzy_groups", None), ("fuzzy_col_used", None),
     ("join_result", None), ("auto_refresh", False), ("refresh_seconds", 900),
     ("q_audit", []), ("a_snaps", []), ("a_recipes", []),
+    ("q_reports", []),
     ("a_bulk_results", None), ("pending_excel", None),
     ("client_mode", False), ("an_pending_view", None),
     ("n_ws_fingerprint", None),
@@ -2205,6 +2207,17 @@ if not st.session_state.get("a_recipes"):
         _saved_recipes = None
     if isinstance(_saved_recipes, list):
         st.session_state["a_recipes"] = _saved_recipes
+
+# Saved custom reports persist per user (reports/reports.json);
+# restore them into the session — same mechanism as recipes, same
+# best-effort rule: a storage failure must never stop the app.
+if not st.session_state.get("q_reports"):
+    try:
+        _saved_reports = storage.load_json(_skey, "reports", "reports.json")
+    except Exception:  # noqa: BLE001 - missing reports are not fatal
+        _saved_reports = None
+    if isinstance(_saved_reports, list):
+        st.session_state["q_reports"] = _saved_reports
 
 # ------------------------------------------------------- language + title ---
 # The language picker widget (key "n_lang_pick", in the avatar
@@ -2411,6 +2424,17 @@ def _persist_recipes():
         storage.save_json(_skey, "recipes", "recipes.json",
                           list(st.session_state.get("a_recipes") or []))
     except Exception:  # noqa: BLE001 - recipe save must never stop the app
+        pass
+
+
+def _persist_reports():
+    """Persist the session's saved custom reports
+    (reports/reports.json) — best-effort, never stops the app. The
+    Report module calls it; same mechanism as _persist_recipes."""
+    try:
+        storage.save_json(_skey, "reports", "reports.json",
+                          list(st.session_state.get("q_reports") or []))
+    except Exception:  # noqa: BLE001 - report save must never stop the app
         pass
 
 
@@ -3264,11 +3288,11 @@ def _render_dashboard_strips(st, clean, raw, storage_key):
 
 
     # Reports section (Supabase: "Reports" + "Add block" + the
-    # empty-state card). This app keeps no saved reports — the
-    # Report tab builds the one-page report on the fly — so the
-    # section is always the empty state, but its copy and its
+    # empty-state card). The Report tab keeps saved custom reports;
+    # this section stays the empty state, but its copy and its
     # buttons' destination follow the real state: no data ->
-    # Preview, data -> Clean, cleaned -> Report.
+    # Preview, data -> Clean, cleaned -> the Report tab's one-page
+    # report.
     if clean is not None:
         _rep_go = "report"
         _rep_foot = ("Your data is cleaned — your one-page report "
@@ -3287,6 +3311,8 @@ def _render_dashboard_strips(st, clean, raw, storage_key):
                 "Add block", "add", kind="secondary",
                 key="dashboard_reports_add",
                 help="Open the report builder."):
+            if _rep_go == "report":
+                st.session_state["report_view"] = "onepage"
             st.session_state["pending_tab"] = _rep_go
             st.rerun()
     ui_design.card("Build a custom report",
@@ -3311,12 +3337,16 @@ def _render_dashboard_strips(st, clean, raw, storage_key):
                 "", "help", kind="secondary",
                 key="dashboard_reports_help",
                 help=_rep_help):
+            if _rep_go == "report":
+                st.session_state["report_view"] = "onepage"
             st.session_state["pending_tab"] = _rep_go
             st.rerun()
     if ui_design.icon_button(
             "Add your first block", "add", kind="secondary",
             key="dashboard_reports_first",
             help="Open the report builder."):
+        if _rep_go == "report":
+            st.session_state["report_view"] = "onepage"
         st.session_state["pending_tab"] = _rep_go
         st.rerun()
 
@@ -4470,6 +4500,17 @@ if raw is None:
             st, raw=None, clean=None,
             load_sample=_load_messy_sample)
         st.stop()
+    # The Report tab opens with no data loaded too: the sub-nav and
+    # the saved-reports list (or the empty state with its "Try the
+    # sample data" CTA when nothing is saved) — the same
+    # reachability fix as Tools, Clean, Join and Compare.
+    if _top_active == _nav_labels["report"]:
+        feat_report.render_report_tab(st, {
+            "raw": None, "clean": None,
+            "load_sample": _load_messy_sample,
+            "persist_reports": _persist_reports,
+        })
+        st.stop()
     # Guided empty state: what to do first, plus a one-click way to try
     # the sample — the same loader the sidebar "Try the messy sample"
     # button uses, not a second mechanism. On the Preview tab the
@@ -5141,103 +5182,18 @@ if "compare" in tab:
             load_sample=_load_messy_sample)
 
 # ---------------------------------------------------------------- report ---
+# Report tab as Supabase's Observability custom reports + Reports
+# section (feat_report): the saved-reports list, the custom-report
+# builder, and the one-page report moved verbatim under its sub-nav.
 if _active_tab == "report":
-    if clean is None:
-        if ui_design.empty_state(
-                "No report yet",
-                "Your file is loaded — now clean it and the report will "
-                "appear here, with the cleaned file to download. Go to "
-                "the Clean tab, tick what to fix, and press the clean "
-                "button.",
-                cta_label="Go to the Clean tab"):
-            # Via pending_tab, not a direct active_tab write: the Section
-            # radio is already instantiated by the time this button runs.
-            st.session_state["pending_tab"] = "clean"
-            st.rerun()
-    else:
-        # Section rhythm: a generous gap before the report, the way
-        # the research's 128px marketing rhythm works at dashboard
-        # scale.
-        ui_loading.section_gap(px=64)
-        ui_design.section_heading("Report")
-        report = engine.build_report(raw, clean, st.session_state.actions,
-                                     st.session_state.kpis)
-        st.markdown(report)
-        _formulas = st.checkbox("Excel KPIs as live formulas",
-                                value=True, key="rep_formulas",
-                                help="The Excel workbook gets a 'KPIs (live)' "
-                                     "sheet where totals are real Excel "
-                                     "formulas, not just numbers.")
-        _brand_x = feat_brand.brand_for_exports(base_dir=_user_root)
-        c1, c2, c3, c4, c5 = st.columns(5)
-        c1.download_button(_t("download_report") + " (.md)", report,
-                           file_name="report.md", key="dl_report")
-        c2.download_button("Download cleaned CSV",
-                           clean.to_csv(index=False).encode("utf-8"),
-                           file_name="cleaned_data.csv", key="dl_csv")
-        c3.download_button("Download cleaned Excel",
-                           engine.to_excel_bytes(clean, st.session_state.kpis,
-                                                 st.session_state.actions,
-                                                 formulas=_formulas),
-                           file_name="cleaned_data.xlsx", key="dl_xlsx")
-        pdf_bytes = engine.to_pdf_bytes(
-            "Data Cleaner Studio — Report", st.session_state.kpis,
-            st.session_state.actions,
-            f"Rows: {len(raw):,} loaded -> {len(clean):,} after cleaning. "
-            f"Columns: {len(raw.columns)} -> {len(clean.columns)}.",
-            brand=_brand_x)
-        c4.download_button("Download PDF report", pdf_bytes,
-                           file_name="report.pdf", mime="application/pdf",
-                           key="dl_pdf")
-        c5.download_button("Download cleaned Parquet",
-                           engine.to_parquet_bytes(clean),
-                           file_name="cleaned_data.parquet",
-                           key="dl_parquet")
-        _oc_opts = (st.session_state.get("clean_opts")
-                    or dict(feat_automate.DEFAULT_CLEAN_OPTS))
-        _oc = feat_share.render_one_click(st, raw, _oc_opts,
-                                          base_dir=_user_root,
-                                          storage_key=_skey)
-        _oc_ran = isinstance(_oc, dict) and _oc.get("status") == "done"
-        if _oc_ran:
-            st.session_state.clean = _oc["cleaned"]
-            st.session_state.actions = _oc["actions"]
-            st.session_state.kpis = _oc["kpis"]
-            st.session_state.clean_opts = _oc_opts
-            _audit("One-click flow",
-                   f"{len(raw):,} -> {len(_oc['cleaned']):,} rows")
-            _save_cleaned_copy(_oc["cleaned"], st.session_state.source_name)
-            clean = _oc["cleaned"]
-            filtered = clean
-        feat_enrich.render_versioned_download(st, clean)
-        ui_loading.section_gap()
-        with st.expander("More export formats & sharing"):
-            _num = engine.numeric_cols(clean)
-            _cat = [c for c in clean.columns
-                    if str(clean[c].dtype) in ("object", "str")
-                    and clean[c].nunique() <= 50]
-            if _cat and _num:
-                _gx, _gy = _cat[0], _num[0]
-                _grouped = clean.groupby(_gx, dropna=False)[_gy].sum().reset_index()
-                _grouped = _grouped.sort_values(_gy, ascending=False)
-                feat_share.render_html_download(
-                    st, st.session_state.kpis, st.session_state.actions,
-                    _grouped, _gx, _gy, brand=_brand_x)
-                feat_share.render_chart_png(
-                    st, _grouped, _gx, _gy, title=f"{_gx} vs {_gy}",
-                    key_suffix="_report")
-            feat_share.render_portfolio_download(
-                st, clean, st.session_state.kpis, st.session_state.actions)
-            feat_share.render_styled_excel_download(
-                st, clean, st.session_state.kpis, st.session_state.actions)
-            feat_export.render_pptx_download(
-                st, st.session_state.kpis, st.session_state.actions, raw, clean,
-                brand=_brand_x)
-            feat_export.render_sheets_export(st, clean)
-            if not _oc_ran:
-                feat_export.render_email_schedule(
-                    st, st.session_state.kpis, st.session_state.actions, raw, clean)
-            feat_quality.render_audit(st)
+    feat_report.render_report_tab(st, {
+        "raw": raw, "clean": clean,
+        "load_sample": _load_messy_sample,
+        "persist_reports": _persist_reports,
+        "t": _t, "base_dir": _user_root, "storage_key": _skey,
+        "audit": _audit, "save_copy": _save_cleaned_copy,
+    })
+
 
 # ----------------------------------------------------------------- tools ---
 # The Tools tab is Supabase's Integrations page, mapped to this app's
