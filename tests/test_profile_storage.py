@@ -36,6 +36,11 @@ def _seed(tmp_base, username="alice1"):
         "uploads": [("a.csv", 10), ("b.csv", 25)],
         "cleaned": [("a_clean.csv", 100)],
         "recipes": [],
+        # "reports" is empty here on purpose: the folder exists (it is a
+        # whitelisted SUBFOLDER since the saved-reports persistence fix),
+        # so storage_usage must list it at 0 bytes — a missing entry
+        # would mean the folder was not covered.
+        "reports": [],
         "views": [("shares.json", 7)],
         "workspaces": [("ws.json", 3), ("ws2.json", 4)],
         "backups": [("bak.zip", 1000)],
@@ -73,6 +78,7 @@ def test_list_all_files_shape(tmp_base):
     assert result["uploads"] == ["a.csv", "b.csv"]
     assert result["cleaned"] == ["a_clean.csv"]
     assert result["recipes"] == []
+    assert result["reports"] == []
     assert result["views"] == ["shares.json"]
     assert result["workspaces"] == ["ws.json", "ws2.json"]
     assert result["backups"] == ["bak.zip"]

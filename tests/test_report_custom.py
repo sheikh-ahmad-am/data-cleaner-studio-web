@@ -475,6 +475,145 @@ def test_onepage_report_moved_verbatim(_tmp_env):
 # AppTest: regressions the harness CAN reproduce
 # --------------------------------------------------------------------------
 
+# --------------------------------------------------------------------------
+# AppTest: saved reports persist across a reload / fresh sign-in
+# --------------------------------------------------------------------------
+
+def _build_and_save_probe_report(at, name="Probe report"):
+    """Build one Rows block and save it under ``name``; return the
+    saved report dict from session state. (The builder half of
+    test_builder_add_block_and_save, factored out for the
+    persistence tests below.)"""
+    goto_report(at)
+    find_button(at, "Custom report", key="rep_nav_builder").click().run()
+    assert not at.exception, f"exception opening builder: {at.exception}"
+    find_button(at, "Add block", key="rep_add_block").click().run()
+    assert not at.exception, f"exception adding block: {at.exception}"
+    find_text_input(at, "Report name").set_value(name).run()
+    find_button(at, "Save custom report", key="rep_save").click().run()
+    assert not at.exception, f"exception saving report: {at.exception}"
+    reports = at.session_state.get("q_reports") or []
+    assert len(reports) == 1, "one report must be saved"
+    assert reports[0]["name"] == name
+    assert reports[0]["blocks"][0]["data"] == {
+        "before": 80, "after": 77, "removed": 3}, \
+        "saved block must snapshot the values"
+    return reports[0]
+
+
+def login(at, username, password="<redacted>"):
+    """Log in as an existing user — the fresh-sign-in half of a
+    page reload (a new AppTest has a fresh session and no login
+    cookie, so the form is the only way back in)."""
+    find_text_input(at, "Username").set_value(username).run()
+    find_text_input(at, "Password").set_value(password).run()
+    find_button(at, "Log in").click().run()
+    assert not at.exception, f"exception on login: {at.exception}"
+    expand_rail(at)
+    assert any(b.label == "Try the messy sample" for b in at.button), \
+        "login should land on the main app"
+
+
+def test_reports_subfolder_roundtrip(_tmp_env):
+    """The storage layer accepts the reports subfolder: a
+    save_json/load_json round-trip works, exactly like recipes
+    (the mechanism reports mirror). Before the fix this raised
+    ValueError: "reports" was missing from storage.SUBFOLDERS,
+    so _persist_reports failed silently on every save and the
+    restore read nothing back — a saved report vanished on
+    reload while the in-session list still looked fine."""
+    assert "reports" in storage.SUBFOLDERS, \
+        "reports must be a whitelisted storage subfolder"
+    report = [{"name": "Probe report", "created": "2026-11-13 10:00",
+               "blocks": [{"kind": "rows", "label": "Rows",
+                           "data": {"before": 80, "after": 77,
+                                    "removed": 3}}]}]
+    storage.save_json("rep_store", "reports", "reports.json", report)
+    assert storage.load_json(
+        "rep_store", "reports", "reports.json") == report, \
+        "a saved report must round-trip through storage"
+    # Parity with recipes, the mechanism reports mirror.
+    storage.save_json("rep_store", "recipes", "recipes.json",
+                      [{"name": "r"}])
+    assert storage.load_json(
+        "rep_store", "recipes", "recipes.json") == [{"name": "r"}]
+    # A user with nothing saved yet still loads as None, not an error.
+    assert storage.load_json("rep_store", "reports", "nope.json") is None
+    print("reports subfolder round-trip OK")
+
+
+def test_saved_report_written_to_disk(_tmp_env):
+    """Saving a report in the UI writes reports/reports.json to
+    the user's own storage folder — the write the old code
+    silently skipped (ValueError swallowed by _persist_reports),
+    so the report existed only in session state."""
+    import json
+
+    at = AppTest.from_file(APP).run()
+    assert not at.exception, f"exception on first run: {at.exception}"
+    signup(at, "rep_disk")
+    load_sample(at)
+    clean_sample(at)
+    _build_and_save_probe_report(at)
+    path = (_tmp_env / "users" / "rep_disk"
+            / "reports" / "reports.json")
+    assert path.is_file(), \
+        "saving a report must write reports/reports.json"
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert len(saved) == 1 and saved[0]["name"] == "Probe report"
+    assert saved[0]["blocks"][0]["data"] == {
+        "before": 80, "after": 77, "removed": 3}, \
+        "the file must hold the snapshot values, not a live view"
+    print("saved report written to disk OK")
+
+
+def test_saved_report_restores_after_reload(_tmp_env):
+    """The live-check bug, pinned: a saved report survives a page
+    reload and a fresh sign-in. Save "Probe report" (Rows 80 ->
+    77), then start a FRESH AppTest (new session, no cookie) and
+    log back in as the same user — the Reports list still shows
+    it, with no data loaded, and opening it shows the saved
+    snapshot values."""
+    at = AppTest.from_file(APP).run()
+    assert not at.exception, f"exception on first run: {at.exception}"
+    signup(at, "rep_reload")
+    load_sample(at)
+    clean_sample(at)
+    _build_and_save_probe_report(at)
+    # --- reload: a fresh session, the way a browser refresh is. ---
+    fresh = AppTest.from_file(APP).run()
+    assert not fresh.exception, f"exception on reload: {fresh.exception}"
+    assert fresh.session_state.get("current_user") is None, \
+        "a fresh session must start logged out"
+    login(fresh, "rep_reload")
+    assert fresh.session_state.get("current_user", {}).get(
+        "username") == "rep_reload"
+    # The restore runs at startup: the report is back before any
+    # data is loaded — the Reports list, not the empty state. (No
+    # data is loaded in the fresh session, so the Section radio
+    # does not exist yet — navigate via the sidebar nav row, the
+    # same path as the no-data test.)
+    goto_nav(fresh, "Report", key="dcs_nav_report")
+    text = all_text(fresh)
+    assert "Reports" in text, "Report page heading missing"
+    assert "Probe report" in text, \
+        "a saved report must survive a reload"
+    assert "1 blocks" in text, \
+        "the restored report must keep its block count"
+    assert "Build a custom report" not in text, \
+        "the empty state must not replace a restored report"
+    # Opening it shows the snapshot values (80 -> 77), not today's.
+    find_button(fresh, "Open", key="rep_open_0").click().run()
+    assert not fresh.exception, \
+        f"exception opening restored report: {fresh.exception}"
+    text = all_text(fresh)
+    assert "80 → 77" in text or "80 -&gt; 77" in text, \
+        "the restored report must show its saved values"
+    assert "Download (.md)" in [b.label for b in fresh.download_button], \
+        "the restored report must offer .md"
+    print("saved report restores after reload OK")
+
+
 def test_report_does_not_break_compare_logs(_tmp_env):
     """Visiting Report and building a report must not disturb the
     audit trail Compare reads: after a clean, Compare still lists

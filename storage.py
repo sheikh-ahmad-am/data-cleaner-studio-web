@@ -3,7 +3,7 @@
 TWO BACKENDS, ONE API (mirrors auth.py):
   * LOCAL mode — every user gets an isolated tree under
     data/users/<username>/:
-        uploads/  cleaned/  recipes/  views/  workspaces/
+        uploads/  cleaned/  recipes/  reports/  views/  workspaces/
     All file operations below run against those folders.
   * SUPABASE mode — the same operations run against Supabase Storage,
     one private bucket (`user-files`), per-user paths
@@ -74,8 +74,15 @@ import auth as _auth
 
 BASE_DIR = Path(__file__).resolve().parent / "data" / "users"
 
-SUBFOLDERS = ("uploads", "cleaned", "recipes", "views", "workspaces",
-              "backups")
+# Every subfolder any feature writes to must be listed here:
+# _validate_subfolder rejects anything else, and the callers'
+# best-effort wrappers swallow that ValueError silently. "reports"
+# is the saved-custom-reports store (app.py _persist_reports and
+# the restore next to the recipes restore) — it was missing when
+# the Report tab shipped, so every report save AND load failed
+# without a sound and saved reports vanished on reload.
+SUBFOLDERS = ("uploads", "cleaned", "recipes", "reports", "views",
+              "workspaces", "backups")
 
 STORAGE_BUCKET = "user-files"
 
@@ -315,7 +322,7 @@ def save_upload(username: str, filename: str, data_bytes: bytes) -> Path:
 def save_file(username: str, subfolder: str, filename: str,
               data_bytes: bytes) -> Path:
     """Store raw bytes under any allowed subfolder (uploads, cleaned,
-    recipes, views, workspaces) and return the stored path. Same
+    recipes, reports, views, workspaces) and return the stored path. Same
     filename sanitisation and folder-boundary checks as save_upload."""
     if not isinstance(data_bytes, (bytes, bytearray)):
         raise ValueError("data_bytes must be bytes.")
