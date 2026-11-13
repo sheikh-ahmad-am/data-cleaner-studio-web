@@ -251,7 +251,14 @@ def test_overview_copy_menu(_tmp_env):
 
 def test_overview_ask_assistant_jumps_to_tutorial(_tmp_env):
     """Ask Assistant opens the How to use guide — this app has no AI
-    assistant panel, so the guide is the honest counterpart."""
+    assistant panel, so the guide is the honest counterpart.
+
+    With no data loaded the How to use tab shows its "No data
+    loaded yet" empty state + "Try the sample data" CTA ABOVE the
+    guide (the Tools/Clean/Join/Compare/Report reachability fix,
+    How to use round) — so "left the Dashboard" is proven by the
+    How to use sub-nav rendering, not by the empty state's
+    absence."""
     at = AppTest.from_file(APP)
     at.run()
     signup(at, "alice1")
@@ -262,8 +269,10 @@ def test_overview_ask_assistant_jumps_to_tutorial(_tmp_env):
     assert any("How to use Data Cleaner Studio" in v
                for v in vals(at.subheader)), \
         "Ask Assistant must land on the How to use guide"
-    assert not any("No data loaded yet" in v for v in vals(at.markdown)), \
+    assert any(b.label == "Guide" for b in at.button), \
         "we must have left the Dashboard after Ask Assistant"
+    assert any("No data loaded yet" in v for v in vals(at.markdown)), \
+        "no-data empty state must sit above the guide"
     print("overview Ask Assistant OK")
 
 

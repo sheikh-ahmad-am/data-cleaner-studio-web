@@ -83,6 +83,7 @@ import feat_combine
 import feat_compare
 import feat_enrich
 import feat_export
+import feat_howtouse
 import feat_join
 import feat_report
 import feat_mobile
@@ -4410,9 +4411,15 @@ if raw is None:
     # render it here too, same as Dashboard above — otherwise the
     # top-bar Help button and the Dashboard Advisor's "Ask
     # Assistant" button both dead-end on the empty state instead
-    # of opening the guide.
+    # of opening the guide. The tab itself is Supabase's
+    # Migrations empty state + Help panel (feat_howtouse); the
+    # guide content still comes from feat_tutorial, verbatim.
     if _top_active == _nav_labels["tutorial"]:
-        feat_tutorial.render_tutorial_page(st, settings_path=_settings_path)
+        feat_howtouse.render_howtouse_tab(st, {
+            "raw": None, "clean": None,
+            "load_sample": _load_messy_sample,
+            "settings_path": _settings_path,
+        })
         st.stop()
     # The KPIs tab needs no data either: its empty state names the
     # metric page and points at loading a file — otherwise the tab
@@ -5220,9 +5227,17 @@ if "tools" in tab:
                            "Clean tab.")
 
 # ------------------------------------------------------------- tutorial ---
+# The How to use tab as Supabase's Migrations empty state + Help
+# panel (feat_howtouse): the guide, the migrations empty state
+# with its instruction cards, and the help panel — the guide
+# content itself still comes from feat_tutorial, verbatim.
 if "tutorial" in tab:
     if _active_tab == "tutorial":
-        feat_tutorial.render_tutorial_page(st, settings_path=_settings_path)
+        feat_howtouse.render_howtouse_tab(st, {
+            "raw": raw, "clean": clean,
+            "load_sample": _load_messy_sample,
+            "settings_path": _settings_path,
+        })
 
 
 
