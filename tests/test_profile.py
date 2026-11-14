@@ -28,6 +28,7 @@ import auth  # noqa: E402
 import feat_profile  # noqa: E402
 import scheduler  # noqa: E402
 import storage  # noqa: E402
+import ui_design  # noqa: E402
 from streamlit.testing.v1 import AppTest  # noqa: E402
 
 APP = str(PROJECT_ROOT / "app.py")
@@ -112,7 +113,9 @@ def assert_profile_view(at):
     Preferences page: a section heading above a bordered card, the
     heading rendered as markdown, not a subheader)."""
     for section in ("Profile information", "Sign-in methods",
-                    "Appearance", "Download my data",
+                    "Connections", "Appearance", "Keyboard shortcuts",
+                    "Dashboard", "Analytics and Marketing",
+                    "Download my data",
                     "Storage usage", "Danger zone"):
         assert any(section in v for v in vals(at.markdown)), \
             f"Profile section {section!r} missing"
@@ -133,7 +136,11 @@ def assert_profile_view(at):
     assert any(b.label == "Save" for b in at.button), \
         "profile-information Save button missing"
     # No Supabase product the app does not have: no Access Tokens,
-    # no Audit Logs, no Upgrade to Pro, no System theme row.
+    # no Audit Logs, no Upgrade to Pro. (The old "no System theme
+    # row" pin is gone on purpose: the System THEME PREFERENCE is
+    # real — the avatar menu owns it since Round 1 — and the Profile
+    # pattern's theme-mode preview cards now wire to it, so a System
+    # card is a real control, not an invention.)
     for missing in ("Access Tokens", "Audit Logs", "Upgrade to Pro"):
         assert not any(missing in v for v in vals(at.markdown)), \
             f"Profile must not invent {missing!r}"
@@ -356,3 +363,187 @@ def test_profile_reachable_without_data(_tmp_env):
         "Back should land on the Dashboard tab"
     assert not any("Profile information" in v for v in vals(at.markdown)), \
         "profile view should be gone after Back"
+
+# ---------------------------------------------------------------------------
+# 7. Profile pattern (Supabase Preferences — the full mapping)
+# ---------------------------------------------------------------------------
+
+def _find_by_key(elements, key):
+    for e in elements:
+        if e.key == key:
+            return e
+    raise AssertionError(f"element with key {key!r} missing")
+
+
+def test_profile_pattern_signin_and_connections_honest(_tmp_env):
+    """Sign-in methods + Connections: ChatGPT/GitHub render as Not
+    connected (this app signs in with email only — no OAuth exists),
+    with a Connect button each that must never claim a link. The
+    buttons are DISABLED in the real DOM (pinned by probe63 — AppTest
+    does not expose a widget's disabled flag, so here we pin their
+    presence, keys and the honest copy, and the probe pins the
+    disabled attribute)."""
+    at = AppTest.from_file(APP)
+    at.run()
+    signup(at, "alice1")
+    upload_sample(at, "alice1")
+    goto_profile(at)
+    assert_profile_view(at)
+    text = " ".join(vals(at.markdown))
+    assert text.count("Not connected") >= 3, \
+        "ChatGPT + GitHub sign-in + GitHub Connect must all read " \
+        "Not connected"
+    assert "this app signs in with email only" in text, \
+        "sign-in rows must say plainly that email is the only sign-in"
+    assert "no GitHub connection in this app" in text, \
+        "Connections must say plainly there is no GitHub connection"
+    for key in ("profile_signin_chatgpt_connect",
+                "profile_signin_github_connect",
+                "profile_connections_github_connect"):
+        btn = _find_by_key(at.button, key)
+        assert btn.label == "Connect", f"{key} must be a Connect button"
+    # Nothing about these rows may write a connection into state.
+    assert not any("github" in k.lower() and "connected" in k.lower()
+                   for k in at.session_state), \
+        "no GitHub-connected flag may appear in session state"
+
+
+def test_profile_pattern_theme_mode_cards_wire_real_pref(_tmp_env):
+    """Theme mode preview cards: System / Dark / Light write the REAL
+    theme preference (dcs_theme_pref) through ui_design.set_theme_pref
+    — the same write the avatar menu's radio performs — and resolve
+    it to the theme in effect. The active card carries the
+    "✓ Current" marker."""
+    at = AppTest.from_file(APP)
+    at.run()
+    signup(at, "alice1")
+    upload_sample(at, "alice1")
+    goto_profile(at)
+    for key in ("profile_theme_mode_system", "profile_theme_mode_dark",
+                "profile_theme_mode_light"):
+        _find_by_key(at.button, key)
+    assert any("✓ Current" in v for v in vals(at.markdown)), \
+        "the active theme-mode card must be marked Current"
+    # Pick Dark: preference + resolved theme both go dark.
+    _find_by_key(at.button, "profile_theme_mode_dark").click().run()
+    assert not at.exception, f"exception picking Dark: {at.exception}"
+    assert at.session_state.get("dcs_theme_pref") == "dark", \
+        "Dark card must write the theme preference"
+    assert at.session_state.get("dcs_theme") == "dark", \
+        "Dark card must resolve the theme in effect to dark"
+    # Pick System: the preference becomes system (resolved follows
+    # the OS reading — Light with no reading in the test env).
+    _find_by_key(at.button, "profile_theme_mode_system").click().run()
+    assert not at.exception, f"exception picking System: {at.exception}"
+    assert at.session_state.get("dcs_theme_pref") == "system", \
+        "System card must write the theme preference"
+    assert at.session_state.get("dcs_theme") == "light", \
+        "System with no OS reading must resolve to Light"
+    # Pick Light: back to an explicit Light preference.
+    _find_by_key(at.button, "profile_theme_mode_light").click().run()
+    assert not at.exception, f"exception picking Light: {at.exception}"
+    assert at.session_state.get("dcs_theme_pref") == "light", \
+        "Light card must write the theme preference"
+    assert at.session_state.get("dcs_theme") == "light"
+    # The three cards are the only theme-mode buttons: no fourth
+    # mode may appear.
+    _mode_labels = [b.label for b in at.button
+                    if b.key and b.key.startswith("profile_theme_mode_")]
+    assert sorted(_mode_labels) == ["Dark", "Light", "System"], \
+        f"exactly the three mode cards must exist, got {_mode_labels}"
+
+
+def test_profile_pattern_theme_colors_reference_only(_tmp_env):
+    """Theme colors sliders: Supabase's four defaults (0 / 23 / 100 /
+    100) shown DISABLED for reference — this app has no theme-color
+    settings, so there must be no save path for them: no theme-color
+    Save button anywhere on the page, and the honest note present."""
+    at = AppTest.from_file(APP)
+    at.run()
+    signup(at, "alice1")
+    upload_sample(at, "alice1")
+    goto_profile(at)
+    assert any("has no theme-color settings" in v
+               for v in vals(at.markdown)), \
+        "theme colors must say plainly they cannot be changed"
+    expected = {"Surface tint": 0, "Contrast": 23,
+                "Surface brightness": 100, "Layer contrast": 100}
+    found = {}
+    for s in at.slider:
+        if s.label in expected:
+            found[s.label] = s.value
+    assert found == expected, \
+        f"theme color sliders must show Supabase's defaults, got {found}"
+    assert not any("Save theme" in b.label for b in at.button), \
+        "no theme-color Save button may exist"
+    # The only Save on the page is the display-name one.
+    assert [b.label for b in at.button
+            if b.label == "Save"] == ["Save"], \
+        "exactly one Save button (display name) may exist"
+
+
+def test_profile_pattern_shortcuts_dashboard_telemetry(_tmp_env):
+    """Keyboard shortcuts: no switches at all — the app has none, and
+    the note names Quick Jump as the honest equivalent. Dashboard +
+    Analytics switches: present, off. Exactly three toggles on the
+    whole page (2 Dashboard + 1 Telemetry), all False — nothing
+    else may render a switch that pretends to do something."""
+    at = AppTest.from_file(APP)
+    at.run()
+    signup(at, "alice1")
+    upload_sample(at, "alice1")
+    goto_profile(at)
+    text = " ".join(vals(at.markdown) + vals(at.caption))
+    assert "This app has no keyboard shortcuts" in text, \
+        "keyboard shortcuts must say plainly the app has none"
+    assert "Quick Jump" in text, \
+        "keyboard shortcuts must name Quick Jump as the equivalent"
+    assert "collects no usage data" in text, \
+        "analytics must say plainly the app collects no usage data"
+    toggles = {t.key: t.value for t in at.toggle}
+    assert toggles == {
+        "profile_dashboard_edit_entities_sql": False,
+        "profile_dashboard_queue_table_ops": False,
+        "profile_analytics_telemetry": False,
+    }, f"exactly the three honest off-toggles must exist, got {toggles}"
+
+
+def test_profile_pattern_timezone_row(_tmp_env):
+    """Timezone: the honest display — Auto detect (Asia/Calcutta),
+    with the note that the app has one timezone."""
+    at = AppTest.from_file(APP)
+    at.run()
+    signup(at, "alice1")
+    upload_sample(at, "alice1")
+    goto_profile(at)
+    text = " ".join(vals(at.markdown) + vals(at.caption))
+    assert "Auto detect (Asia/Calcutta)" in text, \
+        "timezone must read Auto detect (Asia/Calcutta)"
+    assert "No per-user timezone setting" in text, \
+        "timezone must say plainly there is no per-user setting"
+
+
+def test_set_theme_pref_unit():
+    """ui_design.set_theme_pref: the preference write the preview
+    cards use — same state the avatar menu's radio writes (pref +
+    resolved theme + user-picked flag), for all three prefs."""
+    class _FakeST:
+        def __init__(self):
+            self.session_state = {}
+
+    for pref, resolved in (("system", "light"), ("dark", "dark"),
+                           ("light", "light")):
+        fake = _FakeST()
+        assert ui_design.set_theme_pref(fake, pref) == pref
+        assert fake.session_state["dcs_theme_pref"] == pref
+        assert fake.session_state["dcs_theme"] == resolved
+        assert fake.session_state["_theme_pref_user_set"] is True
+    # Unknown preference falls back to the resolved theme, like the
+    # avatar radio's normalize.
+    fake = _FakeST()
+    assert ui_design.set_theme_pref(fake, "bogus") == "light"
+    # System follows the OS reading when one exists.
+    fake = _FakeST()
+    fake.session_state["_dcs_os_dark"] = True
+    assert ui_design.set_theme_pref(fake, "system") == "system"
+    assert fake.session_state["dcs_theme"] == "dark"

@@ -2008,6 +2008,26 @@ def set_theme(st_module, theme) -> str:
     return _theme
 
 
+def set_theme_pref(st_module, pref) -> str:
+    """Set the theme PREFERENCE (system / dark / light) and resolve
+    it to the light/dark theme the stylesheet follows — the same
+    write the avatar menu's theme radio performs (its ``_on_theme``
+    callback), factored out so the Profile Appearance card's theme
+    mode preview cards write the same state through the same path.
+    Returns the preference. Marks the pick as user-picked, so the
+    cookie restore never overwrites it with a stale snapshot (see
+    THEME_PREF_USER_SET_KEY), and the per-run
+    ``_ensure_one_pref_cookie`` sync in app.py persists it to the
+    ``dcs_theme_pref`` cookie like every other theme control."""
+    st_mod = st_module or st
+    _pref = normalize_theme_pref(pref)
+    st_mod.session_state[THEME_PREF_KEY] = _pref
+    st_mod.session_state["dcs_theme"] = resolve_theme_pref(
+        _pref, os_dark=bool(st_mod.session_state.get(OS_DARK_KEY)))
+    st_mod.session_state[THEME_PREF_USER_SET_KEY] = True
+    return _pref
+
+
 def sync_theme_widgets(st_module=None) -> None:
     """Sync the theme widgets to the theme in effect — call once per
     run, BEFORE any theme widget is created (the app calls it right

@@ -1,8 +1,42 @@
-"""Data Cleaner Studio — Profile section.
+"""Data Cleaner Studio — Profile section (Supabase Preferences page).
 
-The account page: account info + display name, password reset,
-download-my-data export, storage usage, log out, and the danger
-zone (permanent account deletion).
+The account page as Supabase's Preferences (``/dashboard/account/me``,
+~740px centred, left sub-nav + bordered cards): "Profile
+information" (First/Last name, Primary email, Username, green Save —
+wired to the real profile store), "Sign-in methods" (Email +
+Change password, the real email+code login; ChatGPT and GitHub
+shown as Not connected — this app signs in with email only),
+"Connections" (GitHub Connect — no GitHub OAuth exists in this
+app, shown as Not connected), "Appearance" (Theme mode preview
+cards System/Dark/Light wired to the REAL theme preference through
+``ui_design.set_theme_pref``; Theme colors sliders shown for
+reference only — this app has no theme-color settings; Sidebar
+behavior wired to the REAL 3-way rail mode; Timezone "Auto detect
+(Asia/Calcutta)" as an honest display — the app has one timezone),
+"Keyboard shortcuts" (this app has none; Quick Jump is the honest
+equivalent — no fake switches), "Dashboard" (Edit entities in SQL /
+Queue table operations — no counterparts here, both stay off),
+"Analytics and Marketing" (no telemetry exists in this app, the
+switch stays off), then the app's own "Storage usage", "Download
+my data", "Log out", and "Danger zone".
+
+HONESTY CONTRACT (load-bearing, every round): a control that cannot
+save is DISABLED, never clickable-then-silent; a section with no
+counterpart is rendered as an honest note, never faked. The theme
+preview thumbnails are inline-style depictions (a dark-theme picture
+cannot live in the light stylesheet — the token test forbids dark
+hexes there — so the depiction carries its own colours); picking a
+card restyles the whole app at once, which is the live preview.
+
+DANGER ZONE — CORRECTION: the account-deletion flow is REAL, not
+absent. ``delete_account`` below deletes the user's files
+(``storage.delete_user_files``), database rows
+(``auth.delete_account_rows``) and, in Supabase mode, the auth user
+itself (service-role admin delete) — gated on typing DELETE, and
+covered end to end by tests/test_profile.py. An earlier brief
+claimed no deletion flow exists; that was wrong, and disabling a
+working, tested flow to render a dead card would be the fake, not
+the fix. The card is kept as the real flow.
 
 Contract (functions provided by the auth / storage workers — called
 exactly as specified, never reimplemented here):
@@ -14,7 +48,6 @@ exactly as specified, never reimplemented here):
   - storage.storage_usage(username) -> (total_bytes, {subfolder: bytes})
   - storage.list_all_files(username) -> {subfolder: [names]}
   - storage.delete_user_files(username) -> int (count deleted)
-
 
 Widget keys all start with "profile_".
 """
@@ -169,6 +202,71 @@ def _profile_subnav_link(st, anchor, label):
         f"{html.escape(label)}</a>",
         unsafe_allow_html=True)
 
+# The theme-mode preview thumbnails: a mini mock of the app shell
+# (header bar + two text lines) in the mode's own colours. The
+# colours are INLINE, not stylesheet classes — the token test
+# forbids dark hexes in the light stylesheet, so a dark-theme
+# picture cannot live in CSS at all; the depiction carries its own
+# colours, using only existing token hexes. Picking a card restyles
+# the whole app at once, which is the live preview — the thumbnail
+# is the label, the restyle is the proof. "System" is a split
+# thumbnail: the left half light, the right half dark.
+_THEME_PREVIEW = {
+    # (shell background, header bar, text line)
+    "light": ("#fdfdfd", "#f3f3f3", "#d0d0d0"),
+    "dark": ("#1b1d1c", "#232625", "#4a4d4c"),
+    # "system" has no single triple: its halves are built inline
+    # in _theme_preview_html below.
+}
+_THEME_PREVIEW_LABELS = {
+    "system": "System",
+    "dark": "Dark",
+    "light": "Light",
+}
+_THEME_PREVIEW_DESCS = {
+    "system": "Follows your device setting",
+    "dark": "Dark pages, light text",
+    "light": "Light pages, dark text",
+}
+
+
+def _theme_preview_html(mode, selected, accent):
+    """One theme-mode preview thumbnail as HTML: a bordered mini
+    mock of the app shell. ``selected`` draws the green outline
+    (the accent of the theme in effect). Returns the HTML string —
+    the caller renders it with st.markdown(..., unsafe_allow_html)."""
+    _outline = (f"outline: 2px solid {accent}; outline-offset: 2px; "
+                if selected else "")
+    if mode == "system":
+        # Two half-mocks side by side: light on the left, dark on
+        # the right, each with its own bar + lines.
+        def _half(bg, bar, line):
+            return (
+                f'<div style="flex:1;background:{bg};padding:6px;">'
+                f'<div style="height:10px;background:{bar};'
+                f'border-radius:2px;margin-bottom:5px"></div>'
+                f'<div style="height:5px;background:{line};'
+                f'border-radius:2px;margin-bottom:3px;width:85%"></div>'
+                f'<div style="height:5px;background:{line};'
+                f'border-radius:2px;width:60%"></div></div>')
+        _left = _half("#fdfdfd", "#f3f3f3", "#d0d0d0")
+        _right = _half("#1b1d1c", "#232625", "#4a4d4c")
+        return (
+            f'<div style="display:flex;border:1px solid #e8e8e8;'
+            f'border-radius:8px;overflow:hidden;{_outline}">'
+            f"{_left}{_right}</div>")
+    _bg, _bar, _line = _THEME_PREVIEW[mode]
+    return (
+        f'<div style="background:{_bg};border:1px solid #e8e8e8;'
+        f'border-radius:8px;padding:8px;{_outline}">'
+        f'<div style="height:14px;background:{_bar};border-radius:3px;'
+        f'margin-bottom:6px"></div>'
+        f'<div style="height:6px;background:{_line};border-radius:3px;'
+        f'margin-bottom:4px;width:80%"></div>'
+        f'<div style="height:6px;background:{_line};border-radius:3px;'
+        f'width:60%"></div></div>')
+
+
 def _member_since_text(created_at):
     """created_at (ISO string) -> a plain date, or the raw value."""
     if not created_at:
@@ -199,10 +297,20 @@ def render_profile_view(st, user, storage_key, on_logout=None):
     Supabase's row format — "Profile information" (First name /
     Last name / Primary email / Username + Save, wired to the real
     profile data), "Sign-in methods" (Email + Change password, the
-    app's real email+code login), "Appearance" (Light/Dark theme),
-    "Storage usage", "Download my data", "Log out", "Danger zone".
-    No Access Tokens, no Audit Logs, no Upgrade to Pro: the app has
-    none of those, and a button to nowhere would be fake.
+    app's real email+code login; ChatGPT and GitHub honestly Not
+    connected), "Connections" (GitHub, honestly Not connected),
+    "Appearance" (Theme mode preview cards System/Dark/Light wired
+    to the real theme preference, Theme colors sliders shown for
+    reference only, Sidebar behavior wired to the real 3-way rail
+    mode, Timezone as an honest display), "Keyboard shortcuts"
+    (honest note — the app has none, Quick Jump is the equivalent),
+    "Dashboard" (two switches, both off, no counterparts),
+    "Analytics and Marketing" (telemetry switch off — the app
+    collects no usage data), "Storage usage", "Download my data",
+    "Log out", "Danger zone" (the real delete flow — see the module
+    docstring). No Access Tokens, no Audit Logs, no Upgrade to Pro:
+    the app has none of those, and a button to nowhere would be
+    fake.
 
     The sub-nav rows are anchor links to the section headings (one
     stacked page, not separate pages). "Preferences" itself is the
@@ -247,7 +355,13 @@ def render_profile_view(st, user, storage_key, on_logout=None):
             'dcs-profile-subnav-active">Preferences</span>',
             unsafe_allow_html=True)
         _profile_subnav_link(st, "profile-signin", "Sign-in methods")
+        _profile_subnav_link(st, "profile-connections", "Connections")
         _profile_subnav_link(st, "profile-appearance", "Appearance")
+        _profile_subnav_link(st, "profile-shortcuts",
+                             "Keyboard shortcuts")
+        _profile_subnav_link(st, "profile-dashboard", "Dashboard")
+        _profile_subnav_link(st, "profile-analytics",
+                             "Analytics and Marketing")
         st.markdown('<div class="dcs-micro-label">Data</div>',
                     unsafe_allow_html=True)
         _profile_subnav_link(st, "profile-storage", "Storage usage")
@@ -354,16 +468,94 @@ def render_profile_view(st, user, storage_key, on_logout=None):
                 else:
                     st.write("Password reset by email is only available for cloud "
                              "accounts — local accounts have no email address on file.")
+            # ChatGPT / GitHub sign-in do not exist in this app (no
+            # OAuth providers are enabled — only the email + code
+            # flow above). Rendered as Not connected with a disabled
+            # Connect button: the shape of Supabase's rows, with
+            # nothing that pretends to link an account.
+            _r = _profile_row(
+                st, "ChatGPT",
+                "Not connected — this app signs in with email only.")
+            with _r:
+                ui_design.icon_button(
+                    "Connect", "connect",
+                    key="profile_signin_chatgpt_connect",
+                    disabled=True,
+                    help="ChatGPT sign-in does not exist in this app.")
+            _r = _profile_row(
+                st, "GitHub",
+                "Not connected — this app signs in with email only.")
+            with _r:
+                ui_design.icon_button(
+                    "Connect", "connect",
+                    key="profile_signin_github_connect",
+                    disabled=True,
+                    help="GitHub sign-in does not exist in this app.")
+
+        # (2b) Connections ---------------------------------------------
+        # Supabase's Connections card: GitHub Connect. Same honesty
+        # rule as the sign-in rows above — there is no GitHub OAuth
+        # in this app, so the row says so and the button is disabled.
+        _profile_section(st, "profile-connections", "Connections",
+                         "External accounts linked to this app.")
+        with st.container(border=True):
+            _r = _profile_row(
+                st, "GitHub",
+                "Not connected — there is no GitHub connection in "
+                "this app.")
+            with _r:
+                ui_design.icon_button(
+                    "Connect", "connect",
+                    key="profile_connections_github_connect",
+                    disabled=True,
+                    help="GitHub Connect does not exist in this app.")
 
         # (3) Appearance --------------------------------------------------
-        # Light/Dark only — there is no System row here: System lives
-        # in the account menu's Theme section (it follows the OS
-        # through the Round 3 cookie bridge). Picking Light or Dark
-        # here sets the preference too (set_theme), so the account
-        # menu's radio agrees on the next run.
+        # Theme mode preview cards own the PREFERENCE (System / Dark /
+        # Light) — the avatar menu's radio does the same; the Light /
+        # Dark radio below still owns only the RESOLVED theme (it is
+        # pinned by the Round 5/10 regression tests, so it stays).
+        # Both write through the theme machinery, so all four
+        # controls agree on the next run.
         _profile_section(st, "profile-appearance", "Appearance",
                          "Choose how the app looks.")
         with st.container(border=True):
+            # Theme mode — Supabase's preview cards, wired to the
+            # REAL theme preference through ui_design.set_theme_pref
+            # (the same write the avatar menu's radio performs).
+            # Picking a card restyles the whole app at once — that
+            # is the live preview. Buttons are stateless, so no
+            # stale-frontend value can survive (the key-bump lesson
+            # does not apply to buttons).
+            _pref = ui_design.normalize_theme_pref(
+                st.session_state.get(ui_design.THEME_PREF_KEY))
+            _resolved = ui_design.normalize_theme(
+                st.session_state.get("dcs_theme", ui_design.THEME_DEFAULT))
+            _accent = ("#4acd8b" if _resolved == "dark" else "#117f50")
+            _r = _profile_row(st, "Theme mode",
+                              "System follows your device; Dark and Light "
+                              "are fixed — the choice applies across the "
+                              "app at once.")
+            with _r:
+                _mode_cols = st.columns(3)
+                for _i, _mode in enumerate(("system", "dark", "light")):
+                    with _mode_cols[_i]:
+                        st.markdown(
+                            _theme_preview_html(
+                                _mode, _mode == _pref, _accent),
+                            unsafe_allow_html=True)
+                        st.caption(_THEME_PREVIEW_DESCS[_mode])
+                        if st.button(
+                                _THEME_PREVIEW_LABELS[_mode],
+                                key=f"profile_theme_mode_{_mode}",
+                                use_container_width=True,
+                                help="Use the "
+                                f"{_THEME_PREVIEW_LABELS[_mode]} "
+                                "theme mode."):
+                            ui_design.set_theme_pref(st, _mode)
+                            st.rerun()
+                        if _mode == _pref:
+                            st.markdown("**✓ Current**")
             _r = _profile_row(st, "Theme",
                               "Light or dark — the choice applies across "
                               "the app.")
@@ -463,6 +655,108 @@ def render_profile_view(st, user, storage_key, on_logout=None):
                          key=ui_design.RAIL_MODE_PROFILE_RADIO_KEY,
                          on_change=_on_profile_sidebar_behavior,
                          label_visibility="collapsed")
+
+            # Theme colors — Supabase's four sliders (Surface tint 0 /
+            # Contrast 23 / Surface brightness 100 / Layer contrast
+            # 100). This app has NO theme-color settings: the sliders
+            # are DISABLED and show Supabase's defaults for reference
+            # only. There is no save path — nothing writes a
+            # theme-color key anywhere.
+            _r = _profile_row(
+                st, "Theme colors",
+                "Supabase theme colors, shown for reference — this app "
+                "has no theme-color settings, so these cannot be "
+                "changed.")
+            with _r:
+                st.slider("Surface tint", 0, 100, 0, disabled=True,
+                          key="profile_theme_surface_tint",
+                          help="Reference only — this app has no "
+                               "theme-color settings.")
+                st.slider("Contrast", 0, 100, 23, disabled=True,
+                          key="profile_theme_contrast",
+                          help="Reference only — this app has no "
+                               "theme-color settings.")
+                st.slider("Surface brightness", 0, 100, 100, disabled=True,
+                          key="profile_theme_surface_brightness",
+                          help="Reference only — this app has no "
+                               "theme-color settings.")
+                st.slider("Layer contrast", 0, 100, 100, disabled=True,
+                          key="profile_theme_layer_contrast",
+                          help="Reference only — this app has no "
+                               "theme-color settings.")
+
+            # Timezone — the avatar menu shows the same value ("Auto
+            # (Asia/Calcutta)"). The app has no per-user timezone
+            # setting: every time in the app is India time (IST).
+            _r = _profile_row(
+                st, "Timezone",
+                "Times in this app are shown in India time (IST).")
+            with _r:
+                st.write("**Auto detect (Asia/Calcutta)**")
+                st.caption("No per-user timezone setting — the app has "
+                           "one timezone.")
+
+        # (3b) Keyboard shortcuts ---------------------------------------
+        # Supabase's switches (all checked) have no counterpart here:
+        # this app has NO keyboard shortcuts at all. No switches are
+        # rendered — a switch that did nothing would be the fake.
+        # The honest equivalent is Quick Jump (Search in the top bar).
+        _profile_section(st, "profile-shortcuts", "Keyboard shortcuts",
+                         "Shortcuts for moving around the app.")
+        with st.container(border=True):
+            st.write("This app has no keyboard shortcuts. The equivalent "
+                     "here is Quick Jump — press Search in the top bar "
+                     "and type to jump to any tab.")
+
+        # (3c) Dashboard -------------------------------------------------
+        # Supabase's Dashboard switches (Edit entities in SQL off,
+        # Queue table operations off). No counterparts in this app:
+        # there is no SQL entity editor and no operation queue, so
+        # both stay off and disabled.
+        _profile_section(st, "profile-dashboard", "Dashboard",
+                         "Supabase dashboard options.")
+        with st.container(border=True):
+            st.caption("These Supabase dashboard options have no "
+                       "counterpart in this app — this app has no SQL "
+                       "entity editor and no operation queue, so both "
+                       "stay off.")
+            _r = _profile_row(st, "Edit entities in SQL",
+                              "Edit database entities directly in SQL.")
+            with _r:
+                st.toggle("Edit entities in SQL", value=False,
+                          disabled=True,
+                          key="profile_dashboard_edit_entities_sql",
+                          label_visibility="collapsed",
+                          help="No counterpart in this app — stays off.")
+            _r = _profile_row(st, "Queue table operations",
+                              "Queue table operations instead of running "
+                              "them at once.")
+            with _r:
+                st.toggle("Queue table operations", value=False,
+                          disabled=True,
+                          key="profile_dashboard_queue_table_ops",
+                          label_visibility="collapsed",
+                          help="No counterpart in this app — stays off.")
+
+        # (3d) Analytics and Marketing -----------------------------------
+        # Supabase's telemetry switch (on there). This app collects NO
+        # usage data and sends nothing anywhere — there is nothing to
+        # opt out of, so the switch stays off and disabled.
+        _profile_section(st, "profile-analytics",
+                         "Analytics and Marketing",
+                         "Usage data this app collects.")
+        with st.container(border=True):
+            st.caption("This app collects no usage data and sends nothing "
+                       "anywhere — there is nothing to opt out of, so "
+                       "this switch stays off.")
+            _r = _profile_row(st, "Telemetry",
+                              "Send anonymous usage data to help improve "
+                              "the app.")
+            with _r:
+                st.toggle("Telemetry", value=False, disabled=True,
+                          key="profile_analytics_telemetry",
+                          label_visibility="collapsed",
+                          help="This app sends no usage data — stays off.")
 
         # (4) Storage usage ----------------------------------------------
         # A proper card like the others, not a half-empty one: total +
